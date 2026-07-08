@@ -170,8 +170,8 @@ Public Function LastUsedRowAnyColumn(ByVal ws As Worksheet) As Long
     End If
 End Function
 
-Public Function ConfirmOverwrite(ByVal dataDescription As String) As Boolean
-    ConfirmOverwrite = (MsgBox("This will replace existing " & dataDescription & "." & vbCrLf & vbCrLf & _
+Public Function PromptOverwriteConfirm(ByVal dataDescription As String) As Boolean
+    PromptOverwriteConfirm = (MsgBox("This will replace existing " & dataDescription & "." & vbCrLf & vbCrLf & _
                                "Continue?", _
                                vbQuestion + vbYesNo + vbDefaultButton2, _
                                "Confirm Overwrite") = vbYes)

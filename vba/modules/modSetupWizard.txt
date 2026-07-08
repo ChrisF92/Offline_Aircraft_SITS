@@ -41,7 +41,7 @@ Public Sub RunSetupWizard()
               "Select the GOLDesp Long Forecast export for " & tailNumber & ".", _
               vbInformation + vbOKCancel, "Setup Wizard") <> vbOK Then Exit Sub
 
-    sitsCount = ImportSITSFromFile(, False, False)
+    sitsCount = ImportSITSFromFile(, False, True)
     If sitsCount < 0 Then
         MsgBox "Setup cancelled — SITS import failed or was not selected.", vbExclamation, "Setup Wizard"
         Exit Sub
