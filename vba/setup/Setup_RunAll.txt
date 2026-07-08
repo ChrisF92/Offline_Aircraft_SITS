@@ -52,8 +52,9 @@ Public Sub Setup_RunAll()
     If ValidateWorkbookStructure() Then
         MsgBox "Phase 0 setup completed successfully." & vbCrLf & vbCrLf & _
                "Next steps:" & vbCrLf & _
-               "1. Save this workbook as " & UCase$(Trim$(tail)) & "_SITS_v2.xlsm" & vbCrLf & _
-               "2. Phase 1 will add the Setup Wizard and import macros", _
+               "1. Import Phase 1 modules (see BUILD_INSTRUCTIONS.txt)" & vbCrLf & _
+               "2. Run RunSetupWizard to import SITS and usage" & vbCrLf & _
+               "3. Save this workbook as " & UCase$(Trim$(tail)) & "_SITS_v2.xlsm", _
                vbInformation, "Setup Complete"
         WritePhase0AuditEntry UCase$(Trim$(tail))
     End If

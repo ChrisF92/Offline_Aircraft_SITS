@@ -1,0 +1,418 @@
+Attribute VB_Name = "modImportUsage"
+Option Explicit
+
+' ========================================================================
+' USAGE IMPORT MODULE — Offline Aircraft SITS v2
+' ========================================================================
+' Imports airframe and engine GOLDesp usage exports into tblUsageBaseline
+' and seeds tblUsageCurrent. Merges on IntervalCode|TaskCode.
+' ========================================================================
+
+Private Type UsageImportRow
+    IntervalCode As String
+    TaskCode As String
+    Description As String
+    BaselineValue As Variant
+    FormatType As String
+    SourceName As String
+    SerialValue As String
+End Type
+
+Private mUsageRows As Object
+Private mUsageSessionActive As Boolean
+Private mAirframeImported As Boolean
+Private mEngineImported As Boolean
+
+Public Sub BeginUsageImportSession()
+    Set mUsageRows = CreateObject("Scripting.Dictionary")
+    mUsageSessionActive = True
+    mAirframeImported = False
+    mEngineImported = False
+End Sub
+
+Public Function UsageImportSessionActive() As Boolean
+    UsageImportSessionActive = mUsageSessionActive
+End Function
+
+Public Function UsageAirframeImported() As Boolean
+    UsageAirframeImported = mAirframeImported
+End Function
+
+Public Function UsageEngineImported() As Boolean
+    UsageEngineImported = mEngineImported
+End Function
+
+Public Function ImportUsageAirframeFromFile(Optional ByVal filePath As String = "", _
+                                            Optional ByVal showDialogs As Boolean = True) As Long
+    ImportUsageAirframeFromFile = ImportUsageFromFile("Airframe", filePath, showDialogs)
+End Function
+
+Public Function ImportUsageEngineFromFile(Optional ByVal filePath As String = "", _
+                                          Optional ByVal showDialogs As Boolean = True) As Long
+    ImportUsageEngineFromFile = ImportUsageFromFile("Engine", filePath, showDialogs)
+End Function
+
+Public Function ImportUsageFromFile(ByVal sourceName As String, _
+                                    Optional ByVal filePath As String = "", _
+                                    Optional ByVal showDialogs As Boolean = True) As Long
+    Const PROC_NAME As String = "ImportUsageFromFile"
+
+    Dim failReason As String
+    Dim srcWb As Workbook
+    Dim srcWs As Worksheet
+    Dim headerRow As Long
+    Dim colMap As Object
+    Dim tailNumber As String
+    Dim firstDataRow As Long
+    Dim lastRow As Long
+    Dim rowIndex As Long
+    Dim importedRows As Long
+    Dim usageRow As UsageImportRow
+    Dim mergeKey As String
+
+    ImportUsageFromFile = -1
+
+    If Not ValidateWorkbookStructure() Then Exit Function
+
+    tailNumber = GetTailNumber()
+    If Len(tailNumber) = 0 Then
+        If showDialogs Then
+            MsgBox "Tail number is not configured. Run the Setup Wizard or seed config first.", _
+                   vbExclamation, APP_NAME
+        End If
+        Exit Function
+    End If
+
+    If Len(filePath) = 0 Then
+        filePath = PromptImportFile("Select " & sourceName & " usage export for " & tailNumber)
+        If Len(filePath) = 0 Then Exit Function
+    End If
+
+    If Not mUsageSessionActive Then BeginUsageImportSession
+
+    Set srcWb = ImportOpenReadOnly(filePath, failReason)
+    If srcWb Is Nothing Then
+        If showDialogs Then ShowImportFailure sourceName & " usage", failReason
+        LogImportFailure sourceName & " usage", failReason
+        Exit Function
+    End If
+
+    Set srcWs = srcWsFromWorkbook(srcWb)
+    headerRow = FindHeaderRow(srcWs, UsageRequiredHeaders(), failReason)
+    If headerRow = 0 Then
+        srcWb.Close SaveChanges:=False
+        If showDialogs Then ShowImportFailure sourceName & " usage", failReason
+        LogImportFailure sourceName & " usage", failReason
+        Exit Function
+    End If
+
+    Set colMap = BuildHeaderMap(srcWs, headerRow, UsageRequiredHeaders(), failReason)
+    If colMap Is Nothing Then
+        srcWb.Close SaveChanges:=False
+        If showDialogs Then ShowImportFailure sourceName & " usage", failReason
+        LogImportFailure sourceName & " usage", failReason
+        Exit Function
+    End If
+
+    firstDataRow = headerRow + 1
+    lastRow = LastUsedRowAnyColumn(srcWs)
+    If lastRow < firstDataRow Then
+        srcWb.Close SaveChanges:=False
+        failReason = "The file contains headers but no usage rows."
+        If showDialogs Then ShowImportFailure sourceName & " usage", failReason
+        LogImportFailure sourceName & " usage", failReason
+        Exit Function
+    End If
+
+    If Not ValidateImportTail(srcWs, firstDataRow, lastRow, colMap("Top Serial"), tailNumber, failReason) Then
+        srcWb.Close SaveChanges:=False
+        If showDialogs Then ShowImportFailure sourceName & " usage", failReason
+        LogImportFailure sourceName & " usage", failReason
+        Exit Function
+    End If
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+
+    For rowIndex = firstDataRow To lastRow
+        If Not UsageRowHasData(srcWs, rowIndex, colMap) Then GoTo NextRow
+
+        usageRow = BuildUsageImportRow(srcWs, rowIndex, colMap, sourceName, headerRow)
+        mergeKey = BuildUsageKey(usageRow.IntervalCode, usageRow.TaskCode)
+        mUsageRows(mergeKey) = UsageRowToArray(usageRow)
+        importedRows = importedRows + 1
+
+NextRow:
+    Next rowIndex
+
+    srcWb.Close SaveChanges:=False
+    SetExcelState "enable"
+
+    If StrComp(sourceName, "Airframe", vbTextCompare) = 0 Then
+        mAirframeImported = True
+    ElseIf StrComp(sourceName, "Engine", vbTextCompare) = 0 Then
+        mEngineImported = True
+    End If
+
+    LogAction "USAGE_STAGED", "", sourceName & ": " & importedRows & " row(s) from " & filePath
+    ImportUsageFromFile = importedRows
+
+    If showDialogs Then
+        MsgBox "Staged " & importedRows & " " & sourceName & " usage row(s) for " & tailNumber & ".", _
+               vbInformation, APP_NAME
+    End If
+    Exit Function
+
+ErrorHandler:
+    On Error Resume Next
+    If Not srcWb Is Nothing Then srcWb.Close SaveChanges:=False
+    On Error GoTo 0
+    SetExcelState "enable"
+    LogError PROC_NAME, Err.Number, Err.Description
+    If showDialogs Then
+        MsgBox sourceName & " usage import error: " & Err.Number & " - " & Err.Description, _
+               vbCritical, APP_NAME
+    End If
+End Function
+
+Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) As Boolean
+    Dim failReason As String
+    Dim wsBaseline As Worksheet
+    Dim wsCurrent As Worksheet
+    Dim tblBaseline As ListObject
+    Dim tblCurrent As ListObject
+    Dim mergeKey As Variant
+    Dim rowData As Variant
+    Dim newRow As ListRow
+    Dim rowCount As Long
+
+    CommitUsageImport = False
+
+    If Not ValidateWorkbookStructure() Then Exit Function
+    If mUsageRows Is Nothing Or mUsageRows.Count = 0 Then
+        failReason = "No usage rows are staged. Import airframe and engine usage first."
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If Not mAirframeImported Then
+        failReason = "Airframe usage has not been imported."
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If Not mEngineImported Then
+        failReason = "Engine usage has not been imported."
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If Not ValidateRequiredUsageIntervals(mUsageRows, failReason) Then
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        LogImportFailure "Usage", failReason
+        Exit Function
+    End If
+
+    Set wsBaseline = GetWorksheet(SHEET_DATA_USAGE_BASELINE)
+    Set wsCurrent = GetWorksheet(SHEET_DATA_USAGE_CURRENT)
+    Set tblBaseline = GetTable(wsBaseline, TBL_USAGE_BASELINE)
+    Set tblCurrent = GetTable(wsCurrent, TBL_USAGE_CURRENT)
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+
+    ClearTableData tblBaseline
+    ClearTableData tblCurrent
+
+    For Each mergeKey In mUsageRows.Keys
+        rowData = mUsageRows(mergeKey)
+
+        Set newRow = tblBaseline.ListRows.Add
+        With newRow.Range
+            .Cells(1, 1).Value = rowData(0)
+            .Cells(1, 2).Value = rowData(1)
+            .Cells(1, 3).Value = rowData(2)
+            .Cells(1, 4).Value = rowData(3)
+            .Cells(1, 5).Value = rowData(4)
+            .Cells(1, 6).Value = rowData(5)
+            .Cells(1, 7).Value = rowData(6)
+        End With
+
+        Set newRow = tblCurrent.ListRows.Add
+        With newRow.Range
+            .Cells(1, 1).Value = rowData(0)
+            .Cells(1, 2).Value = rowData(1)
+            .Cells(1, 3).Value = rowData(3)
+        End With
+
+        rowCount = rowCount + 1
+    Next mergeKey
+
+    SetExcelState "enable"
+    CommitUsageImport = True
+
+    LogAction "USAGE_IMPORTED", "", "Committed " & rowCount & " merged usage row(s)"
+    If showDialogs Then
+        MsgBox "Committed " & rowCount & " usage baseline row(s).", vbInformation, APP_NAME
+    End If
+    Exit Function
+
+ErrorHandler:
+    SetExcelState "enable"
+    LogError "CommitUsageImport", Err.Number, Err.Description
+    If showDialogs Then
+        MsgBox "Usage commit error: " & Err.Number & " - " & Err.Description, vbCritical, APP_NAME
+    End If
+End Function
+
+Public Function ValidateRequiredUsageIntervals(ByVal usageRows As Object, _
+                                               ByRef failReason As String) As Boolean
+    Dim required As Variant
+    Dim item As Variant
+    Dim mergeKey As Variant
+    Dim rowData As Variant
+    Dim foundCodes As Object
+    Dim missing As String
+
+    Set foundCodes = CreateObject("Scripting.Dictionary")
+
+    For Each mergeKey In usageRows.Keys
+        rowData = usageRows(mergeKey)
+        foundCodes(UCase$(Trim$(CStr(rowData(0))))) = True
+    Next mergeKey
+
+    ApplyIntervalMapToUsageRows usageRows, foundCodes
+
+    For Each item In RequiredUsageIntervalCodes()
+        If Not foundCodes.Exists(UCase$(Trim$(CStr(item)))) Then
+            If Len(missing) > 0 Then missing = missing & ", "
+            missing = missing & CStr(item)
+        End If
+    Next item
+
+    If Len(missing) > 0 Then
+        failReason = "Engine usage is missing required interval code(s): " & missing & "." & vbCrLf & vbCrLf & _
+                     "Ensure the engine export includes SM and SN (WC/STARTS/ECU on P4N155/P4N175)."
+        Exit Function
+    End If
+
+    ValidateRequiredUsageIntervals = True
+End Function
+
+Private Sub ApplyIntervalMapToUsageRows(ByVal usageRows As Object, _
+                                        ByVal foundCodes As Object)
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim mergeKey As Variant
+    Dim rowData As Variant
+    Dim sourceTask As String
+    Dim sourceSerial As String
+    Dim targetInterval As String
+
+    Set ws = GetWorksheet(SHEET_CONFIG, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    Set tbl = GetTable(ws, TBL_INTERVAL_MAP, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    For Each row In tbl.ListRows
+        sourceTask = Trim$(CStr(row.Range.Cells(1, 1).Value))
+        sourceSerial = Trim$(CStr(row.Range.Cells(1, 2).Value))
+        targetInterval = UCase$(Trim$(CStr(row.Range.Cells(1, 3).Value)))
+        If Len(sourceTask) = 0 Or Len(targetInterval) = 0 Then GoTo NextMapRow
+
+        For Each mergeKey In usageRows.Keys
+            rowData = usageRows(mergeKey)
+            If StrComp(CStr(rowData(1)), sourceTask, vbTextCompare) = 0 Then
+                If Len(sourceSerial) = 0 Or _
+                   StrComp(CStr(rowData(6)), sourceSerial, vbTextCompare) = 0 Then
+                    foundCodes(targetInterval) = True
+                End If
+            End If
+        Next mergeKey
+
+NextMapRow:
+    Next row
+End Sub
+
+Private Function srcWsFromWorkbook(ByVal srcWb As Workbook) As Worksheet
+    Set srcWsFromWorkbook = srcWb.Worksheets(1)
+End Function
+
+Private Function UsageRowHasData(ByVal srcWs As Worksheet, _
+                                 ByVal rowIndex As Long, _
+                                 ByVal colMap As Object) As Boolean
+    UsageRowHasData = RowHasAnyValue(srcWs, rowIndex, _
+                                     colMap("Interval Type"), colMap("Task Code"))
+End Function
+
+Private Function BuildUsageImportRow(ByVal srcWs As Worksheet, _
+                                     ByVal rowIndex As Long, _
+                                     ByVal colMap As Object, _
+                                     ByVal sourceName As String, _
+                                     ByVal headerRow As Long) As UsageImportRow
+    Dim lifeUsed As Variant
+    Dim displayText As String
+
+    With BuildUsageImportRow
+        .IntervalCode = UCase$(Trim$(CStr(srcWs.Cells(rowIndex, colMap("Interval Type")).Value)))
+        .TaskCode = Trim$(CStr(srcWs.Cells(rowIndex, colMap("Task Code")).Value))
+        .Description = LookupOptionalDescription(srcWs, rowIndex, headerRow)
+        .SerialValue = Trim$(CStr(srcWs.Cells(rowIndex, colMap("Top Serial")).Value))
+        .SourceName = sourceName
+
+        lifeUsed = srcWs.Cells(rowIndex, colMap("Life Used")).Value
+        displayText = srcWs.Cells(rowIndex, colMap("Life Used")).Text
+        .FormatType = DetectUsageFormat(lifeUsed)
+
+        If .FormatType = "Hours" Then
+            If Not IsEmpty(ParseTimeUsageValue(lifeUsed, displayText)) Then
+                .BaselineValue = ParseTimeUsageValue(lifeUsed, displayText)
+            Else
+                .BaselineValue = lifeUsed
+            End If
+        Else
+            .BaselineValue = lifeUsed
+        End If
+    End With
+End Function
+
+Private Function LookupOptionalDescription(ByVal srcWs As Worksheet, _
+                                           ByVal rowIndex As Long, _
+                                           ByVal headerRow As Long) As String
+    Dim colIndex As Long
+
+    colIndex = FindHeaderColumn(srcWs, headerRow, "Task Description")
+
+    If colIndex > 0 Then
+        LookupOptionalDescription = Trim$(CStr(srcWs.Cells(rowIndex, colIndex).Value))
+    End If
+End Function
+
+Private Function UsageRowToArray(ByRef usageRow As UsageImportRow) As Variant
+    UsageRowToArray = Array( _
+        usageRow.IntervalCode, _
+        usageRow.TaskCode, _
+        usageRow.Description, _
+        usageRow.BaselineValue, _
+        usageRow.FormatType, _
+        usageRow.SourceName, _
+        usageRow.SerialValue _
+    )
+End Function
+
+Public Function StagedUsageRowCount() As Long
+    If mUsageRows Is Nothing Then
+        StagedUsageRowCount = 0
+    Else
+        StagedUsageRowCount = mUsageRows.Count
+    End If
+End Function
+
+Public Sub ResetUsageImportSession()
+    Set mUsageRows = Nothing
+    mUsageSessionActive = False
+    mAirframeImported = False
+    mEngineImported = False
+End Sub

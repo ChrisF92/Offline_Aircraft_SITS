@@ -1,4 +1,4 @@
-Offline Aircraft SITS v2 — Build Instructions (Phase 0)
+Offline Aircraft SITS v2 — Build Instructions (Phase 1)
 =========================================================
 
 You build the .xlsm workbook locally from the .txt VBA sources in this folder.
@@ -29,13 +29,16 @@ error "Expected variable or procedure, not module").
 
 Runtime modules:
 
-  File                              Module Name (Name property)
-  --------------------------------  ---------------------------
-  vba/modules/CONFIG.txt            CONFIG
-  vba/modules/modUtility.txt        modUtility
-  vba/modules/modValidation.txt     modValidation
-  vba/modules/modImportValidation.txt modImportValidation
-  vba/modules/modAuditTrail.txt     modAuditTrail
+  File                                  Module Name (Name property)
+  ------------------------------------  ---------------------------
+  vba/modules/CONFIG.txt                CONFIG
+  vba/modules/modUtility.txt            modUtility
+  vba/modules/modValidation.txt         modValidation
+  vba/modules/modImportValidation.txt   modImportValidation
+  vba/modules/modAuditTrail.txt         modAuditTrail
+  vba/modules/modImportSITS.txt         modImportSITS
+  vba/modules/modImportUsage.txt        modImportUsage
+  vba/modules/modSetupWizard.txt        modSetupWizard
 
 Setup modules (one-time use):
 
@@ -60,7 +63,7 @@ Step 3 — Run Phase 0 setup
 Required before running setup (compile-time dependencies):
   CONFIG, modUtility, modValidation
 
-Import modAuditTrail before normal use (Workbook_Open / future phases).
+Import modAuditTrail before normal use (Workbook_Open / setup wizard logging).
 Setup_RunAll does not call LogAction — it writes the setup audit row directly.
 
 1. In the VBA editor, open the modSetupRunAll module.
@@ -75,33 +78,70 @@ Alternatively, run each Setup_* macro individually in this order:
   Setup_CreateNamedRanges
   Setup_CreateDashboard
 
-Step 4 — Save
+Step 4 — Run Phase 1 setup wizard
+---------------------------------
+After Phase 0 modules are in place, import the Phase 1 modules listed above, then:
+
+1. Open the Dashboard sheet.
+2. Run macro RunSetupWizard (modSetupWizard).
+3. Follow the 5-step wizard:
+   - Confirm tail number
+   - Select SITS Long Forecast export
+   - Select airframe Item Usage export
+   - Select engine usage export
+   - Confirm and commit
+
+The wizard imports SITS into tblSITS, merges airframe + engine usage into
+tblUsageBaseline, seeds tblUsageCurrent, and sets SetupComplete = True.
+
+Optional standalone imports (after setup or for re-import):
+  ImportSITSFromFile          — SITS Long Forecast only
+  ImportUsageAirframeFromFile — stage airframe usage (wizard preferred)
+  ImportUsageEngineFromFile   — stage engine usage (wizard preferred)
+  CommitUsageImport           — commit staged usage after both airframe + engine
+
+Assign macros to Dashboard shapes/buttons:
+  RunSetupWizard, ImportSITSFromFile, ViewAuditLog
+
+Step 5 — Save
 -------------
-Save the workbook. The Phase 0 skeleton includes:
+Save the workbook. After Phase 1 setup:
 
   Visible sheets:  Dashboard, SITS, Usage, Audit Log
   Hidden sheets:   _CONFIG, _DATA_SITS, _DATA_USAGE_*, _DATA_WP*, _WP_STATE
-  Tables:          tblSITS, tblUsageBaseline, tblUsageLog, tblUsageCurrent,
-                   tblWorkPackages, tblWPTasks, tblConfig, tblIntervalMap, tblAudit
+  Tables:          tblSITS (populated), tblUsageBaseline (populated),
+                   tblUsageCurrent (seeded), tblUsageLog, tblWorkPackages,
+                   tblWPTasks, tblConfig, tblIntervalMap, tblAudit
 
-What Phase 0 does NOT include yet
----------------------------------
-- Setup Wizard (Phase 1)
-- GOLDesp file import macros (Phase 1)
+What Phase 1 includes
+---------------------
+- Setup Wizard (RunSetupWizard) — one-time SITS + usage baseline import
+- GOLDesp file browser imports with strict header validation
+- Tail / Top Serial / End Item Serial validation
+- Engine usage SM/SN requirement (WC/STARTS/ECU)
+
+What is NOT included yet
+------------------------
 - Usage entry form (Phase 2)
 - SITS calculations and view (Phase 3)
 - Work packages, extensions, deferrals (Phases 4–5)
 
-Import rules (for Phase 1 reference)
-------------------------------------
-SITS Long Forecast — ALL required (abort if any missing):
+Import rules (strict — abort if any required column missing)
+------------------------------------------------------------
+SITS Long Forecast:
   Interval Type Code, Life Remaining, Task Code, Task Sequence,
   Task Description, Serial, Actual Interval, Extension, End Item Serial
 
-Usage exports (airframe + engine) — ALL required:
+Usage exports (airframe + engine):
   Interval Type, Task Code, Life Used, Top Serial
 
-Engine usage must include SM and SN after import (WC/STARTS/ECU).
+Engine usage must include SM and SN interval codes after merge
+(typically WC/STARTS/ECU on P4N155/P4N175).
+
+Sample files in repo root:
+  20260706-Long Forecast_ZZ382.xlsx   — SITS export sample (tail ZZ382)
+  ZZ383 Item Usage.xlsx               — Airframe usage sample
+  ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)
 
 Troubleshooting
 ---------------
@@ -123,13 +163,17 @@ Troubleshooting
 
 If setup fails, the error message shows which step failed (e.g. Building sheets).
 
-All worksheets stuck as xlSheetVeryHidden / hidden
+All worksheets stuck hidden
   -> In VBA, open modUtility and run RepairSetupSheetVisibility (F5).
-  -> Update modUtility to Phase0-setup-v7: data sheets use xlSheetHidden only,
-     not xlSheetVeryHidden. User sheets Dashboard/SITS/Usage/Audit Log always
-     stay visible.
+  -> Data sheets use xlSheetHidden only, not xlSheetVeryHidden.
   -> Then run Setup_RunAll again on a fresh workbook, or run
      FinalizeSetupSheetLayout after repair.
-  20260706-Long Forecast_ZZ382.xlsx   — SITS export sample
-  ZZ383 Item Usage.xlsx               — Airframe usage sample
-  ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)
+
+SITS import tail mismatch
+  -> End Item Serial in every task row must match the workbook tail number.
+
+Usage import missing SM/SN
+  -> Import the engine usage export, not airframe only.
+  -> Engine file must contain SM and SN rows (WC/STARTS/ECU).
+
+Build marker: Phase1-setup-wizard-v1

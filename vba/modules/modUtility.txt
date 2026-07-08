@@ -377,6 +377,87 @@ Public Function IsHourBasedIntervalType(ByVal intervalCode As String) As Boolean
     End Select
 End Function
 
+Public Sub ClearTableData(ByVal tbl As ListObject)
+    On Error Resume Next
+    If Not tbl Is Nothing Then
+        If Not tbl.DataBodyRange Is Nothing Then
+            tbl.DataBodyRange.Delete
+        End If
+    End If
+    On Error GoTo 0
+End Sub
+
+Public Function ParseDMYDateValue(ByVal rawVal As Variant, _
+                                  Optional ByVal displayText As String = "") As Variant
+    Dim s As String
+    Dim parts() As String
+    Dim d As Long
+    Dim m As Long
+    Dim y As Long
+    Dim parsedDate As Date
+
+    s = Trim$(CStr(displayText))
+
+    If Len(s) > 0 And s <> "#####" Then
+        If InStr(s, " ") > 0 Then s = Left$(s, InStr(s, " ") - 1)
+        s = Replace(Replace(s, "-", "/"), ".", "/")
+
+        If InStr(s, "/") > 0 Then
+            parts = Split(s, "/")
+            If UBound(parts) = 2 Then
+                If IsNumeric(parts(0)) And IsNumeric(parts(1)) And IsNumeric(parts(2)) Then
+                    d = CLng(parts(0))
+                    m = CLng(parts(1))
+                    y = CLng(parts(2))
+                    If y < 100 Then y = 2000 + y
+
+                    On Error Resume Next
+                    parsedDate = DateSerial(y, m, d)
+                    On Error GoTo 0
+
+                    If Day(parsedDate) = d And Month(parsedDate) = m And Year(parsedDate) = y Then
+                        ParseDMYDateValue = parsedDate
+                        Exit Function
+                    End If
+                End If
+            End If
+        End If
+    End If
+
+    If IsDate(rawVal) Then
+        ParseDMYDateValue = DateValue(CDate(rawVal))
+    End If
+End Function
+
+Public Function ParseTimeUsageValue(ByVal rawVal As Variant, _
+                                    Optional ByVal displayText As String = "") As Variant
+    Dim s As String
+    Dim parts() As String
+    Dim hoursPart As Double
+    Dim minutesPart As Double
+
+    If IsEmpty(rawVal) Then Exit Function
+
+    s = Trim$(CStr(displayText))
+    If Len(s) = 0 Or s = "#####" Then s = Trim$(CStr(rawVal))
+
+    If InStr(s, ":") > 0 Then
+        parts = Split(s, ":")
+        If UBound(parts) >= 1 Then
+            If IsNumeric(parts(0)) And IsNumeric(parts(1)) Then
+                hoursPart = CDbl(parts(0))
+                minutesPart = CDbl(parts(1))
+                ParseTimeUsageValue = (hoursPart / 24#) + (minutesPart / 1440#)
+                Exit Function
+            End If
+        End If
+    End If
+
+    If IsNumeric(rawVal) Then
+        ParseTimeUsageValue = CDbl(rawVal)
+    End If
+End Function
+
 Public Function DetectUsageFormat(ByVal sampleValue As Variant) As String
     If IsEmpty(sampleValue) Then
         DetectUsageFormat = "Number"

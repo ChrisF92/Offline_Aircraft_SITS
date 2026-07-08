@@ -11,7 +11,7 @@ Private Sub Workbook_Open()
     ElseIf Not IsSetupComplete() Then
         MsgBox "Welcome to " & APP_NAME & " v" & APP_VERSION & "." & vbCrLf & vbCrLf & _
                "This aircraft workbook has not been set up yet." & vbCrLf & _
-               "Run the Setup Wizard when it is available (Phase 1).", _
+               "Run the Setup Wizard (macro RunSetupWizard on the Dashboard).", _
                vbInformation, APP_NAME
     End If
 

@@ -1,0 +1,164 @@
+Attribute VB_Name = "modSetupWizard"
+Option Explicit
+
+' ========================================================================
+' SETUP WIZARD MODULE — Offline Aircraft SITS v2 (Phase 1)
+' ========================================================================
+' One-time guided setup: tail number, SITS import, airframe + engine usage,
+' then commit merged usage baseline and mark setup complete.
+' ========================================================================
+
+Public Sub RunSetupWizard()
+    Const PROC_NAME As String = "RunSetupWizard"
+
+    Dim tailNumber As String
+    Dim sitsCount As Long
+    Dim airframeCount As Long
+    Dim engineCount As Long
+    Dim usageCount As Long
+    Dim summary As String
+    Dim userName As String
+
+    On Error GoTo ErrorHandler
+
+    If Not ValidateWorkbookStructure() Then Exit Sub
+
+    If IsSetupComplete() Then
+        If MsgBox("This workbook has already been set up." & vbCrLf & vbCrLf & _
+                  "Re-running the wizard will replace SITS and usage baseline data." & vbCrLf & _
+                  "Continue?", vbQuestion + vbYesNo + vbDefaultButton2, "Setup Wizard") <> vbYes Then
+            Exit Sub
+        End If
+    End If
+
+    tailNumber = PromptTailNumber()
+    If Len(tailNumber) = 0 Then Exit Sub
+
+    SetConfigValue CFG_TAIL_NUMBER, tailNumber
+    UpdateDashboardTailDisplay tailNumber
+
+    If MsgBox("Step 2 of 5 — SITS Long Forecast" & vbCrLf & vbCrLf & _
+              "Select the GOLDesp Long Forecast export for " & tailNumber & ".", _
+              vbInformation + vbOKCancel, "Setup Wizard") <> vbOK Then Exit Sub
+
+    sitsCount = ImportSITSFromFile(, False, False)
+    If sitsCount < 0 Then
+        MsgBox "Setup cancelled — SITS import failed or was not selected.", vbExclamation, "Setup Wizard"
+        Exit Sub
+    End If
+
+    BeginUsageImportSession
+
+    If MsgBox("Step 3 of 5 — Airframe usage" & vbCrLf & vbCrLf & _
+              "Select the airframe Item Usage export for " & tailNumber & ".", _
+              vbInformation + vbOKCancel, "Setup Wizard") <> vbOK Then
+        ResetUsageImportSession
+        Exit Sub
+    End If
+
+    airframeCount = ImportUsageAirframeFromFile(, False)
+    If airframeCount < 0 Then
+        ResetUsageImportSession
+        MsgBox "Setup cancelled — airframe usage import failed or was not selected.", _
+               vbExclamation, "Setup Wizard"
+        Exit Sub
+    End If
+
+    If MsgBox("Step 4 of 5 — Engine usage" & vbCrLf & vbCrLf & _
+              "Select the engine usage export for " & tailNumber & ".", _
+              vbInformation + vbOKCancel, "Setup Wizard") <> vbOK Then
+        ResetUsageImportSession
+        Exit Sub
+    End If
+
+    engineCount = ImportUsageEngineFromFile(, False)
+    If engineCount < 0 Then
+        ResetUsageImportSession
+        MsgBox "Setup cancelled — engine usage import failed or was not selected.", _
+               vbExclamation, "Setup Wizard"
+        Exit Sub
+    End If
+
+    usageCount = StagedUsageRowCount()
+    summary = "Step 5 of 5 — Confirm setup" & vbCrLf & vbCrLf & _
+              "Tail: " & tailNumber & vbCrLf & _
+              "SITS tasks imported: " & sitsCount & vbCrLf & _
+              "Airframe usage rows staged: " & airframeCount & vbCrLf & _
+              "Engine usage rows staged: " & engineCount & vbCrLf & _
+              "Merged usage baseline rows: " & usageCount & vbCrLf & vbCrLf & _
+              "Commit these imports and mark setup complete?"
+
+    If MsgBox(summary, vbQuestion + vbYesNo, "Setup Wizard") <> vbYes Then
+        ResetUsageImportSession
+        Exit Sub
+    End If
+
+    If Not CommitUsageImport(False) Then
+        ResetUsageImportSession
+        MsgBox "Setup cancelled — usage validation or commit failed.", vbExclamation, "Setup Wizard"
+        Exit Sub
+    End If
+
+    userName = Environ$("USERNAME")
+    If Len(userName) = 0 Then userName = "Unknown"
+
+    SetConfigValue CFG_SETUP_COMPLETE, True
+    SetConfigValue CFG_SETUP_DATE, Now
+    SetConfigValue CFG_SETUP_BY, userName
+
+    ResetUsageImportSession
+    LogSetupComplete tailNumber, sitsCount, usageCount
+    RefreshDashboardAfterSetup
+
+    MsgBox "Setup complete for " & tailNumber & "." & vbCrLf & vbCrLf & _
+           "SITS tasks: " & sitsCount & vbCrLf & _
+           "Usage baseline rows: " & usageCount & vbCrLf & vbCrLf & _
+           "Save the workbook before closing.", vbInformation, "Setup Wizard"
+    Exit Sub
+
+ErrorHandler:
+    ResetUsageImportSession
+    LogError PROC_NAME, Err.Number, Err.Description
+    MsgBox "Setup Wizard error: " & Err.Number & " - " & Err.Description, vbCritical, "Setup Wizard"
+End Sub
+
+Private Function PromptTailNumber() As String
+    Dim currentTail As String
+    Dim enteredTail As String
+
+    currentTail = GetTailNumber()
+    If Len(currentTail) = 0 Then currentTail = "ZZ383"
+
+    enteredTail = InputBox("Step 1 of 5 — Aircraft tail number" & vbCrLf & vbCrLf & _
+                           "Enter the tail number for this workbook:", _
+                           "Setup Wizard", currentTail)
+
+    enteredTail = UCase$(Trim$(enteredTail))
+    If Len(enteredTail) = 0 Then Exit Function
+
+    If MsgBox("Use tail number " & enteredTail & "?", vbQuestion + vbYesNo, "Setup Wizard") <> vbYes Then
+        Exit Function
+    End If
+
+    PromptTailNumber = enteredTail
+End Function
+
+Private Sub UpdateDashboardTailDisplay(ByVal tailNumber As String)
+    Dim ws As Worksheet
+
+    Set ws = GetWorksheet(SHEET_SITS, showError:=False)
+    If Not ws Is Nothing Then
+        ws.Range("B2").Value = tailNumber
+    End If
+End Sub
+
+Private Sub RefreshDashboardAfterSetup()
+    Dim ws As Worksheet
+
+    Set ws = GetWorksheet(SHEET_DASHBOARD, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    ws.Range("B14").Value = "• Setup Wizard — RunSetupWizard (completed)"
+    ws.Calculate
+    ws.Activate
+End Sub

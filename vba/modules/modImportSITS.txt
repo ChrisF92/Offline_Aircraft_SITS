@@ -1,0 +1,380 @@
+Attribute VB_Name = "modImportSITS"
+Option Explicit
+
+' ========================================================================
+' SITS IMPORT MODULE — Offline Aircraft SITS v2
+' ========================================================================
+' Imports a GOLDesp Long Forecast export into tblSITS on _DATA_SITS.
+' Strict header validation — aborts if any required column is missing.
+' ========================================================================
+
+Private Const OPT_PROJECTED_DUE As String = "Projected Due Date"
+Private Const OPT_INTERVAL_TYPE As String = "Interval Type"
+Private Const OPT_TASK_TYPE_CODE As String = "Task Type Code"
+Private Const OPT_WARNING_INTERVAL As String = "Warning Interval"
+
+Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
+                                   Optional ByVal showDialogs As Boolean = True, _
+                                   Optional ByVal confirmOverwrite As Boolean = True) As Long
+    Const PROC_NAME As String = "ImportSITSFromFile"
+
+    Dim failReason As String
+    Dim srcWb As Workbook
+    Dim srcWs As Worksheet
+    Dim headerRow As Long
+    Dim colMap As Object
+    Dim optCols As Object
+    Dim tailNumber As String
+    Dim wsData As Worksheet
+    Dim tbl As ListObject
+    Dim lastRow As Long
+    Dim firstDataRow As Long
+    Dim rowIndex As Long
+    Dim importedRows As Long
+    Dim intervalCode As String
+    Dim taskCode As String
+    Dim lifeRemaining As Variant
+    Dim newRow As ListRow
+
+    ImportSITSFromFile = -1
+
+    If Not ValidateWorkbookStructure() Then Exit Function
+
+    tailNumber = GetTailNumber()
+    If Len(tailNumber) = 0 Then
+        If showDialogs Then
+            MsgBox "Tail number is not configured. Run the Setup Wizard or seed config first.", _
+                   vbExclamation, APP_NAME
+        End If
+        Exit Function
+    End If
+
+    If Len(filePath) = 0 Then
+        filePath = PromptImportFile("Select SITS Long Forecast export for " & tailNumber)
+        If Len(filePath) = 0 Then Exit Function
+    End If
+
+    Set srcWb = ImportOpenReadOnly(filePath, failReason)
+    If srcWb Is Nothing Then
+        If showDialogs Then ShowImportFailure "SITS", failReason
+        LogImportFailure "SITS", failReason
+        Exit Function
+    End If
+
+    Set srcWs = srcWb.Worksheets(1)
+    headerRow = FindHeaderRow(srcWs, SITSRequiredHeaders(), failReason)
+    If headerRow = 0 Then
+        srcWb.Close SaveChanges:=False
+        If showDialogs Then ShowImportFailure "SITS", failReason
+        LogImportFailure "SITS", failReason
+        Exit Function
+    End If
+
+    Set colMap = BuildHeaderMap(srcWs, headerRow, SITSRequiredHeaders(), failReason)
+    If colMap Is Nothing Then
+        srcWb.Close SaveChanges:=False
+        If showDialogs Then ShowImportFailure "SITS", failReason
+        LogImportFailure "SITS", failReason
+        Exit Function
+    End If
+
+    Set optCols = BuildOptionalColumnMap(srcWs, headerRow)
+
+    firstDataRow = headerRow + 1
+    lastRow = LastUsedRowAnyColumn(srcWs)
+    If lastRow < firstDataRow Then
+        srcWb.Close SaveChanges:=False
+        failReason = "The file contains headers but no task rows."
+        If showDialogs Then ShowImportFailure "SITS", failReason
+        LogImportFailure "SITS", failReason
+        Exit Function
+    End If
+
+    If Not ValidateSITSSourceRows(srcWs, firstDataRow, lastRow, colMap, tailNumber, failReason) Then
+        srcWb.Close SaveChanges:=False
+        If showDialogs Then ShowImportFailure "SITS", failReason
+        LogImportFailure "SITS", failReason
+        Exit Function
+    End If
+
+    Set wsData = GetWorksheet(SHEET_DATA_SITS)
+    Set tbl = GetTable(wsData, TBL_SITS)
+    If Not ValidateSITSColumns(tbl) Then
+        srcWb.Close SaveChanges:=False
+        Exit Function
+    End If
+
+    If confirmOverwrite And showDialogs Then
+        If Not tbl.DataBodyRange Is Nothing Then
+            If Not ConfirmOverwrite("SITS task data") Then
+                srcWb.Close SaveChanges:=False
+                Exit Function
+            End If
+        End If
+    End If
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+
+    ClearTableData tbl
+
+    For rowIndex = firstDataRow To lastRow
+        If Not SITSRowHasData(srcWs, rowIndex, colMap) Then GoTo NextRow
+
+        intervalCode = UCase$(Trim$(CStr(srcWs.Cells(rowIndex, colMap("Interval Type Code")).Value)))
+        taskCode = Trim$(CStr(srcWs.Cells(rowIndex, colMap("Task Code")).Value))
+        lifeRemaining = srcWs.Cells(rowIndex, colMap("Life Remaining")).Value
+
+        Set newRow = tbl.ListRows.Add
+        With newRow.Range
+            .Cells(1, GetTableColumnIndex(tbl, HDR_SELECTOR)).Value = _
+                DefaultSelectorValue(intervalCode, taskCode, optCols, srcWs, rowIndex)
+            .Cells(1, GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)).Value = intervalCode
+            .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_CODE)).Value = taskCode
+            .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_SEQUENCE)).Value = _
+                srcWs.Cells(rowIndex, colMap("Task Sequence")).Value
+            .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_DESCRIPTION)).Value = _
+                srcWs.Cells(rowIndex, colMap("Task Description")).Value
+            .Cells(1, GetTableColumnIndex(tbl, HDR_SERIAL)).Value = _
+                srcWs.Cells(rowIndex, colMap("Serial")).Value
+            .Cells(1, GetTableColumnIndex(tbl, HDR_END_ITEM_SERIAL)).Value = _
+                srcWs.Cells(rowIndex, colMap("End Item Serial")).Value
+            .Cells(1, GetTableColumnIndex(tbl, HDR_EXTENSION)).Value = _
+                srcWs.Cells(rowIndex, colMap("Extension")).Value
+
+            ApplyActualIntervalValue .Cells(1, GetTableColumnIndex(tbl, HDR_ACTUAL_INTERVAL)), _
+                srcWs.Cells(rowIndex, colMap("Actual Interval")).Value, intervalCode
+            ApplyLifeRemainingValues tbl, newRow, intervalCode, lifeRemaining, _
+                srcWs.Cells(rowIndex, colMap("Life Remaining")).Text
+            ApplyOptionalSITSColumns tbl, newRow, optCols, srcWs, rowIndex
+            .Cells(1, GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)).Value = _
+                "SITS-" & Format$(importedRows + 1, "00000")
+        End With
+
+        importedRows = importedRows + 1
+
+NextRow:
+    Next rowIndex
+
+    srcWb.Close SaveChanges:=False
+    SetExcelState "enable"
+
+    LogAction "SITS_IMPORTED", "", "Imported " & importedRows & " rows from " & filePath
+    ImportSITSFromFile = importedRows
+
+    If showDialogs Then
+        MsgBox "Imported " & importedRows & " SITS task(s) for " & tailNumber & ".", _
+               vbInformation, APP_NAME
+    End If
+    Exit Function
+
+ErrorHandler:
+    On Error Resume Next
+    If Not srcWb Is Nothing Then srcWb.Close SaveChanges:=False
+    On Error GoTo 0
+    SetExcelState "enable"
+    LogError PROC_NAME, Err.Number, Err.Description
+    If showDialogs Then
+        MsgBox "SITS import error: " & Err.Number & " - " & Err.Description, vbCritical, APP_NAME
+    End If
+End Function
+
+Private Function BuildOptionalColumnMap(ByVal srcWs As Worksheet, _
+                                        ByVal headerRow As Long) As Object
+    Dim dict As Object
+    Dim optionalHeaders As Variant
+    Dim item As Variant
+    Dim colIndex As Long
+
+    Set dict = CreateObject("Scripting.Dictionary")
+    optionalHeaders = Array(OPT_PROJECTED_DUE, OPT_INTERVAL_TYPE, OPT_TASK_TYPE_CODE, OPT_WARNING_INTERVAL)
+
+    For Each item In optionalHeaders
+        colIndex = FindHeaderColumn(srcWs, headerRow, CStr(item))
+        If colIndex > 0 Then dict(CStr(item)) = colIndex
+    Next item
+
+    Set BuildOptionalColumnMap = dict
+End Function
+
+Private Function ValidateSITSSourceRows(ByVal srcWs As Worksheet, _
+                                        ByVal firstDataRow As Long, _
+                                        ByVal lastRow As Long, _
+                                        ByVal colMap As Object, _
+                                        ByVal expectedTail As String, _
+                                        ByRef failReason As String) As Boolean
+    Dim rowIndex As Long
+    Dim validRows As Long
+    Dim mismatchCount As Long
+    Dim mismatches As String
+    Dim sourceSerial As String
+    Dim expected As String
+
+    expected = NormaliseTailText(expectedTail)
+
+    For rowIndex = firstDataRow To lastRow
+        If Not SITSRowHasData(srcWs, rowIndex, colMap) Then GoTo NextRow
+
+        validRows = validRows + 1
+        sourceSerial = NormaliseTailText(CStr(srcWs.Cells(rowIndex, colMap("End Item Serial")).Value))
+
+        If Len(sourceSerial) = 0 Then
+            mismatchCount = mismatchCount + 1
+            If mismatchCount <= 10 Then
+                mismatches = mismatches & "Row " & rowIndex & ": blank End Item Serial" & vbCrLf
+            End If
+        ElseIf sourceSerial <> expected Then
+            mismatchCount = mismatchCount + 1
+            If mismatchCount <= 10 Then
+                mismatches = mismatches & "Row " & rowIndex & ": End Item Serial '" & _
+                             CStr(srcWs.Cells(rowIndex, colMap("End Item Serial")).Value) & _
+                             "' does not match '" & expectedTail & "'" & vbCrLf
+            End If
+        End If
+
+NextRow:
+    Next rowIndex
+
+    If validRows = 0 Then
+        failReason = "No task rows were found below the header row."
+        Exit Function
+    End If
+
+    If mismatchCount > 0 Then
+        If mismatchCount > 10 Then
+            mismatches = mismatches & "...and " & CStr(mismatchCount - 10) & " more mismatch(es)."
+        End If
+        failReason = "Tail validation failed for " & expectedTail & "." & vbCrLf & vbCrLf & mismatches
+        Exit Function
+    End If
+
+    ValidateSITSSourceRows = True
+End Function
+
+Private Function SITSRowHasData(ByVal srcWs As Worksheet, _
+                                ByVal rowIndex As Long, _
+                                ByVal colMap As Object) As Boolean
+    SITSRowHasData = RowHasAnyValue(srcWs, rowIndex, _
+                                    colMap("Task Code"), colMap("Interval Type Code"))
+End Function
+
+Private Function DefaultSelectorValue(ByVal intervalCode As String, _
+                                    ByVal taskCode As String, _
+                                    ByVal optCols As Object, _
+                                    ByVal srcWs As Worksheet, _
+                                    ByVal rowIndex As Long) As Boolean
+    Dim taskTypeCode As String
+
+    If Not optCols Is Nothing Then
+        If optCols.Exists(OPT_TASK_TYPE_CODE) Then
+            taskTypeCode = UCase$(Trim$(CStr(srcWs.Cells(rowIndex, optCols(OPT_TASK_TYPE_CODE)).Value)))
+            If IsDeferredFaultTaskCode(taskTypeCode) Then
+                DefaultSelectorValue = False
+                Exit Function
+            End If
+        End If
+    End If
+
+    If IsDeferredFaultTaskCode(taskCode) Then
+        DefaultSelectorValue = False
+        Exit Function
+    End If
+
+    Select Case intervalCode
+        Case TYPE_HH, TYPE_E1, TYPE_E2, TYPE_DD, "AF", "HRS", "CAL", "C"
+            DefaultSelectorValue = True
+        Case Else
+            DefaultSelectorValue = False
+    End Select
+End Function
+
+Private Sub ApplyActualIntervalValue(ByVal targetCell As Range, _
+                                     ByVal rawValue As Variant, _
+                                     ByVal intervalCode As String)
+    Dim parsedTime As Variant
+
+    If IsHourBasedIntervalType(intervalCode) Or InStr(CStr(rawValue), ":") > 0 Then
+        parsedTime = ParseTimeUsageValue(rawValue, CStr(rawValue))
+        If Not IsEmpty(parsedTime) Then
+            targetCell.Value = parsedTime
+            targetCell.NumberFormat = FORMAT_TIME_HOURS
+            Exit Sub
+        End If
+    End If
+
+    targetCell.Value = rawValue
+End Sub
+
+Private Sub ApplyLifeRemainingValues(ByVal tbl As ListObject, _
+                                     ByVal newRow As ListRow, _
+                                     ByVal intervalCode As String, _
+                                     ByVal rawValue As Variant, _
+                                     ByVal displayText As String)
+    Dim colHours As Long
+    Dim colNumber As Long
+    Dim colDays As Long
+    Dim parsedTime As Variant
+
+    colHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+    colNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    colDays = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+
+    If InStr(displayText, ":") > 0 Or (IsHourBasedIntervalType(intervalCode) And intervalCode <> TYPE_DD) Then
+        parsedTime = ParseTimeUsageValue(rawValue, displayText)
+        If Not IsEmpty(parsedTime) Then
+            newRow.Range.Cells(1, colHours).Value = parsedTime
+            newRow.Range.Cells(1, colHours).NumberFormat = FORMAT_TIME_HOURS
+            Exit Sub
+        End If
+    End If
+
+    newRow.Range.Cells(1, colNumber).Value = rawValue
+    If intervalCode = TYPE_DD Then
+        newRow.Range.Cells(1, colDays).Value = rawValue
+    End If
+End Sub
+
+Private Sub ApplyOptionalSITSColumns(ByVal tbl As ListObject, _
+                                     ByVal newRow As ListRow, _
+                                     ByVal optCols As Object, _
+                                     ByVal srcWs As Worksheet, _
+                                     ByVal rowIndex As Long)
+    Dim parsedDate As Variant
+    Dim colIndex As Long
+
+    If optCols Is Nothing Then Exit Sub
+
+    If optCols.Exists(OPT_INTERVAL_TYPE) Then
+        colIndex = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE)
+        If colIndex > 0 Then
+            newRow.Range.Cells(1, colIndex).Value = srcWs.Cells(rowIndex, optCols(OPT_INTERVAL_TYPE)).Value
+        End If
+    End If
+
+    If optCols.Exists(OPT_TASK_TYPE_CODE) Then
+        colIndex = GetTableColumnIndex(tbl, HDR_TASK_TYPE_CODE)
+        If colIndex > 0 Then
+            newRow.Range.Cells(1, colIndex).Value = srcWs.Cells(rowIndex, optCols(OPT_TASK_TYPE_CODE)).Value
+        End If
+    End If
+
+    If optCols.Exists(OPT_WARNING_INTERVAL) Then
+        colIndex = GetTableColumnIndex(tbl, HDR_WARNING_INTERVAL)
+        If colIndex > 0 Then
+            newRow.Range.Cells(1, colIndex).Value = srcWs.Cells(rowIndex, optCols(OPT_WARNING_INTERVAL)).Value
+        End If
+    End If
+
+    If optCols.Exists(OPT_PROJECTED_DUE) Then
+        colIndex = GetTableColumnIndex(tbl, HDR_PROJECTED_DUE_DATE)
+        If colIndex > 0 Then
+            parsedDate = ParseDMYDateValue( _
+                srcWs.Cells(rowIndex, optCols(OPT_PROJECTED_DUE)).Value, _
+                srcWs.Cells(rowIndex, optCols(OPT_PROJECTED_DUE)).Text)
+            If IsDate(parsedDate) Then
+                newRow.Range.Cells(1, colIndex).Value = CDate(parsedDate)
+                newRow.Range.Cells(1, colIndex).NumberFormat = FORMAT_DATE
+            End If
+        End If
+    End If
+End Sub
