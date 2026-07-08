@@ -15,7 +15,7 @@ Private Const OPT_WARNING_INTERVAL As String = "Warning Interval"
 
 Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
                                    Optional ByVal showDialogs As Boolean = True, _
-                                   Optional ByVal confirmOverwrite As Boolean = True) As Long
+                                   Optional ByVal askBeforeOverwrite As Boolean = True) As Long
     Const PROC_NAME As String = "ImportSITSFromFile"
 
     Dim failReason As String
@@ -104,7 +104,7 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
         Exit Function
     End If
 
-    If confirmOverwrite And showDialogs Then
+    If askBeforeOverwrite And showDialogs Then
         If Not tbl.DataBodyRange Is Nothing Then
             If Not ConfirmOverwrite("SITS task data") Then
                 srcWb.Close SaveChanges:=False
