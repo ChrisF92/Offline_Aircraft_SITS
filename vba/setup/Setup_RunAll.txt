@@ -3,7 +3,7 @@ Option Explicit
 
 ' ========================================================================
 ' ONE-TIME SETUP — Run complete Phase 0 skeleton build
-' Build marker: Phase0-setup-v3 (single-sheet safe)
+' Build marker: Phase0-setup-v4 (create visible, hide last)
 ' ========================================================================
 
 Private mSetupStep As String
@@ -66,33 +66,27 @@ ErrorHandler:
 End Sub
 
 Private Sub BuildSheetsSilent()
-    Dim ws As Worksheet
-
-    ' Typical new workbook: one blank sheet (e.g. Sheet1). Rename it — do not delete.
     If ThisWorkbook.Worksheets.Count = 1 Then
-        Set ws = ThisWorkbook.Worksheets(1)
-        ws.Cells.Clear
-        ws.Name = SHEET_DASHBOARD
-        ws.Visible = xlSheetVisible
-        ws.Tab.Color = COLOR_TAB_VISIBLE
+        ReuseSheetAs SHEET_DASHBOARD, COLOR_TAB_VISIBLE
     Else
         PrepareWorkbookForSetup
-        ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+        ReuseSheetAs SHEET_DASHBOARD, COLOR_TAB_VISIBLE
     End If
 
-    AddSetupSheet SHEET_SITS, xlSheetVisible, COLOR_TAB_VISIBLE
-    AddSetupSheet SHEET_USAGE, xlSheetVisible, COLOR_TAB_VISIBLE
-    AddSetupSheet SHEET_AUDIT, xlSheetVisible, COLOR_TAB_SYSTEM
-    AddSetupSheet SHEET_CONFIG, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_SITS, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_USAGE_BASELINE, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_USAGE_LOG, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_USAGE_CURRENT, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_WP, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_WP_TASKS, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_WP_STATE, xlSheetVeryHidden, COLOR_TAB_SYSTEM
+    AddSetupSheet SHEET_SITS
+    AddSetupSheet SHEET_USAGE
+    AddSetupSheet SHEET_AUDIT
+    AddSetupSheet SHEET_CONFIG
+    AddSetupSheet SHEET_DATA_SITS
+    AddSetupSheet SHEET_DATA_USAGE_BASELINE
+    AddSetupSheet SHEET_DATA_USAGE_LOG
+    AddSetupSheet SHEET_DATA_USAGE_CURRENT
+    AddSetupSheet SHEET_DATA_WP
+    AddSetupSheet SHEET_DATA_WP_TASKS
+    AddSetupSheet SHEET_WP_STATE
 
     OrderSheets
+    FinalizeSetupSheetLayout
 End Sub
 
 Private Sub OrderSheets()

@@ -110,11 +110,15 @@ Troubleshooting
      See module naming table in Step 2.
 
 "Delete method of Worksheet class failed" during setup
-  -> Ensure modUtility includes PrepareWorkbookForSetup (Phase0-setup-v3).
+  -> Ensure modUtility includes PrepareWorkbookForSetup (Phase0-setup-v4).
   -> Re-paste modUtility.txt and Setup_RunAll.txt, then Compile.
   -> Setup_RunAll must NOT contain: Do While Worksheets.Count > 0 ... Delete
   -> A brand-new workbook with only Sheet1 is supported (sheet is renamed,
      not deleted).
+
+"A workbook must contain at least one visible worksheet" during setup
+  -> Ensure modUtility includes FinalizeSetupSheetLayout (Phase0-setup-v4).
+  -> All sheets are created visible first; data sheets are hidden at the end.
 
 If setup fails, the error message shows which step failed (e.g. Building sheets).
   20260706-Long Forecast_ZZ382.xlsx   — SITS export sample

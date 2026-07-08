@@ -4,8 +4,6 @@ Option Explicit
 ' ========================================================================
 ' ONE-TIME SETUP — Create worksheets
 ' ========================================================================
-' Run from a new macro-enabled workbook after importing CONFIG and modUtility.
-' ========================================================================
 
 Public Sub Setup_CreateSheets()
     Dim response As VbMsgBoxResult
@@ -18,14 +16,15 @@ Public Sub Setup_CreateSheets()
     Application.DisplayAlerts = False
 
     If ThisWorkbook.Worksheets.Count = 1 Then
-        ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+        ReuseSheetAs SHEET_DASHBOARD, COLOR_TAB_VISIBLE
     Else
         PrepareWorkbookForSetup
-        ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+        ReuseSheetAs SHEET_DASHBOARD, COLOR_TAB_VISIBLE
     End If
 
     CreateAdditionalSheets
     OrderSheets
+    FinalizeSetupSheetLayout
 
     Application.DisplayAlerts = True
     SetExcelState "enable"
@@ -34,17 +33,17 @@ Public Sub Setup_CreateSheets()
 End Sub
 
 Private Sub CreateAdditionalSheets()
-    AddSetupSheet SHEET_SITS, xlSheetVisible, COLOR_TAB_VISIBLE
-    AddSetupSheet SHEET_USAGE, xlSheetVisible, COLOR_TAB_VISIBLE
-    AddSetupSheet SHEET_AUDIT, xlSheetVisible, COLOR_TAB_SYSTEM
-    AddSetupSheet SHEET_CONFIG, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_SITS, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_USAGE_BASELINE, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_USAGE_LOG, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_USAGE_CURRENT, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_WP, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_DATA_WP_TASKS, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSetupSheet SHEET_WP_STATE, xlSheetVeryHidden, COLOR_TAB_SYSTEM
+    AddSetupSheet SHEET_SITS
+    AddSetupSheet SHEET_USAGE
+    AddSetupSheet SHEET_AUDIT
+    AddSetupSheet SHEET_CONFIG
+    AddSetupSheet SHEET_DATA_SITS
+    AddSetupSheet SHEET_DATA_USAGE_BASELINE
+    AddSetupSheet SHEET_DATA_USAGE_LOG
+    AddSetupSheet SHEET_DATA_USAGE_CURRENT
+    AddSetupSheet SHEET_DATA_WP
+    AddSetupSheet SHEET_DATA_WP_TASKS
+    AddSetupSheet SHEET_WP_STATE
 End Sub
 
 Private Sub OrderSheets()

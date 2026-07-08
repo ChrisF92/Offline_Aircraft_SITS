@@ -211,33 +211,64 @@ Public Sub PrepareWorkbookForSetup()
 End Sub
 
 Public Sub ReuseSheetAs(ByVal sheetName As String, _
-                        ByVal visibility As XlSheetVisibility, _
-                        ByVal tabColor As Long)
+                        Optional ByVal tabColor As Long = -1)
     Dim ws As Worksheet
 
     Set ws = ThisWorkbook.Worksheets(1)
 
-    ' Only delete a duplicate namesake when other sheets exist.
     If ws.Name <> sheetName And SheetExists(sheetName) Then
         DeleteSheetIfExists sheetName
     End If
 
     ws.Name = sheetName
-    ws.Visible = visibility
-    ws.Tab.Color = tabColor
+    ws.Visible = xlSheetVisible
     ws.Cells.Clear
+
+    If tabColor >= 0 Then ws.Tab.Color = tabColor
 End Sub
 
-Public Sub AddSetupSheet(ByVal sheetName As String, _
-                         ByVal visibility As XlSheetVisibility, _
-                         ByVal tabColor As Long)
+Public Sub AddSetupSheet(ByVal sheetName As String)
     Dim ws As Worksheet
 
     DeleteSheetIfExists sheetName
     Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
     ws.Name = sheetName
-    ws.Visible = visibility
-    ws.Tab.Color = tabColor
+    ws.Visible = xlSheetVisible
+End Sub
+
+Public Sub FinalizeSetupSheetLayout()
+    ' Create all sheets visible first, then hide data sheets at the end.
+    ' Excel requires at least one visible worksheet while hiding others.
+
+    ThisWorkbook.Worksheets(SHEET_DASHBOARD).Tab.Color = COLOR_TAB_VISIBLE
+    ThisWorkbook.Worksheets(SHEET_SITS).Tab.Color = COLOR_TAB_VISIBLE
+    ThisWorkbook.Worksheets(SHEET_USAGE).Tab.Color = COLOR_TAB_VISIBLE
+    ThisWorkbook.Worksheets(SHEET_AUDIT).Tab.Color = COLOR_TAB_SYSTEM
+
+    ThisWorkbook.Worksheets(SHEET_CONFIG).Tab.Color = COLOR_TAB_DATA
+    ThisWorkbook.Worksheets(SHEET_DATA_SITS).Tab.Color = COLOR_TAB_DATA
+    ThisWorkbook.Worksheets(SHEET_DATA_USAGE_BASELINE).Tab.Color = COLOR_TAB_DATA
+    ThisWorkbook.Worksheets(SHEET_DATA_USAGE_LOG).Tab.Color = COLOR_TAB_DATA
+    ThisWorkbook.Worksheets(SHEET_DATA_USAGE_CURRENT).Tab.Color = COLOR_TAB_DATA
+    ThisWorkbook.Worksheets(SHEET_DATA_WP).Tab.Color = COLOR_TAB_DATA
+    ThisWorkbook.Worksheets(SHEET_DATA_WP_TASKS).Tab.Color = COLOR_TAB_DATA
+    ThisWorkbook.Worksheets(SHEET_WP_STATE).Tab.Color = COLOR_TAB_SYSTEM
+
+    ThisWorkbook.Worksheets(SHEET_DASHBOARD).Visible = xlSheetVisible
+    ThisWorkbook.Worksheets(SHEET_SITS).Visible = xlSheetVisible
+    ThisWorkbook.Worksheets(SHEET_USAGE).Visible = xlSheetVisible
+    ThisWorkbook.Worksheets(SHEET_AUDIT).Visible = xlSheetVisible
+
+    ThisWorkbook.Worksheets(SHEET_CONFIG).Visible = xlSheetVeryHidden
+    ThisWorkbook.Worksheets(SHEET_DATA_SITS).Visible = xlSheetVeryHidden
+    ThisWorkbook.Worksheets(SHEET_DATA_USAGE_BASELINE).Visible = xlSheetVeryHidden
+    ThisWorkbook.Worksheets(SHEET_DATA_USAGE_LOG).Visible = xlSheetVeryHidden
+    ThisWorkbook.Worksheets(SHEET_DATA_USAGE_CURRENT).Visible = xlSheetVeryHidden
+    ThisWorkbook.Worksheets(SHEET_DATA_WP).Visible = xlSheetVeryHidden
+    ThisWorkbook.Worksheets(SHEET_DATA_WP_TASKS).Visible = xlSheetVeryHidden
+    ThisWorkbook.Worksheets(SHEET_WP_STATE).Visible = xlSheetVeryHidden
+
+    ThisWorkbook.Worksheets(SHEET_DASHBOARD).Activate
 End Sub
 
 Public Sub ProtectSheetUI(ByVal ws As Worksheet, Optional ByVal password As String = "")
