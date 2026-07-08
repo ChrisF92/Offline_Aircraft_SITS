@@ -17,9 +17,9 @@ Public Sub Setup_CreateSheets()
     SetExcelState "disable"
     Application.DisplayAlerts = False
 
-    DeleteDefaultSheets
-    CreateVisibleSheets
-    CreateHiddenSheets
+    PrepareWorkbookForSetup
+    ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+    CreateAdditionalSheets
     OrderSheets
 
     Application.DisplayAlerts = True
@@ -28,41 +28,18 @@ Public Sub Setup_CreateSheets()
     MsgBox "Worksheets created successfully.", vbInformation, "Setup — Sheets"
 End Sub
 
-Private Sub DeleteDefaultSheets()
-    Dim ws As Worksheet
-
-    Do While ThisWorkbook.Worksheets.Count > 0
-        Set ws = ThisWorkbook.Worksheets(1)
-        ws.Delete
-    Loop
-End Sub
-
-Private Sub CreateVisibleSheets()
-    AddSheet SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
-    AddSheet SHEET_SITS, xlSheetVisible, COLOR_TAB_VISIBLE
-    AddSheet SHEET_USAGE, xlSheetVisible, COLOR_TAB_VISIBLE
-    AddSheet SHEET_AUDIT, xlSheetVisible, COLOR_TAB_SYSTEM
-End Sub
-
-Private Sub CreateHiddenSheets()
-    AddSheet SHEET_CONFIG, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_SITS, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_USAGE_BASELINE, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_USAGE_LOG, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_USAGE_CURRENT, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_WP, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_WP_TASKS, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_WP_STATE, xlSheetVeryHidden, COLOR_TAB_SYSTEM
-End Sub
-
-Private Sub AddSheet(ByVal sheetName As String, ByVal visibility As XlSheetVisibility, ByVal tabColor As Long)
-    Dim ws As Worksheet
-
-    DeleteSheetIfExists sheetName
-    Set ws = ThisWorkbook.Worksheets.Add
-    ws.Name = sheetName
-    ws.Visible = visibility
-    ws.Tab.Color = tabColor
+Private Sub CreateAdditionalSheets()
+    AddSetupSheet SHEET_SITS, xlSheetVisible, COLOR_TAB_VISIBLE
+    AddSetupSheet SHEET_USAGE, xlSheetVisible, COLOR_TAB_VISIBLE
+    AddSetupSheet SHEET_AUDIT, xlSheetVisible, COLOR_TAB_SYSTEM
+    AddSetupSheet SHEET_CONFIG, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_SITS, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_USAGE_BASELINE, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_USAGE_LOG, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_USAGE_CURRENT, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_WP, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_WP_TASKS, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_WP_STATE, xlSheetVeryHidden, COLOR_TAB_SYSTEM
 End Sub
 
 Private Sub OrderSheets()

@@ -191,6 +191,47 @@ Public Sub DeleteSheetIfExists(ByVal sheetName As String)
     End If
 End Sub
 
+' Excel requires at least one worksheet — delete extras, clear the last one.
+Public Sub PrepareWorkbookForSetup()
+    Application.DisplayAlerts = False
+
+    Do While ThisWorkbook.Worksheets.Count > 1
+        ThisWorkbook.Worksheets(1).Delete
+    Loop
+
+    With ThisWorkbook.Worksheets(1)
+        .Cells.Clear
+        .Visible = xlSheetVisible
+    End With
+
+    Application.DisplayAlerts = True
+End Sub
+
+Public Sub ReuseSheetAs(ByVal sheetName As String, _
+                        ByVal visibility As XlSheetVisibility, _
+                        ByVal tabColor As Long)
+    Dim ws As Worksheet
+
+    DeleteSheetIfExists sheetName
+    Set ws = ThisWorkbook.Worksheets(1)
+    ws.Name = sheetName
+    ws.Visible = visibility
+    ws.Tab.Color = tabColor
+    ws.Cells.Clear
+End Sub
+
+Public Sub AddSetupSheet(ByVal sheetName As String, _
+                         ByVal visibility As XlSheetVisibility, _
+                         ByVal tabColor As Long)
+    Dim ws As Worksheet
+
+    DeleteSheetIfExists sheetName
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+    ws.Name = sheetName
+    ws.Visible = visibility
+    ws.Tab.Color = tabColor
+End Sub
+
 Public Sub ProtectSheetUI(ByVal ws As Worksheet, Optional ByVal password As String = "")
     On Error Resume Next
     ws.Unprotect password

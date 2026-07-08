@@ -43,6 +43,7 @@ Public Sub Setup_RunAll()
     Exit Sub
 
 ErrorHandler:
+    Application.DisplayAlerts = True
     SetExcelState "enable"
     MsgBox "Setup failed: " & Err.Description, vbCritical, "Setup — Run All"
 End Sub
@@ -50,33 +51,26 @@ End Sub
 Private Sub BuildSheetsSilent()
     Application.DisplayAlerts = False
 
-    Do While ThisWorkbook.Worksheets.Count > 0
-        ThisWorkbook.Worksheets(1).Delete
-    Loop
-
-    AddSheet SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
-    AddSheet SHEET_SITS, xlSheetVisible, COLOR_TAB_VISIBLE
-    AddSheet SHEET_USAGE, xlSheetVisible, COLOR_TAB_VISIBLE
-    AddSheet SHEET_AUDIT, xlSheetVisible, COLOR_TAB_SYSTEM
-    AddSheet SHEET_CONFIG, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_SITS, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_USAGE_BASELINE, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_USAGE_LOG, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_USAGE_CURRENT, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_WP, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_DATA_WP_TASKS, xlSheetVeryHidden, COLOR_TAB_DATA
-    AddSheet SHEET_WP_STATE, xlSheetVeryHidden, COLOR_TAB_SYSTEM
+    PrepareWorkbookForSetup
+    ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+    AddSetupSheet SHEET_SITS, xlSheetVisible, COLOR_TAB_VISIBLE
+    AddSetupSheet SHEET_USAGE, xlSheetVisible, COLOR_TAB_VISIBLE
+    AddSetupSheet SHEET_AUDIT, xlSheetVisible, COLOR_TAB_SYSTEM
+    AddSetupSheet SHEET_CONFIG, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_SITS, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_USAGE_BASELINE, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_USAGE_LOG, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_USAGE_CURRENT, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_WP, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_DATA_WP_TASKS, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSetupSheet SHEET_WP_STATE, xlSheetVeryHidden, COLOR_TAB_SYSTEM
 
     OrderSheets
     Application.DisplayAlerts = True
 End Sub
 
 Private Sub AddSheet(ByVal sheetName As String, ByVal visibility As XlSheetVisibility, ByVal tabColor As Long)
-    Dim ws As Worksheet
-    Set ws = ThisWorkbook.Worksheets.Add
-    ws.Name = sheetName
-    ws.Visible = visibility
-    ws.Tab.Color = tabColor
+    AddSetupSheet sheetName, visibility, tabColor
 End Sub
 
 Private Sub OrderSheets()
