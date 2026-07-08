@@ -582,13 +582,8 @@ Public Function NormalizeUsageImportValue(ByVal rawVal As Variant, _
                 End If
             End If
             If IsNumeric(rawVal) Then
-                If CDbl(rawVal) >= 100# Then
-                    ' Decimal hours without colon (e.g. 2078.43) — convert to day fraction.
-                    NormalizeUsageImportValue = CDbl(rawVal) / 24#
-                Else
-                    ' Already a day fraction from an Excel time-formatted source cell.
-                    NormalizeUsageImportValue = CDbl(rawVal)
-                End If
+                ' Numeric without a colon is already an Excel day fraction (same as SITS import).
+                NormalizeUsageImportValue = CDbl(rawVal)
             Else
                 NormalizeUsageImportValue = rawVal
             End If
@@ -658,14 +653,15 @@ Public Function UsageValueAsDayFraction(ByVal value As Variant, _
 
     If IsNumeric(value) Then
         Select Case UCase$(Trim$(formatType))
-            Case FORMAT_TYPE_HOURS, FORMAT_TYPE_MINUTES
-                If CDbl(value) < 100# Then
-                    UsageValueAsDayFraction = CDbl(value)
-                ElseIf UCase$(Trim$(formatType)) = FORMAT_TYPE_HOURS Then
-                    UsageValueAsDayFraction = CDbl(value) / 24#
-                Else
+            Case FORMAT_TYPE_MINUTES
+                ' Seconds counters may still hold a raw second count before normalisation.
+                If CDbl(value) >= 1# Then
                     UsageValueAsDayFraction = CDbl(value) / 86400#
+                Else
+                    UsageValueAsDayFraction = CDbl(value)
                 End If
+            Case FORMAT_TYPE_HOURS
+                UsageValueAsDayFraction = CDbl(value)
             Case Else
                 UsageValueAsDayFraction = CDbl(value)
         End Select
@@ -678,44 +674,31 @@ Public Sub WriteUsageBaselineCell(ByVal target As Range, _
                                   ByVal value As Variant, _
                                   ByVal formatType As String, _
                                   Optional ByVal displayText As String = "")
-    Dim dayFraction As Double
-
-    dayFraction = UsageValueAsDayFraction(value, formatType, displayText)
-
-    Select Case UCase$(Trim$(formatType))
-        Case FORMAT_TYPE_HOURS
-            target.NumberFormat = FORMAT_TEXT
-            target.Value = FormatElapsedHoursFromDayFraction(dayFraction)
-        Case FORMAT_TYPE_MINUTES
-            target.NumberFormat = FORMAT_TEXT
-            target.Value = FormatElapsedMinutesFromDayFraction(dayFraction)
-        Case Else
-            target.NumberFormat = FORMAT_DECIMAL
-            target.Value = dayFraction
-    End Select
+    WriteFormattedUsageValue target, value, formatType, displayText
 End Sub
 
 Public Sub WriteUsageCurrentCell(ByVal target As Range, _
                                  ByVal value As Variant, _
                                  ByVal formatType As String, _
                                  Optional ByVal displayText As String = "")
-    Dim dayFraction As Double
-    Dim pattern As String
-
-    dayFraction = UsageValueAsDayFraction(value, formatType, displayText)
-    pattern = GetFormatPatternForType(formatType)
-
-    target.Value2 = dayFraction
-    target.NumberFormat = pattern
+    WriteFormattedUsageValue target, value, formatType, displayText
 End Sub
 
 Public Sub WriteFormattedUsageValue(ByVal target As Range, _
                                     ByVal value As Variant, _
-                                    ByVal formatType As String)
+                                    ByVal formatType As String, _
+                                    Optional ByVal displayText As String = "")
     Dim dayFraction As Double
     Dim pattern As String
+    Dim resolvedDisplay As String
 
-    dayFraction = UsageValueAsDayFraction(value, formatType, CStr(target.Text))
+    If Len(Trim$(displayText)) > 0 Then
+        resolvedDisplay = displayText
+    Else
+        resolvedDisplay = CStr(target.Text)
+    End If
+
+    dayFraction = UsageValueAsDayFraction(value, formatType, resolvedDisplay)
     pattern = GetFormatPatternForType(formatType)
 
     If StrComp(pattern, FORMAT_DECIMAL, vbTextCompare) = 0 Then
@@ -883,9 +866,19 @@ Public Sub FormatAllUsageDataTables()
             For Each row In tbl.ListRows
                 intervalCode = Trim$(CStr(row.Range.Cells(1, 1).Value))
                 taskCode = Trim$(CStr(row.Range.Cells(1, 2).Value))
-                formatType = ResolveUsageFormatType(intervalCode, taskCode)
-                WriteUsageCurrentCell row.Range.Cells(1, 3), row.Range.Cells(1, 3).Value, _
-                    formatType, CStr(row.Range.Cells(1, 3).Text)
+                formatType = LookupUsageFormatMetadata(intervalCode, taskCode, description)
+                If IsCorruptUsageStoredValue(row.Range.Cells(1, 3).Value, formatType) Then
+                    baselineValue = LookupUsageBaselineValue(intervalCode, taskCode)
+                    If Not IsEmpty(baselineValue) Then
+                        WriteUsageCurrentCell row.Range.Cells(1, 3), baselineValue, formatType
+                    Else
+                        WriteUsageCurrentCell row.Range.Cells(1, 3), row.Range.Cells(1, 3).Value, _
+                            formatType, CStr(row.Range.Cells(1, 3).Text)
+                    End If
+                Else
+                    WriteUsageCurrentCell row.Range.Cells(1, 3), row.Range.Cells(1, 3).Value, _
+                        formatType, CStr(row.Range.Cells(1, 3).Text)
+                End If
             Next row
         End If
     End If
@@ -897,12 +890,72 @@ Public Sub FormatAllUsageDataTables()
             For Each row In tbl.ListRows
                 intervalCode = Trim$(CStr(row.Range.Cells(1, 3).Value))
                 taskCode = Trim$(CStr(row.Range.Cells(1, 4).Value))
-                formatType = ResolveUsageFormatType(intervalCode, taskCode)
-                WriteFormattedUsageValue row.Range.Cells(1, 5), row.Range.Cells(1, 5).Value, formatType
+                formatType = LookupUsageFormatMetadata(intervalCode, taskCode, description)
+                WriteFormattedUsageValue row.Range.Cells(1, 5), row.Range.Cells(1, 5).Value, _
+                    formatType, CStr(row.Range.Cells(1, 5).Text)
             Next row
         End If
     End If
 End Sub
+
+Private Function LookupUsageFormatMetadata(ByVal intervalCode As String, _
+                                           ByVal taskCode As String, _
+                                           ByRef description As String) As String
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+
+    description = ""
+    LookupUsageFormatMetadata = ResolveUsageFormatType(intervalCode, taskCode)
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_BASELINE, showError:=False)
+    If ws Is Nothing Then Exit Function
+
+    Set tbl = GetTable(ws, TBL_USAGE_BASELINE, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), intervalCode, vbTextCompare) = 0 And _
+           StrComp(CStr(row.Range.Cells(1, 2).Value), taskCode, vbTextCompare) = 0 Then
+            description = Trim$(CStr(row.Range.Cells(1, 3).Value))
+            LookupUsageFormatMetadata = ResolveUsageFormatType(intervalCode, taskCode, _
+                CStr(row.Range.Cells(1, 5).Value), description)
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Function LookupUsageBaselineValue(ByVal intervalCode As String, _
+                                          ByVal taskCode As String) As Variant
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_BASELINE, showError:=False)
+    If ws Is Nothing Then Exit Function
+
+    Set tbl = GetTable(ws, TBL_USAGE_BASELINE, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), intervalCode, vbTextCompare) = 0 And _
+           StrComp(CStr(row.Range.Cells(1, 2).Value), taskCode, vbTextCompare) = 0 Then
+            LookupUsageBaselineValue = row.Range.Cells(1, 4).Value
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Function IsCorruptUsageStoredValue(ByVal value As Variant, _
+                                           ByVal formatType As String) As Boolean
+    If Not IsNumeric(value) Then Exit Function
+
+    Select Case UCase$(Trim$(formatType))
+        Case FORMAT_TYPE_MINUTES
+            ' Normalised second-count values are tiny day fractions; large numbers are corrupt.
+            IsCorruptUsageStoredValue = (CDbl(value) >= 1#)
+    End Select
+End Function
 
 Public Sub ApplyUsageTableFormats()
     FormatAllUsageDataTables

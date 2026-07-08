@@ -156,10 +156,10 @@ Serial numbers show as 1.11E+12 or lose leading zeros
   -> Re-import SITS/usage after updating modUtility, or run RepairWorkbookFormats.
   -> Serial columns are stored as text (@) using the source cell display text.
 
-Time values calculate incorrectly / show as 86.61
-  -> 86.61 is the internal day-fraction for 2078:43 — Baseline now stores
-     display text (2078:43) for hour counters after RepairWorkbookFormats.
+Time values calculate incorrectly / show as 86.61 or plain text
+  -> 86.61 is the internal day-fraction for 2078:43. Hour counters are stored
+     as day fractions with [h]:mm (same principle as SITS), not as text.
   -> Run RepairWorkbookFormats, or re-run setup wizard import with updated modules.
-  -> HH/E1/E2 Format column will show Hours; Baseline shows h:mm text.
+  -> HH/E1/E2 Format column will show Hours; Baseline and Usage show [h]:mm.
 
-Build marker: Phase2-usage-entry-v2
+Build marker: Phase2-usage-entry-v3

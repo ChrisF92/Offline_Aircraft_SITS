@@ -188,9 +188,7 @@ Public Sub RefreshUsageView()
             currentValue = GetCurrentUsageValue(intervalCode, taskCode)
 
             ws.Cells(outputRow, 1).Value = intervalCode
-            ws.Cells(outputRow, 2).Value = FormatUsageValueForDisplay( _
-                UsageValueAsDayFraction(currentValue, formatType), formatType)
-            ws.Cells(outputRow, 2).NumberFormat = FORMAT_TEXT
+            WriteFormattedUsageValue ws.Cells(outputRow, 2), currentValue, formatType
             ws.Cells(outputRow, 3).Value = formatType
 
             outputRow = outputRow + 1
