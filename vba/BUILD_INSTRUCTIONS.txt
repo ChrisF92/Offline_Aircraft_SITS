@@ -1,4 +1,4 @@
-Offline Aircraft SITS v2 — Build Instructions (Phase 1)
+Offline Aircraft SITS v2 — Build Instructions (Phase 2)
 =========================================================
 
 You build the .xlsm workbook locally from the .txt VBA sources in this folder.
@@ -39,6 +39,7 @@ Runtime modules:
   vba/modules/modImportSITS.txt         modImportSITS
   vba/modules/modImportUsage.txt        modImportUsage
   vba/modules/modSetupWizard.txt        modSetupWizard
+  vba/modules/modUsageLog.txt           modUsageLog
 
 Setup modules (one-time use):
 
@@ -58,73 +59,64 @@ ThisWorkbook code:
 
   vba/modules/ThisWorkbook.txt        -> Paste into ThisWorkbook object (not a module)
 
-Step 3 — Run Phase 0 setup
+Step 3 — Create the Log Sortie UserForm (Phase 2)
+-------------------------------------------------
+1. In the VBA editor: Insert > UserForm
+2. Set the form Name property to: frmLogSortie
+3. Add controls per vba/forms/LOG_SORTIE_FORM_LAYOUT.txt (names must match)
+4. Paste the code from vba/forms/frmLogSortie.txt into the form's code module
+   (omit any VERSION/Begin block if the IDE already generated form metadata)
+
+Step 4 — Run Phase 0 setup
 --------------------------
 Required before running setup (compile-time dependencies):
   CONFIG, modUtility, modValidation
 
 Import modAuditTrail before normal use (Workbook_Open / setup wizard logging).
-Setup_RunAll does not call LogAction — it writes the setup audit row directly.
 
-1. In the VBA editor, open the modSetupRunAll module.
-2. Place the cursor inside Setup_RunAll and press F5.
-3. Enter the aircraft tail number when prompted (e.g. ZZ383).
-4. When complete, run ValidateWorkbookStructure (modValidation) to confirm.
+1. Run Setup_RunAll (modSetupRunAll) or the individual Setup_* macros.
+2. Enter the aircraft tail number when prompted (e.g. ZZ383).
+3. Run ValidateWorkbookStructure to confirm structure.
 
-Alternatively, run each Setup_* macro individually in this order:
-  Setup_CreateSheets
-  Setup_CreateTables
-  Setup_CreateConfig
-  Setup_CreateNamedRanges
-  Setup_CreateDashboard
-
-Step 4 — Run Phase 1 setup wizard
+Step 5 — Run Phase 1 setup wizard
 ---------------------------------
-After Phase 0 modules are in place, import the Phase 1 modules listed above, then:
+1. Run macro RunSetupWizard (modSetupWizard).
+2. Import SITS Long Forecast, airframe usage, and engine usage exports.
+3. Confirm — populates tblSITS, tblUsageBaseline, tblUsageCurrent.
 
-1. Open the Dashboard sheet.
-2. Run macro RunSetupWizard (modSetupWizard).
-3. Follow the 5-step wizard:
-   - Confirm tail number
-   - Select SITS Long Forecast export
-   - Select airframe Item Usage export
-   - Select engine usage export
-   - Confirm and commit
+Step 6 — Log sorties (Phase 2)
+------------------------------
+1. Run macro RunLogSortie (or ShowLogSortieForm) from the Dashboard.
+2. Enter sortie date and optional sortie reference.
+3. Select a usage counter from the baseline list, enter increment, click Add.
+   - Hours counters (HH, E1, E2, etc.): enter h:mm (e.g. 1:30)
+   - Number counters (landings, starts, etc.): enter a positive number
+4. Add all increments for the sortie, then click Log sortie.
 
-The wizard imports SITS into tblSITS, merges airframe + engine usage into
-tblUsageBaseline, seeds tblUsageCurrent, and sets SetupComplete = True.
-
-Optional standalone imports (after setup or for re-import):
-  ImportSITSFromFile          — SITS Long Forecast only
-  ImportUsageAirframeFromFile — stage airframe usage (wizard preferred)
-  ImportUsageEngineFromFile   — stage engine usage (wizard preferred)
-  CommitUsageImport           — commit staged usage after both airframe + engine
+Each logged increment:
+  - Appends a row to tblUsageLog
+  - Updates tblUsageCurrent
+  - Refreshes the Usage sheet view
 
 Assign macros to Dashboard shapes/buttons:
-  RunSetupWizard, ImportSITSFromFile, ViewAuditLog
+  RunSetupWizard, RunLogSortie, ImportSITSFromFile, ViewAuditLog
 
-Step 5 — Save
+Step 7 — Save
 -------------
-Save the workbook. After Phase 1 setup:
+Save the workbook.
 
-  Visible sheets:  Dashboard, SITS, Usage, Audit Log
-  Hidden sheets:   _CONFIG, _DATA_SITS, _DATA_USAGE_*, _DATA_WP*, _WP_STATE
-  Tables:          tblSITS (populated), tblUsageBaseline (populated),
-                   tblUsageCurrent (seeded), tblUsageLog, tblWorkPackages,
-                   tblWPTasks, tblConfig, tblIntervalMap, tblAudit
-
-What Phase 1 includes
+What Phase 2 includes
 ---------------------
-- Setup Wizard (RunSetupWizard) — one-time SITS + usage baseline import
-- GOLDesp file browser imports with strict header validation
-- Tail / Top Serial / End Item Serial validation
-- Engine usage SM/SN requirement (WC/STARTS/ECU)
+- Log Sortie UserForm (frmLogSortie) — baseline-driven increment entry
+- tblUsageLog append on each sortie
+- tblUsageCurrent rolling totals
+- Usage sheet refresh (RefreshUsageView)
 
 What is NOT included yet
 ------------------------
-- Usage entry form (Phase 2)
 - SITS calculations and view (Phase 3)
 - Work packages, extensions, deferrals (Phases 4–5)
+- Sortie correction / reversal UI (CorrectedFrom column reserved)
 
 Import rules (strict — abort if any required column missing)
 ------------------------------------------------------------
@@ -147,33 +139,16 @@ Troubleshooting
 ---------------
 "Expected variable or procedure, not module"
   -> Setup module Name must be modSetupRunAll etc., not Setup_RunAll.
-     See module naming table in Step 2.
 
-"Delete method of Worksheet class failed" during setup
-  -> Ensure modUtility includes PrepareWorkbookForSetup (Phase0-setup-v4).
-  -> Re-paste modUtility.txt and Setup_RunAll.txt, then Compile.
-  -> Setup_RunAll must NOT contain: Do While Worksheets.Count > 0 ... Delete
-  -> A brand-new workbook with only Sheet1 is supported (sheet is renamed,
-     not deleted).
+"Variable not defined: frmLogSortie"
+  -> Create the UserForm in the IDE (Step 3). The form object must exist even
+     though the code is stored as a .txt file in the repo.
 
-"A workbook must contain at least one visible worksheet" during setup
-  -> Build marker Phase0-setup-v6: all sheets stay visible until the
-     "Finalizing sheet layout" step at the end of Setup_RunAll.
-  -> OrderSetupSheets skips moving a sheet before itself (error 1004).
-
-If setup fails, the error message shows which step failed (e.g. Building sheets).
+VBA name shadowing ("expects an array" on a function call)
+  -> Do not name parameters the same as functions (VBA is case-insensitive).
+     Example: use skipOverwritePrompt, not confirmOverwrite with ConfirmOverwrite.
 
 All worksheets stuck hidden
-  -> In VBA, open modUtility and run RepairSetupSheetVisibility (F5).
-  -> Data sheets use xlSheetHidden only, not xlSheetVeryHidden.
-  -> Then run Setup_RunAll again on a fresh workbook, or run
-     FinalizeSetupSheetLayout after repair.
+  -> Run RepairSetupSheetVisibility in modUtility, then FinalizeSetupSheetLayout.
 
-SITS import tail mismatch
-  -> End Item Serial in every task row must match the workbook tail number.
-
-Usage import missing SM/SN
-  -> Import the engine usage export, not airframe only.
-  -> Engine file must contain SM and SN rows (WC/STARTS/ECU).
-
-Build marker: Phase1-setup-wizard-v1
+Build marker: Phase2-usage-entry-v1
