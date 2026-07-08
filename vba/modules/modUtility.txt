@@ -608,6 +608,34 @@ Public Function FormatUsageValueForDisplay(ByVal value As Variant, _
     End Select
 End Function
 
+' Elapsed hours for display — avoids VBA Format$ limitations with [h]:mm above 24:00.
+Public Function FormatElapsedHoursFromDayFraction(ByVal dayFraction As Double) As String
+    Dim totalMinutes As Long
+    Dim hours As Long
+    Dim minutes As Long
+
+    totalMinutes = CLng(Round(dayFraction * 24# * 60#, 0))
+    If totalMinutes < 0 Then totalMinutes = 0
+
+    hours = totalMinutes \ 60
+    minutes = totalMinutes Mod 60
+    FormatElapsedHoursFromDayFraction = CStr(hours) & ":" & Format$(minutes, "00")
+End Function
+
+' Elapsed minutes:seconds for display — supports totals above 59:59.
+Public Function FormatElapsedMinutesFromDayFraction(ByVal dayFraction As Double) As String
+    Dim totalSeconds As Long
+    Dim minutes As Long
+    Dim seconds As Long
+
+    totalSeconds = CLng(Round(dayFraction * 86400#, 0))
+    If totalSeconds < 0 Then totalSeconds = 0
+
+    minutes = totalSeconds \ 60
+    seconds = totalSeconds Mod 60
+    FormatElapsedMinutesFromDayFraction = CStr(minutes) & ":" & Format$(seconds, "00")
+End Function
+
 Public Function ParseMinutesSecondsValue(ByVal rawVal As Variant, _
                                          Optional ByVal displayText As String = "") As Variant
     Dim s As String

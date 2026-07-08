@@ -128,8 +128,8 @@ Public Const NAMED_ACTIVE_WP As String = "Active_WP"
 Public Const NAMED_EXTENSION_SNOW As String = "Extension_SNOW"
 
 ' --- Formatting ---
-Public Const FORMAT_TIME_HOURS As String = "[h]:mm"
-Public Const FORMAT_TIME_MINUTES As String = "[m]:ss"
+Public Const FORMAT_TIME_HOURS As String = "[h]:mm"   ' Elapsed hours — supports 6565:00 etc.
+Public Const FORMAT_TIME_MINUTES As String = "[m]:ss" ' Elapsed minutes:seconds
 Public Const FORMAT_DATE As String = "dd/mm/yyyy"
 Public Const FORMAT_DATETIME As String = "dd/mm/yyyy hh:mm"
 Public Const FORMAT_DECIMAL As String = "0.00"
