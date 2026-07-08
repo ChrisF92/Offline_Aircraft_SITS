@@ -633,6 +633,22 @@ Public Function UsageValueAsDayFraction(ByVal value As Variant, _
                                         Optional ByVal displayText As String = "") As Double
     Dim parsed As Variant
 
+    ' Stored non-zero numerics take precedence — do not let a formatted "0:00" cell
+    ' text override a real day fraction (RefreshUsageView empty target cells).
+    If IsNumeric(value) And CDbl(value) <> 0# Then
+        Select Case UCase$(Trim$(formatType))
+            Case FORMAT_TYPE_MINUTES
+                If CDbl(value) >= 1# Then
+                    UsageValueAsDayFraction = CDbl(value) / 86400#
+                Else
+                    UsageValueAsDayFraction = CDbl(value)
+                End If
+            Case Else
+                UsageValueAsDayFraction = CDbl(value)
+        End Select
+        Exit Function
+    End If
+
     If Len(Trim$(displayText)) > 0 And InStr(displayText, ":") > 0 Then
         Select Case UCase$(Trim$(formatType))
             Case FORMAT_TYPE_MINUTES
@@ -662,14 +678,11 @@ Public Function UsageValueAsDayFraction(ByVal value As Variant, _
     If IsNumeric(value) Then
         Select Case UCase$(Trim$(formatType))
             Case FORMAT_TYPE_MINUTES
-                ' Seconds counters may still hold a raw second count before normalisation.
                 If CDbl(value) >= 1# Then
                     UsageValueAsDayFraction = CDbl(value) / 86400#
                 Else
                     UsageValueAsDayFraction = CDbl(value)
                 End If
-            Case FORMAT_TYPE_HOURS
-                UsageValueAsDayFraction = CDbl(value)
             Case Else
                 UsageValueAsDayFraction = CDbl(value)
         End Select
@@ -698,15 +711,8 @@ Public Sub WriteFormattedUsageValue(ByVal target As Range, _
                                     Optional ByVal displayText As String = "")
     Dim dayFraction As Double
     Dim pattern As String
-    Dim resolvedDisplay As String
 
-    If Len(Trim$(displayText)) > 0 Then
-        resolvedDisplay = displayText
-    Else
-        resolvedDisplay = CStr(target.Text)
-    End If
-
-    dayFraction = UsageValueAsDayFraction(value, formatType, resolvedDisplay)
+    dayFraction = UsageValueAsDayFraction(value, formatType, displayText)
     pattern = GetFormatPatternForType(formatType)
 
     If StrComp(pattern, FORMAT_DECIMAL, vbTextCompare) = 0 Then

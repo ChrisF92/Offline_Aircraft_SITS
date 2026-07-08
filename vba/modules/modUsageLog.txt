@@ -154,6 +154,7 @@ Public Sub RefreshUsageView()
 
     SetExcelState "disable"
     ws.Cells.Clear
+    ws.Range("A:C").NumberFormat = FORMAT_GENERAL
 
     With ws.Range("A1")
         .Value = "Usage — Current Totals"
