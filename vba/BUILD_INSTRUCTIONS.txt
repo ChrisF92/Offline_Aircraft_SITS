@@ -10,11 +10,19 @@ Prerequisites
   File > Options > Trust Center > Trust Center Settings > Macro Settings >
   check "Trust access to the VBA project object model"
 
+Overview — master template workflow
+-------------------------------------
+1. Build the **master template once** (Phase 0 setup — no aircraft tail).
+2. Save as `Wildcat_SITS_Master.xlsm` (or similar).
+3. For each aircraft: **File > Save As** a copy (e.g. `ZZ383_SITS_v2.xlsm`).
+4. On the aircraft copy, run **Setup Wizard** to declare the tail and import data.
+5. Use **Dashboard buttons** for day-to-day actions (log sorties, re-import SITS, etc.).
+
 Step 1 — Create a new workbook
 ------------------------------
 1. Open Excel and create a blank workbook.
 2. Save As > Excel Macro-Enabled Workbook (.xlsm)
-   Example: ZZ383_SITS_v2.xlsm
+   Example for master: Wildcat_SITS_Master.xlsm
 
 Step 2 — Import VBA modules (order recommended)
 -----------------------------------------------
@@ -67,26 +75,29 @@ Step 3 — Create the Log Sortie UserForm (Phase 2)
 4. Paste the code from vba/forms/frmLogSortie.txt into the form's code module
    (omit any VERSION/Begin block if the IDE already generated form metadata)
 
-Step 4 — Run Phase 0 setup
---------------------------
+Step 4 — Run Phase 0 setup (master template — once)
+---------------------------------------------------
 Required before running setup (compile-time dependencies):
   CONFIG, modUtility, modValidation
 
 Import modAuditTrail before normal use (Workbook_Open / setup wizard logging).
 
-1. Run Setup_RunAll (modSetupRunAll) or the individual Setup_* macros.
-2. Enter the aircraft tail number when prompted (e.g. ZZ383).
-3. Run ValidateWorkbookStructure to confirm structure.
+1. Run **Setup_RunAll** (Dashboard dev button or macro in modSetupRunAll).
+2. Do **not** enter a tail number — the master template is aircraft-neutral.
+3. Run **Validate Structure** on the Dashboard to confirm structure.
+4. Save as your master copy (e.g. Wildcat_SITS_Master.xlsm).
 
-Step 5 — Run Phase 1 setup wizard
----------------------------------
-1. Run macro RunSetupWizard (modSetupWizard).
-2. Import SITS Long Forecast, airframe usage, and engine usage exports.
-3. Confirm — populates tblSITS, tblUsageBaseline, tblUsageCurrent.
+Step 5 — Create an aircraft workbook
+------------------------------------
+1. Open the master template.
+2. File > Save As > `<TAIL>_SITS_v2.xlsm` (e.g. ZZ383_SITS_v2.xlsm).
+3. On the Dashboard, click **Setup Wizard**.
+4. Enter tail number and import SITS Long Forecast, airframe usage, and engine usage.
+5. Confirm — populates tblSITS, tblUsageBaseline, tblUsageCurrent.
 
 Step 6 — Log sorties (Phase 2)
 ------------------------------
-1. Run macro RunLogSortie (or ShowLogSortieForm) from the Dashboard.
+1. Click **Log Sortie** on the Dashboard (or macro RunLogSortie).
 2. Enter sortie date and optional sortie reference.
 3. Select a usage counter from the baseline list, enter increment, click Add.
 - Hours counters: enter h:mm (e.g. 1:30) — stored as [h]:mm
@@ -100,8 +111,13 @@ Each logged increment:
   - Updates tblUsageCurrent
   - Refreshes the Usage sheet view
 
-Assign macros to Dashboard shapes/buttons:
-  RunSetupWizard, RunLogSortie, ImportSITSFromFile, ViewAuditLog
+Dashboard buttons (created by Setup_RunAll / Rebuild Dashboard)
+---------------------------------------------------------------
+User Actions:
+  Setup Wizard, Log Sortie, Import SITS, Refresh Usage, View Audit Log
+
+Developer Tools:
+  Repair Formats, Repair Visibility, Validate Structure, Rebuild Dashboard, Phase 0 Setup
 
 Step 7 — Save
 -------------
@@ -113,6 +129,7 @@ What Phase 2 includes
 - tblUsageLog append on each sortie
 - tblUsageCurrent rolling totals
 - Usage sheet refresh (RefreshUsageView)
+- Master template workflow and Dashboard action buttons
 
 What is NOT included yet
 ------------------------
@@ -151,16 +168,19 @@ VBA name shadowing ("expects an array" on a function call)
      Example: use skipOverwritePrompt, not confirmOverwrite with ConfirmOverwrite.
 
 All worksheets stuck hidden
-  -> Run RepairSetupSheetVisibility in modUtility, then FinalizeSetupSheetLayout.
+  -> Click Repair Visibility on the Dashboard, or run RepairSetupSheetVisibility.
 
 Serial numbers show as 1.11E+12 or lose leading zeros
-  -> Re-import SITS/usage after updating modUtility, or run RepairWorkbookFormats.
+  -> Re-import SITS/usage after updating modUtility, or click Repair Formats.
   -> Serial columns are stored as text (@) using the source cell display text.
 
 Time values calculate incorrectly / show as 86.61 or plain text
   -> 86.61 is the internal day-fraction for 2078:43. Hour counters are stored
      as day fractions with [h]:mm (same principle as SITS), not as text.
-  -> Run RepairWorkbookFormats, or re-run setup wizard import with updated modules.
+  -> Click Repair Formats on the Dashboard, or re-run setup wizard import.
   -> HH/E1/E2 Format column will show Hours; Baseline and Usage show [h]:mm.
 
-Build marker: Phase2-usage-entry-v3
+Dashboard buttons missing after updating VBA
+  -> Click Rebuild Dashboard on the Dashboard (Developer Tools section).
+
+Build marker: Master-template-v1

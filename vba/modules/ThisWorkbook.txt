@@ -6,12 +6,17 @@ Private Sub Workbook_Open()
 
     If Not ValidateWorkbookStructure() Then
         MsgBox "Workbook structure validation found issues." & vbCrLf & vbCrLf & _
-               "Run Setup_RunAll if this is a new workbook, or re-import the VBA modules.", _
+               "Run Setup_RunAll if this is a new master template, or use Rebuild Dashboard / " & _
+               "Validate Structure on the Dashboard.", _
                vbExclamation, APP_NAME
+    ElseIf IsMasterTemplate() Then
+        MsgBox "Welcome to " & APP_NAME & " v" & APP_VERSION & " — master template." & vbCrLf & vbCrLf & _
+               "Save a copy for each aircraft (e.g. ZZ383_SITS_v2.xlsm), then run " & _
+               "Setup Wizard on the copy.", vbInformation, APP_NAME
     ElseIf Not IsSetupComplete() Then
         MsgBox "Welcome to " & APP_NAME & " v" & APP_VERSION & "." & vbCrLf & vbCrLf & _
                "This aircraft workbook has not been set up yet." & vbCrLf & _
-               "Run the Setup Wizard (macro RunSetupWizard on the Dashboard).", _
+               "Click Setup Wizard on the Dashboard to import SITS and usage.", _
                vbInformation, APP_NAME
     End If
 

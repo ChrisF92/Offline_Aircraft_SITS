@@ -2,22 +2,19 @@ Attribute VB_Name = "modSetupConfig"
 Option Explicit
 
 ' ========================================================================
-' ONE-TIME SETUP — Seed configuration defaults
+' ONE-TIME SETUP — Seed configuration defaults (master template)
 ' ========================================================================
 
 Public Sub Setup_CreateConfig(Optional ByVal silent As Boolean = False, _
                             Optional ByVal tailNumber As String = "")
-    If Len(Trim$(tailNumber)) = 0 Then
-        tailNumber = InputBox("Enter aircraft tail number (e.g. ZZ383):", "Aircraft Tail", "ZZ383")
-        If Len(Trim$(tailNumber)) = 0 Then Exit Sub
-    End If
-
     If Not silent Then
-        If MsgBox("Seed default configuration values?", vbQuestion + vbYesNo, "Setup — Config") <> vbYes Then Exit Sub
+        If MsgBox("Seed default configuration values for the master template?", _
+                  vbQuestion + vbYesNo, "Setup — Config") <> vbYes Then Exit Sub
     End If
 
     SetExcelState "disable"
 
+    SetConfigValue CFG_MASTER_TEMPLATE, True
     SetConfigValue CFG_TAIL_NUMBER, UCase$(Trim$(tailNumber))
     SetConfigValue CFG_SETUP_COMPLETE, False
     SetConfigValue CFG_SETUP_DATE, ""
@@ -33,7 +30,7 @@ Public Sub Setup_CreateConfig(Optional ByVal silent As Boolean = False, _
 
     SetExcelState "enable"
     If Not silent Then
-        MsgBox "Configuration seeded for tail " & UCase$(Trim$(tailNumber)) & ".", vbInformation, "Setup — Config"
+        MsgBox "Master template configuration seeded.", vbInformation, "Setup — Config"
     End If
 End Sub
 
@@ -46,8 +43,7 @@ Private Sub SeedIntervalMapDefaults()
 
     ClearTableData tbl
 
-    ' SM/SN are imported directly when Interval Type = SM/SN in engine export.
-    ' Mapping rows below are fallback documentation for WC/STARTS/ECU if needed.
+    ' Wildcat engine start mapping — update serials per tail if exports differ.
     AddIntervalMapRow tbl, "WC/STARTS/ECU", "P4N155", TYPE_SM, "Engine 1 starts"
     AddIntervalMapRow tbl, "WC/STARTS/ECU", "P4N175", TYPE_SN, "Engine 2 starts"
 End Sub
@@ -79,8 +75,8 @@ Private Sub WriteConfigNotes()
 
     Set ws = GetWorksheet(SHEET_CONFIG)
     ws.Range("I1").Value = "Notes"
-    ws.Range("I2").Value = "Wildcat-only workbook. One tail per file."
-    ws.Range("I3").Value = "SM/SN required — imported from engine usage export."
+    ws.Range("I2").Value = "Master template: run Setup_RunAll once, save, then copy per tail."
+    ws.Range("I3").Value = "Run Setup Wizard on each aircraft copy to declare tail and import data."
     ws.Range("I4").Value = "SITS import: strict required columns; abort if any missing."
     ws.Range("I5").Value = "ORN pattern: ####ZZ#########"
 End Sub

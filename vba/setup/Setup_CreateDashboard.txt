@@ -2,22 +2,33 @@ Attribute VB_Name = "modSetupDashboard"
 Option Explicit
 
 ' ========================================================================
-' ONE-TIME SETUP — Dashboard layout
+' ONE-TIME SETUP — Dashboard layout and action buttons
 ' ========================================================================
+
+Private Const BTN_WIDTH As Double = 150
+Private Const BTN_HEIGHT As Double = 24
+Private Const BTN_COL_GAP As Double = 10
 
 Public Sub Setup_CreateDashboard(Optional ByVal silent As Boolean = False)
     If Not silent Then
-        If MsgBox("Format the Dashboard sheet?", vbQuestion + vbYesNo, "Setup — Dashboard") <> vbYes Then Exit Sub
+        If MsgBox("Format the Dashboard sheet and create action buttons?", _
+                  vbQuestion + vbYesNo, "Setup — Dashboard") <> vbYes Then Exit Sub
     End If
 
-    Dim ws As Worksheet
-    Set ws = GetWorksheet(SHEET_DASHBOARD)
+    RefreshDashboardLayout
+    If Not silent Then MsgBox "Dashboard formatted.", vbInformation, "Setup — Dashboard"
+End Sub
 
+Public Sub RefreshDashboardLayout()
+    Dim ws As Worksheet
+
+    Set ws = GetWorksheet(SHEET_DASHBOARD)
     SetExcelState "disable"
+    RemoveDashboardButtons ws
     ws.Cells.Clear
     ws.Columns("A").ColumnWidth = 2
     ws.Columns("B").ColumnWidth = 24
-    ws.Columns("C").ColumnWidth = 18
+    ws.Columns("C").ColumnWidth = 24
     ws.Columns("D").ColumnWidth = 40
 
     With ws.Range("B2")
@@ -29,40 +40,91 @@ Public Sub Setup_CreateDashboard(Optional ByVal silent As Boolean = False)
 
     ws.Range("B3").Value = "Version " & APP_VERSION & "  |  " & AIRCRAFT_TYPE
     ws.Range("B3").Font.Color = RGB(89, 89, 89)
+    WriteWorkbookStatusLine ws
 
     WriteSectionHeader ws, "B5", "Aircraft Status"
-    WriteLabelValue ws, "B6", "Tail Number:", "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_TAIL_NUMBER & """,tblConfig[Setting],0)),"""" )"
-    WriteLabelValue ws, "B7", "Setup Complete:", "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_SETUP_COMPLETE & """,tblConfig[Setting],0)),FALSE)"
+    WriteLabelValue ws, "B6", "Tail Number:", _
+        "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_TAIL_NUMBER & """,tblConfig[Setting],0)),"""" )"
+    WriteLabelValue ws, "B7", "Setup Complete:", _
+        "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_SETUP_COMPLETE & """,tblConfig[Setting],0)),FALSE)"
     WriteLabel ws, "B8", "Active WP (ORN):"
     ws.Range("C8").Value = ""
     ws.Range("C8").Interior.Color = COLOR_INPUT_HIGHLIGHT
 
     WriteSectionHeader ws, "B10", "Extensions"
     WriteLabel ws, "B11", "Extension SNOW:"
-    ws.Range("C10").Interior.Color = COLOR_INPUT_HIGHLIGHT
-    ws.Range("C10").Value = ""
+    ws.Range("C11").Interior.Color = COLOR_INPUT_HIGHLIGHT
+    ws.Range("C11").Value = ""
 
-    WriteSectionHeader ws, "B13", "Actions"
-    ws.Range("B14").Value = "• Setup Wizard — assign macro RunSetupWizard"
-    ws.Range("B15").Value = "• Re-import SITS — assign macro ImportSITSFromFile"
-    ws.Range("B16").Value = "• Log Sortie — assign macro RunLogSortie"
-    ws.Range("B17").Value = "• Work Packages — not yet available (Phase 4)"
-    ws.Range("B18").Value = "• Extensions / Deferrals — not yet available (Phase 5)"
-    ws.Range("B19").Value = "• View Audit Log — assign macro ViewAuditLog"
-    ws.Range("B20").Value = "• Repair formats — assign macro RepairWorkbookFormats"
+    WriteSectionHeader ws, "B13", "User Actions"
+    AddDashboardButton ws, "B14", "Setup Wizard", "RunSetupWizard"
+    AddDashboardButton ws, "C14", "Log Sortie", "RunLogSortie"
+    AddDashboardButton ws, "B15", "Import SITS", "RunImportSITSFromFile"
+    AddDashboardButton ws, "C15", "Refresh Usage", "RefreshUsageView"
+    AddDashboardButton ws, "B16", "View Audit Log", "ViewAuditLog"
 
-    WriteSectionHeader ws, "B22", "Import Requirements"
-    ws.Range("B23").Value = "SITS Long Forecast: 9 required columns (strict — abort if any missing)."
-    ws.Range("B24").Value = "Usage exports: Interval Type, Task Code, Life Used, Top Serial."
-    ws.Range("B25").Value = "Engine usage must include SM and SN (WC/STARTS/ECU)."
+    WriteSectionHeader ws, "B18", "Developer Tools"
+    ws.Range("B19").Value = "Rebuild macros after pasting updated VBA modules."
+    ws.Range("B19").Font.Italic = True
+    ws.Range("B19").Font.Size = 9
+    ws.Range("B19").Font.Color = RGB(89, 89, 89)
 
-    ws.Range("B27").Value = "Phase 2 — log sorties with RunLogSortie after setup wizard completes."
-    ws.Range("B27").Font.Italic = True
+    AddDashboardButton ws, "B20", "Repair Formats", "RepairWorkbookFormats"
+    AddDashboardButton ws, "C20", "Repair Visibility", "RepairSetupSheetVisibility"
+    AddDashboardButton ws, "B21", "Validate Structure", "RunValidateWorkbookStructure"
+    AddDashboardButton ws, "C21", "Rebuild Dashboard", "RefreshDashboardLayout"
+    AddDashboardButton ws, "B22", "Phase 0 Setup", "Setup_RunAll"
+
+    WriteSectionHeader ws, "B24", "Import Requirements"
+    ws.Range("B25").Value = "SITS Long Forecast: 9 required columns (strict — abort if any missing)."
+    ws.Range("B26").Value = "Usage exports: Interval Type, Task Code, Life Used, Top Serial."
+    ws.Range("B27").Value = "Engine usage must include SM and SN (WC/STARTS/ECU)."
 
     ws.Activate
     ws.Range("B2").Select
     SetExcelState "enable"
-    If Not silent Then MsgBox "Dashboard formatted.", vbInformation, "Setup — Dashboard"
+End Sub
+
+Private Sub WriteWorkbookStatusLine(ByVal ws As Worksheet)
+    With ws.Range("B4")
+        If IsMasterTemplate() Then
+            .Value = "MASTER TEMPLATE — save a copy for each aircraft, then run Setup Wizard on the copy."
+            .Font.Color = RGB(192, 0, 0)
+            .Font.Bold = True
+        ElseIf IsSetupComplete() Then
+            .Value = "Aircraft workbook — setup complete."
+            .Font.Color = RGB(0, 112, 60)
+        Else
+            .Value = "Aircraft workbook — run Setup Wizard to import data for this tail."
+            .Font.Color = RGB(192, 96, 0)
+        End If
+        .Font.Size = 10
+    End With
+End Sub
+
+Private Sub AddDashboardButton(ByVal ws As Worksheet, ByVal anchorCell As String, _
+                               ByVal caption As String, ByVal macroName As String)
+    Dim anchor As Range
+    Dim btn As Shape
+
+    Set anchor = ws.Range(anchorCell)
+    Set btn = ws.Shapes.AddFormControl(xlButtonControl, anchor.Left, anchor.Top, _
+                                       BTN_WIDTH, BTN_HEIGHT)
+    btn.Name = "btnDash" & macroName
+    btn.OnAction = macroName
+    btn.TextFrame.Characters.Text = caption
+End Sub
+
+Private Sub RemoveDashboardButtons(ByVal ws As Worksheet)
+    Dim shp As Shape
+
+    On Error Resume Next
+    For Each shp In ws.Shapes
+        If shp.Type = msoFormControl Then
+            shp.Delete
+        End If
+    Next shp
+    On Error GoTo 0
 End Sub
 
 Private Sub WriteSectionHeader(ByVal ws As Worksheet, ByVal cellAddress As String, ByVal title As String)
@@ -79,7 +141,8 @@ Private Sub WriteLabel(ByVal ws As Worksheet, ByVal labelCell As String, ByVal c
     ws.Range(labelCell).Font.Bold = True
 End Sub
 
-Private Sub WriteLabelValue(ByVal ws As Worksheet, ByVal labelCell As String, ByVal caption As String, ByVal formulaText As String)
+Private Sub WriteLabelValue(ByVal ws As Worksheet, ByVal labelCell As String, _
+                            ByVal caption As String, ByVal formulaText As String)
     WriteLabel ws, labelCell, caption
     ws.Range("C" & Mid$(labelCell, 2)).Formula = formulaText
 End Sub

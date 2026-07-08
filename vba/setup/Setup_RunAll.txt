@@ -2,26 +2,24 @@ Attribute VB_Name = "modSetupRunAll"
 Option Explicit
 
 ' ========================================================================
-' ONE-TIME SETUP — Run complete Phase 0 skeleton build
-' Build marker: Phase0-setup-v7 (no xlSheetVeryHidden; repair macro)
+' ONE-TIME SETUP — Build master workbook skeleton (no aircraft data)
+' Build marker: Master-template-v1
 ' ========================================================================
 
 Private mSetupStep As String
 
 Public Sub Setup_RunAll()
     Dim response As VbMsgBoxResult
-    Dim tail As String
 
-    response = MsgBox("This will build the complete " & APP_NAME & " v" & APP_VERSION & _
-                      " Phase 0 skeleton." & vbCrLf & vbCrLf & _
-                      "Existing sheets and data in this workbook will be removed." & vbCrLf & vbCrLf & _
+    response = MsgBox("This builds the " & APP_NAME & " v" & APP_VERSION & _
+                      " master template skeleton." & vbCrLf & vbCrLf & _
+                      "Run this once on a blank workbook, then save as your master copy." & vbCrLf & _
+                      "For each aircraft: Save As a new file, then run Setup Wizard." & vbCrLf & vbCrLf & _
+                      "WARNING: Existing sheets and data in this workbook will be removed." & vbCrLf & vbCrLf & _
                       "Save a backup first. Continue?", _
                       vbExclamation + vbYesNo, "Setup — Run All")
 
     If response <> vbYes Then Exit Sub
-
-    tail = InputBox("Enter aircraft tail number (e.g. ZZ383):", "Aircraft Tail", "ZZ383")
-    If Len(Trim$(tail)) = 0 Then Exit Sub
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
@@ -34,7 +32,7 @@ Public Sub Setup_RunAll()
     Setup_CreateTables True
 
     mSetupStep = "Seeding configuration"
-    Setup_CreateConfig True, tail
+    Setup_CreateConfig True
 
     mSetupStep = "Creating named ranges"
     Setup_CreateNamedRanges True
@@ -50,13 +48,13 @@ Public Sub Setup_RunAll()
 
     mSetupStep = "Validating workbook"
     If ValidateWorkbookStructure() Then
-        MsgBox "Phase 0 setup completed successfully." & vbCrLf & vbCrLf & _
+        MsgBox "Master template setup completed successfully." & vbCrLf & vbCrLf & _
                "Next steps:" & vbCrLf & _
-               "1. Import Phase 1 modules (see BUILD_INSTRUCTIONS.txt)" & vbCrLf & _
-               "2. Run RunSetupWizard to import SITS and usage" & vbCrLf & _
-               "3. Save this workbook as " & UCase$(Trim$(tail)) & "_SITS_v2.xlsm", _
+               "1. Save this workbook as your master copy (e.g. Wildcat_SITS_Master.xlsm)" & vbCrLf & _
+               "2. For each aircraft: File > Save As > <TAIL>_SITS_v2.xlsm" & vbCrLf & _
+               "3. On the aircraft copy, run Setup Wizard from the Dashboard", _
                vbInformation, "Setup Complete"
-        WritePhase0AuditEntry UCase$(Trim$(tail))
+        WriteMasterTemplateAuditEntry
     End If
 
     Exit Sub
@@ -92,7 +90,7 @@ Private Sub BuildSheetsSilent()
     OrderSetupSheets
 End Sub
 
-Private Sub WritePhase0AuditEntry(ByVal tail As String)
+Private Sub WriteMasterTemplateAuditEntry()
     On Error Resume Next
 
     Dim ws As Worksheet
@@ -110,9 +108,9 @@ Private Sub WritePhase0AuditEntry(ByVal tail As String)
     Set row = tbl.ListRows.Add
     row.Range.Cells(1, 1).Value = Now
     row.Range.Cells(1, 2).Value = userName
-    row.Range.Cells(1, 3).Value = "SETUP_PHASE0"
+    row.Range.Cells(1, 3).Value = "SETUP_MASTER"
     row.Range.Cells(1, 4).Value = ""
-    row.Range.Cells(1, 5).Value = "Phase 0 skeleton created for " & tail
+    row.Range.Cells(1, 5).Value = "Master template skeleton created"
     row.Range.Cells(1, 6).Value = APP_VERSION
 
     On Error GoTo 0

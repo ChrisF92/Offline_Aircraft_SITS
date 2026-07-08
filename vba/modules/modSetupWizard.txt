@@ -23,6 +23,16 @@ Public Sub RunSetupWizard()
 
     If Not ValidateWorkbookStructure() Then Exit Sub
 
+    If IsMasterTemplate() Then
+        If MsgBox("This file is marked as the master template." & vbCrLf & vbCrLf & _
+                  "Best practice: File > Save As a new workbook named for the aircraft tail," & _
+                  " then run Setup Wizard on that copy." & vbCrLf & vbCrLf & _
+                  "Continue setup on THIS workbook anyway?", _
+                  vbQuestion + vbYesNo + vbDefaultButton2, "Setup Wizard") <> vbYes Then
+            Exit Sub
+        End If
+    End If
+
     If IsSetupComplete() Then
         If MsgBox("This workbook has already been set up." & vbCrLf & vbCrLf & _
                   "Re-running the wizard will replace SITS and usage baseline data." & vbCrLf & _
@@ -105,6 +115,7 @@ Public Sub RunSetupWizard()
     SetConfigValue CFG_SETUP_COMPLETE, True
     SetConfigValue CFG_SETUP_DATE, Now
     SetConfigValue CFG_SETUP_BY, userName
+    SetConfigValue CFG_MASTER_TEMPLATE, False
 
     ResetUsageImportSession
     LogSetupComplete tailNumber, sitsCount, usageCount
@@ -154,12 +165,5 @@ Private Sub UpdateDashboardTailDisplay(ByVal tailNumber As String)
 End Sub
 
 Private Sub RefreshDashboardAfterSetup()
-    Dim ws As Worksheet
-
-    Set ws = GetWorksheet(SHEET_DASHBOARD, showError:=False)
-    If ws Is Nothing Then Exit Sub
-
-    ws.Range("B14").Value = "• Setup Wizard — RunSetupWizard (completed)"
-    ws.Calculate
-    ws.Activate
+    RefreshDashboardLayout
 End Sub

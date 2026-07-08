@@ -131,3 +131,9 @@ Private Function JoinCollectionText(ByVal items As Collection) As String
 
     JoinCollectionText = result
 End Function
+
+Public Sub RunValidateWorkbookStructure()
+    If ValidateWorkbookStructure() Then
+        MsgBox "Workbook structure validation passed.", vbInformation, APP_NAME
+    End If
+End Sub

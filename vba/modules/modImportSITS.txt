@@ -13,6 +13,10 @@ Private Const OPT_INTERVAL_TYPE As String = "Interval Type"
 Private Const OPT_TASK_TYPE_CODE As String = "Task Type Code"
 Private Const OPT_WARNING_INTERVAL As String = "Warning Interval"
 
+Public Sub RunImportSITSFromFile()
+    ImportSITSFromFile
+End Sub
+
 Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
                                    Optional ByVal showDialogs As Boolean = True, _
                                    Optional ByVal skipOverwritePrompt As Boolean = False) As Long

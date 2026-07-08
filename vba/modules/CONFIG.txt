@@ -108,6 +108,7 @@ Public Const CFG_EXT_STANDARD_PCT As String = "ExtStandardPct"
 Public Const CFG_EXT_EXTENDED_PCT As String = "ExtExtendedPct"
 Public Const CFG_WARN_HOURS As String = "WarnHoursRemaining"
 Public Const CFG_WARN_DAYS As String = "WarnDaysRemaining"
+Public Const CFG_MASTER_TEMPLATE As String = "MasterTemplate"
 
 ' --- Interval type codes ---
 Public Const TYPE_HH As String = "HH"
@@ -263,4 +264,8 @@ End Function
 
 Public Function IsSetupComplete() As Boolean
     IsSetupComplete = CBool(GetConfigValue(CFG_SETUP_COMPLETE, False))
+End Function
+
+Public Function IsMasterTemplate() As Boolean
+    IsMasterTemplate = CBool(GetConfigValue(CFG_MASTER_TEMPLATE, False))
 End Function
