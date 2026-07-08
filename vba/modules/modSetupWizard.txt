@@ -18,6 +18,7 @@ Public Sub RunSetupWizard()
     Dim usageCount As Long
     Dim summary As String
     Dim userName As String
+    Dim failReason As String
 
     On Error GoTo ErrorHandler
 
@@ -103,9 +104,11 @@ Public Sub RunSetupWizard()
         Exit Sub
     End If
 
-    If Not CommitUsageImport(False) Then
+    If Not CommitUsageImport(False, failReason) Then
         ResetUsageImportSession
-        MsgBox "Setup cancelled — usage validation or commit failed.", vbExclamation, "Setup Wizard"
+        If Len(failReason) = 0 Then failReason = "Usage validation or commit failed."
+        MsgBox "Setup cancelled — usage validation or commit failed." & vbCrLf & vbCrLf & _
+               failReason, vbExclamation, "Setup Wizard"
         Exit Sub
     End If
 

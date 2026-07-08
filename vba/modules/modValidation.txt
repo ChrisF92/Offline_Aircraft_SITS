@@ -5,9 +5,12 @@ Option Explicit
 ' VALIDATION MODULE — Offline Aircraft SITS v2
 ' ========================================================================
 
-Public Function ValidateWorkbookStructure() As Boolean
+Public Function ValidateWorkbookStructure(Optional ByVal showDialogs As Boolean = True, _
+                                          Optional ByRef failReason As String = "") As Boolean
     Dim issues As Collection
     Set issues = New Collection
+
+    failReason = ""
 
     ValidateRequiredSheets issues
     ValidateRequiredTables issues
@@ -17,8 +20,11 @@ Public Function ValidateWorkbookStructure() As Boolean
         ValidateWorkbookStructure = True
     Else
         ValidateWorkbookStructure = False
-        MsgBox "Workbook validation found " & issues.Count & " issue(s):" & vbCrLf & vbCrLf & _
-               JoinCollectionText(issues), vbExclamation, APP_NAME
+        failReason = "Workbook validation found " & issues.Count & " issue(s):" & vbCrLf & vbCrLf & _
+                     JoinCollectionText(issues)
+        If showDialogs Then
+            MsgBox failReason, vbExclamation, APP_NAME
+        End If
     End If
 End Function
 

@@ -16,6 +16,7 @@ Private Type UsageImportRow
     FormatType As String
     SourceName As String
     SerialValue As String
+    ComponentSerial As String
 End Type
 
 Private mUsageRows As Object
@@ -148,10 +149,12 @@ NextRow:
     srcWb.Close SaveChanges:=False
     SetExcelState "enable"
 
-    If StrComp(sourceName, "Airframe", vbTextCompare) = 0 Then
-        mAirframeImported = True
-    ElseIf StrComp(sourceName, "Engine", vbTextCompare) = 0 Then
-        mEngineImported = True
+    If importedRows > 0 Then
+        If StrComp(sourceName, "Airframe", vbTextCompare) = 0 Then
+            mAirframeImported = True
+        ElseIf StrComp(sourceName, "Engine", vbTextCompare) = 0 Then
+            mEngineImported = True
+        End If
     End If
 
     LogAction "USAGE_STAGED", "", sourceName & ": " & importedRows & " row(s) from " & filePath
@@ -175,8 +178,8 @@ ErrorHandler:
     End If
 End Function
 
-Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) As Boolean
-    Dim failReason As String
+Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, _
+                                  Optional ByRef failReason As String = "") As Boolean
     Dim wsBaseline As Worksheet
     Dim wsCurrent As Worksheet
     Dim tblBaseline As ListObject
@@ -188,8 +191,9 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) 
     Dim resolvedFormat As String
 
     CommitUsageImport = False
+    failReason = ""
 
-    If Not ValidateWorkbookStructure() Then Exit Function
+    If Not ValidateWorkbookStructure(showDialogs, failReason) Then Exit Function
     If mUsageRows Is Nothing Or mUsageRows.Count = 0 Then
         failReason = "No usage rows are staged. Import airframe and engine usage first."
         If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
@@ -214,10 +218,33 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) 
         Exit Function
     End If
 
-    Set wsBaseline = GetWorksheet(SHEET_DATA_USAGE_BASELINE)
-    Set wsCurrent = GetWorksheet(SHEET_DATA_USAGE_CURRENT)
-    Set tblBaseline = GetTable(wsBaseline, TBL_USAGE_BASELINE)
-    Set tblCurrent = GetTable(wsCurrent, TBL_USAGE_CURRENT)
+    Set wsBaseline = GetWorksheet(SHEET_DATA_USAGE_BASELINE, showError:=showDialogs)
+    If wsBaseline Is Nothing Then
+        failReason = "Usage baseline sheet '" & SHEET_DATA_USAGE_BASELINE & "' was not found."
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    Set wsCurrent = GetWorksheet(SHEET_DATA_USAGE_CURRENT, showError:=showDialogs)
+    If wsCurrent Is Nothing Then
+        failReason = "Usage current sheet '" & SHEET_DATA_USAGE_CURRENT & "' was not found."
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    Set tblBaseline = GetTable(wsBaseline, TBL_USAGE_BASELINE, showError:=showDialogs)
+    If tblBaseline Is Nothing Then
+        failReason = "Table '" & TBL_USAGE_BASELINE & "' was not found."
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    Set tblCurrent = GetTable(wsCurrent, TBL_USAGE_CURRENT, showError:=showDialogs)
+    If tblCurrent Is Nothing Then
+        failReason = "Table '" & TBL_USAGE_CURRENT & "' was not found."
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
@@ -253,10 +280,13 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) 
 
     SetExcelState "enable"
     CommitUsageImport = True
-
-    ApplyUsageTableFormats
     LogAction "USAGE_IMPORTED", "", "Committed " & rowCount & " merged usage row(s)"
+
+    On Error Resume Next
+    ApplyUsageTableFormats
     RefreshUsageView
+    On Error GoTo 0
+
     If showDialogs Then
         MsgBox "Committed " & rowCount & " usage baseline row(s).", vbInformation, APP_NAME
     End If
@@ -264,9 +294,10 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) 
 
 ErrorHandler:
     SetExcelState "enable"
+    failReason = "Usage commit error: " & Err.Number & " - " & Err.Description
     LogError "CommitUsageImport", Err.Number, Err.Description
     If showDialogs Then
-        MsgBox "Usage commit error: " & Err.Number & " - " & Err.Description, vbCritical, APP_NAME
+        MsgBox failReason, vbCritical, APP_NAME
     End If
 End Function
 
@@ -314,6 +345,7 @@ Private Sub ApplyIntervalMapToUsageRows(ByVal usageRows As Object, _
     Dim sourceTask As String
     Dim sourceSerial As String
     Dim targetInterval As String
+    Dim componentSerial As String
 
     Set ws = GetWorksheet(SHEET_CONFIG, showError:=False)
     If ws Is Nothing Then Exit Sub
@@ -330,7 +362,9 @@ Private Sub ApplyIntervalMapToUsageRows(ByVal usageRows As Object, _
         For Each mergeKey In usageRows.Keys
             rowData = usageRows(mergeKey)
             If StrComp(CStr(rowData(1)), sourceTask, vbTextCompare) = 0 Then
+                componentSerial = UsageRowComponentSerial(rowData)
                 If Len(sourceSerial) = 0 Or _
+                   StrComp(componentSerial, sourceSerial, vbTextCompare) = 0 Or _
                    StrComp(CStr(rowData(6)), sourceSerial, vbTextCompare) = 0 Then
                     foundCodes(targetInterval) = True
                 End If
@@ -375,7 +409,27 @@ Private Function BuildUsageImportRow(ByVal srcWs As Worksheet, _
         .SerialValue = NormalizeSerialText( _
             srcWs.Cells(rowIndex, colMap("Top Serial")).Value, _
             srcWs.Cells(rowIndex, colMap("Top Serial")).Text)
+        .ComponentSerial = LookupOptionalComponentSerial(srcWs, rowIndex, headerRow)
     End With
+End Function
+
+Private Function LookupOptionalComponentSerial(ByVal srcWs As Worksheet, _
+                                               ByVal rowIndex As Long, _
+                                               ByVal headerRow As Long) As String
+    Dim colIndex As Long
+
+    colIndex = FindHeaderColumn(srcWs, headerRow, "Serial")
+    If colIndex > 0 Then
+        LookupOptionalComponentSerial = NormalizeSerialText( _
+            srcWs.Cells(rowIndex, colIndex).Value, _
+            srcWs.Cells(rowIndex, colIndex).Text)
+    End If
+End Function
+
+Private Function UsageRowComponentSerial(ByVal rowData As Variant) As String
+    If UBound(rowData) >= 7 Then
+        UsageRowComponentSerial = Trim$(CStr(rowData(7)))
+    End If
 End Function
 
 Private Function LookupOptionalDescription(ByVal srcWs As Worksheet, _
@@ -398,7 +452,8 @@ Private Function UsageRowToArray(ByRef usageRow As UsageImportRow) As Variant
         usageRow.BaselineValue, _
         usageRow.FormatType, _
         usageRow.SourceName, _
-        usageRow.SerialValue _
+        usageRow.SerialValue, _
+        usageRow.ComponentSerial _
     )
 End Function
 
