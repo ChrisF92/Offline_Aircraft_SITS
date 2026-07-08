@@ -108,6 +108,7 @@ Public Sub RunSetupWizard()
 
     ResetUsageImportSession
     LogSetupComplete tailNumber, sitsCount, usageCount
+    RefreshUsageView
     RefreshDashboardAfterSetup
 
     MsgBox "Setup complete for " & tailNumber & "." & vbCrLf & vbCrLf & _

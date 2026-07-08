@@ -45,7 +45,7 @@ Public Sub Setup_CreateDashboard(Optional ByVal silent As Boolean = False)
     WriteSectionHeader ws, "B13", "Actions"
     ws.Range("B14").Value = "• Setup Wizard — assign macro RunSetupWizard"
     ws.Range("B15").Value = "• Re-import SITS — assign macro ImportSITSFromFile"
-    ws.Range("B16").Value = "• Log Sortie — not yet available (Phase 2)"
+    ws.Range("B16").Value = "• Log Sortie — assign macro RunLogSortie"
     ws.Range("B17").Value = "• Work Packages — not yet available (Phase 4)"
     ws.Range("B18").Value = "• Extensions / Deferrals — not yet available (Phase 5)"
     ws.Range("B19").Value = "• View Audit Log — assign macro ViewAuditLog"
@@ -55,7 +55,7 @@ Public Sub Setup_CreateDashboard(Optional ByVal silent As Boolean = False)
     ws.Range("B23").Value = "Usage exports: Interval Type, Task Code, Life Used, Top Serial."
     ws.Range("B24").Value = "Engine usage must include SM and SN (WC/STARTS/ECU)."
 
-    ws.Range("B26").Value = "Phase 1 — run RunSetupWizard after Phase 0 setup to import SITS and usage."
+    ws.Range("B26").Value = "Phase 2 — log sorties with RunLogSortie after setup wizard completes."
     ws.Range("B26").Font.Italic = True
 
     ws.Activate

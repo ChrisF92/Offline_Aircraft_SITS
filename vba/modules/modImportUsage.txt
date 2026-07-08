@@ -252,6 +252,7 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) 
     CommitUsageImport = True
 
     LogAction "USAGE_IMPORTED", "", "Committed " & rowCount & " merged usage row(s)"
+    RefreshUsageView
     If showDialogs Then
         MsgBox "Committed " & rowCount & " usage baseline row(s).", vbInformation, APP_NAME
     End If

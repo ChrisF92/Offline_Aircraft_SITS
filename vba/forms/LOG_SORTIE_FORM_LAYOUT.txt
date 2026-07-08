@@ -1,0 +1,43 @@
+Log Sortie UserForm — Control Layout (frmLogSortie)
+====================================================
+
+Create a UserForm in the VBA IDE named exactly: frmLogSortie
+Set the form Caption to: Log Sortie
+
+Then add these controls (Name property must match exactly):
+
+Control Name      Type           Caption / Notes
+----------------  -------------  ------------------------------------------
+lblDate           Label          Sortie date:
+txtSortieDate     TextBox        Default set in code (dd/mm/yyyy)
+lblRef            Label          Sortie ref:
+txtSortieRef      TextBox        Optional sortie reference
+lblCounters       Label          Usage counters (select row, enter increment below):
+lstCounters       ListBox        Width ~420, Height ~180, MultiSelect fmMultiSelectSingle
+lblSelected       Label          (blank — selection hint set in code)
+lblIncrement      Label          Increment:
+txtIncrement      TextBox        h:mm for Hours counters, number otherwise
+cmdAdd            CommandButton  Add to sortie
+lblPending        Label          Pending increments:
+lstPending        ListBox        Width ~420, Height ~80
+cmdRemove         CommandButton  Remove selected
+cmdSubmit         CommandButton  Log sortie        (Default = True)
+cmdCancel         CommandButton  Cancel
+
+Suggested positions (approximate):
+  Row 1: lblDate [10,10]  txtSortieDate [90,8]  lblRef [220,10]  txtSortieRef [290,8]
+  Row 2: lblCounters [10,40]
+  Row 3: lstCounters [10,58] size 420x180
+  Row 4: lblSelected [10,245]
+  Row 5: lblIncrement [10,268]  txtIncrement [90,266]  cmdAdd [200,264]
+  Row 6: lblPending [10,300]
+  Row 7: lstPending [10,318] size 420x80
+  Row 8: cmdRemove [10,408]  cmdSubmit [250,408]  cmdCancel [340,408]
+
+After creating controls, open the form's code window and paste the contents of:
+  vba/forms/frmLogSortie.txt
+(delete the VERSION/Begin block at the top if the IDE already generated it —
+ keep only the Attribute lines onward if needed, or paste the full code module
+ over the default empty form code)
+
+Dashboard macro: assign ShowLogSortieForm or RunLogSortie to a button.

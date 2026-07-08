@@ -218,7 +218,7 @@ Private Sub FormatUsageView()
         .Font.Color = COLOR_HEADER_BLUE
     End With
 
-    ws.Range("A3").Value = "Current usage summaries will appear here after setup (Phase 2)."
+    ws.Range("A3").Value = "Run RefreshUsageView after setup, or log a sortie to refresh this sheet."
 End Sub
 
 Private Sub FormatDashboardShell()
