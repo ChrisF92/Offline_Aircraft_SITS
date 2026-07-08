@@ -37,7 +37,7 @@ Public Sub Setup_RunAll()
                "1. Save this workbook as " & UCase$(Trim$(tail)) & "_SITS_v2.xlsm" & vbCrLf & _
                "2. Phase 1 will add the Setup Wizard and import macros", _
                vbInformation, "Setup Complete"
-        LogAction "SETUP_PHASE0", "", "Phase 0 skeleton created for " & UCase$(Trim$(tail))
+        WritePhase0AuditEntry UCase$(Trim$(tail))
     End If
 
     Exit Sub
@@ -93,4 +93,31 @@ Private Sub OrderSheets()
     For i = LBound(order) To UBound(order)
         ThisWorkbook.Worksheets(CStr(order(i))).Move Before:=ThisWorkbook.Worksheets(i + 1)
     Next i
+End Sub
+
+Private Sub WritePhase0AuditEntry(ByVal tail As String)
+    ' Writes directly to tblAudit so setup does not depend on modAuditTrail.
+    On Error Resume Next
+
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim userName As String
+
+    Set ws = ThisWorkbook.Worksheets(SHEET_AUDIT)
+    Set tbl = ws.ListObjects("tblAudit")
+    If ws Is Nothing Or tbl Is Nothing Then Exit Sub
+
+    userName = Environ$("USERNAME")
+    If Len(userName) = 0 Then userName = "Unknown"
+
+    Set row = tbl.ListRows.Add
+    row.Range.Cells(1, 1).Value = Now
+    row.Range.Cells(1, 2).Value = userName
+    row.Range.Cells(1, 3).Value = "SETUP_PHASE0"
+    row.Range.Cells(1, 4).Value = ""
+    row.Range.Cells(1, 5).Value = "Phase 0 skeleton created for " & tail
+    row.Range.Cells(1, 6).Value = APP_VERSION
+
+    On Error GoTo 0
 End Sub

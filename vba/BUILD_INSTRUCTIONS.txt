@@ -57,7 +57,13 @@ ThisWorkbook code:
 
 Step 3 — Run Phase 0 setup
 --------------------------
-1. In the VBA editor, open the Setup_RunAll module.
+Required before running setup (compile-time dependencies):
+  CONFIG, modUtility, modValidation
+
+Import modAuditTrail before normal use (Workbook_Open / future phases).
+Setup_RunAll does not call LogAction — it writes the setup audit row directly.
+
+1. In the VBA editor, open the modSetupRunAll module.
 2. Place the cursor inside Setup_RunAll and press F5.
 3. Enter the aircraft tail number when prompted (e.g. ZZ383).
 4. When complete, run ValidateWorkbookStructure (modValidation) to confirm.
