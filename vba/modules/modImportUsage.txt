@@ -365,7 +365,7 @@ Private Function BuildUsageImportRow(ByVal srcWs As Worksheet, _
 
         lifeUsed = srcWs.Cells(rowIndex, colMap("Life Used")).Value
         displayText = srcWs.Cells(rowIndex, colMap("Life Used")).Text
-        .FormatType = DetectUsageFormat(lifeUsed, .IntervalCode, .TaskCode, .Description)
+        .FormatType = DetectUsageFormat(lifeUsed, .IntervalCode, .TaskCode, .Description, displayText)
         .BaselineValue = NormalizeUsageImportValue(lifeUsed, .FormatType, displayText)
         .SerialValue = NormalizeSerialText( _
             srcWs.Cells(rowIndex, colMap("Top Serial")).Value, _
