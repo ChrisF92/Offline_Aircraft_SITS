@@ -17,8 +17,13 @@ Public Sub Setup_CreateSheets()
     SetExcelState "disable"
     Application.DisplayAlerts = False
 
-    PrepareWorkbookForSetup
-    ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+    If ThisWorkbook.Worksheets.Count = 1 Then
+        ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+    Else
+        PrepareWorkbookForSetup
+        ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+    End If
+
     CreateAdditionalSheets
     OrderSheets
 

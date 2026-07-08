@@ -103,8 +103,20 @@ Usage exports (airframe + engine) — ALL required:
 
 Engine usage must include SM and SN after import (WC/STARTS/ECU).
 
-Sample files in the repository
-------------------------------
+Troubleshooting
+---------------
+"Expected variable or procedure, not module"
+  -> Setup module Name must be modSetupRunAll etc., not Setup_RunAll.
+     See module naming table in Step 2.
+
+"Delete method of Worksheet class failed" during setup
+  -> Ensure modUtility includes PrepareWorkbookForSetup (Phase0-setup-v3).
+  -> Re-paste modUtility.txt and Setup_RunAll.txt, then Compile.
+  -> Setup_RunAll must NOT contain: Do While Worksheets.Count > 0 ... Delete
+  -> A brand-new workbook with only Sheet1 is supported (sheet is renamed,
+     not deleted).
+
+If setup fails, the error message shows which step failed (e.g. Building sheets).
   20260706-Long Forecast_ZZ382.xlsx   — SITS export sample
   ZZ383 Item Usage.xlsx               — Airframe usage sample
   ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)

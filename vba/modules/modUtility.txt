@@ -180,6 +180,9 @@ End Function
 Public Sub DeleteSheetIfExists(ByVal sheetName As String)
     Dim ws As Worksheet
 
+    ' Excel requires at least one worksheet — never delete the last sheet.
+    If ThisWorkbook.Worksheets.Count <= 1 Then Exit Sub
+
     On Error Resume Next
     Set ws = ThisWorkbook.Worksheets(sheetName)
     On Error GoTo 0
@@ -212,8 +215,13 @@ Public Sub ReuseSheetAs(ByVal sheetName As String, _
                         ByVal tabColor As Long)
     Dim ws As Worksheet
 
-    DeleteSheetIfExists sheetName
     Set ws = ThisWorkbook.Worksheets(1)
+
+    ' Only delete a duplicate namesake when other sheets exist.
+    If ws.Name <> sheetName And SheetExists(sheetName) Then
+        DeleteSheetIfExists sheetName
+    End If
+
     ws.Name = sheetName
     ws.Visible = visibility
     ws.Tab.Color = tabColor

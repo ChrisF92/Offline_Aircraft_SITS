@@ -3,7 +3,10 @@ Option Explicit
 
 ' ========================================================================
 ' ONE-TIME SETUP — Run complete Phase 0 skeleton build
+' Build marker: Phase0-setup-v3 (single-sheet safe)
 ' ========================================================================
+
+Private mSetupStep As String
 
 Public Sub Setup_RunAll()
     Dim response As VbMsgBoxResult
@@ -22,15 +25,27 @@ Public Sub Setup_RunAll()
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
+    Application.DisplayAlerts = False
 
+    mSetupStep = "Building sheets"
     BuildSheetsSilent
+
+    mSetupStep = "Creating tables"
     Setup_CreateTables True
+
+    mSetupStep = "Seeding configuration"
     Setup_CreateConfig True, tail
+
+    mSetupStep = "Creating named ranges"
     Setup_CreateNamedRanges True
+
+    mSetupStep = "Formatting dashboard"
     Setup_CreateDashboard True
 
+    Application.DisplayAlerts = True
     SetExcelState "enable"
 
+    mSetupStep = "Validating workbook"
     If ValidateWorkbookStructure() Then
         MsgBox "Phase 0 setup completed successfully." & vbCrLf & vbCrLf & _
                "Next steps:" & vbCrLf & _
@@ -45,14 +60,26 @@ Public Sub Setup_RunAll()
 ErrorHandler:
     Application.DisplayAlerts = True
     SetExcelState "enable"
-    MsgBox "Setup failed: " & Err.Description, vbCritical, "Setup — Run All"
+    MsgBox "Setup failed during: " & mSetupStep & vbCrLf & vbCrLf & _
+           "Error " & Err.Number & ": " & Err.Description, _
+           vbCritical, "Setup — Run All"
 End Sub
 
 Private Sub BuildSheetsSilent()
-    Application.DisplayAlerts = False
+    Dim ws As Worksheet
 
-    PrepareWorkbookForSetup
-    ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+    ' Typical new workbook: one blank sheet (e.g. Sheet1). Rename it — do not delete.
+    If ThisWorkbook.Worksheets.Count = 1 Then
+        Set ws = ThisWorkbook.Worksheets(1)
+        ws.Cells.Clear
+        ws.Name = SHEET_DASHBOARD
+        ws.Visible = xlSheetVisible
+        ws.Tab.Color = COLOR_TAB_VISIBLE
+    Else
+        PrepareWorkbookForSetup
+        ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+    End If
+
     AddSetupSheet SHEET_SITS, xlSheetVisible, COLOR_TAB_VISIBLE
     AddSetupSheet SHEET_USAGE, xlSheetVisible, COLOR_TAB_VISIBLE
     AddSetupSheet SHEET_AUDIT, xlSheetVisible, COLOR_TAB_SYSTEM
@@ -66,11 +93,6 @@ Private Sub BuildSheetsSilent()
     AddSetupSheet SHEET_WP_STATE, xlSheetVeryHidden, COLOR_TAB_SYSTEM
 
     OrderSheets
-    Application.DisplayAlerts = True
-End Sub
-
-Private Sub AddSheet(ByVal sheetName As String, ByVal visibility As XlSheetVisibility, ByVal tabColor As Long)
-    AddSetupSheet sheetName, visibility, tabColor
 End Sub
 
 Private Sub OrderSheets()
@@ -90,7 +112,6 @@ Private Sub OrderSheets()
 End Sub
 
 Private Sub WritePhase0AuditEntry(ByVal tail As String)
-    ' Writes directly to tblAudit so setup does not depend on modAuditTrail.
     On Error Resume Next
 
     Dim ws As Worksheet
