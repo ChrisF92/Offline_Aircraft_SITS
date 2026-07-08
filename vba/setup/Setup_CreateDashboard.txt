@@ -57,6 +57,7 @@ Public Sub RefreshDashboardLayout()
     ws.Range("C11").Value = ""
 
     WriteSectionHeader ws, "B13", "User Actions"
+    PrepareButtonRows ws
     AddDashboardButton ws, "B14", "Setup Wizard", "RunSetupWizard"
     AddDashboardButton ws, "C14", "Log Sortie", "RunLogSortie"
     AddDashboardButton ws, "B15", "Import SITS", "RunImportSITSFromFile"
@@ -105,20 +106,28 @@ End Sub
 Private Sub AddDashboardButton(ByVal ws As Worksheet, ByVal anchorCell As String, _
                                ByVal caption As String, ByVal macroName As String)
     Dim anchor As Range
-    Dim btn As Shape
+    Dim btn As Button
 
     Set anchor = ws.Range(anchorCell)
-    Set btn = ws.Shapes.AddFormControl(xlButtonControl, anchor.Left, anchor.Top, _
-                                       BTN_WIDTH, BTN_HEIGHT)
-    btn.Name = "btnDash" & macroName
+    Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, BTN_WIDTH, BTN_HEIGHT)
     btn.OnAction = macroName
-    btn.TextFrame.Characters.Text = caption
+    btn.Caption = caption
+    btn.Placement = xlFreeFloating
+End Sub
+
+Private Sub PrepareButtonRows(ByVal ws As Worksheet)
+    ws.Rows("14:16").RowHeight = 22
+    ws.Rows("20:22").RowHeight = 22
 End Sub
 
 Private Sub RemoveDashboardButtons(ByVal ws As Worksheet)
+    Dim btn As Button
     Dim shp As Shape
 
     On Error Resume Next
+    For Each btn In ws.Buttons
+        btn.Delete
+    Next btn
     For Each shp In ws.Shapes
         If shp.Type = msoFormControl Then
             shp.Delete
