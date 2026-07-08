@@ -141,6 +141,7 @@ Public Sub RefreshUsageView()
     Dim outputRow As Long
     Dim intervalCode As String
     Dim taskCode As String
+    Dim description As String
     Dim currentValue As Variant
     Dim formatType As String
 
