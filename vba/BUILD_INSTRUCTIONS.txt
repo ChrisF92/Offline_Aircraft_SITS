@@ -90,7 +90,8 @@ Step 6 — Log sorties (Phase 2)
 2. Enter sortie date and optional sortie reference.
 3. Select a usage counter from the baseline list, enter increment, click Add.
 - Hours counters: enter h:mm (e.g. 1:30) — stored as [h]:mm
-- Minutes counters (e.g. 1E OEI seconds): enter m:ss — stored as [m]:ss
+- OEI second totals (1E/1G/2E/2G): enter decimal seconds (e.g. 3.38) — stored as Number
+- Other m:ss elapsed counters: enter m:ss — stored as [m]:ss
 - Number counters: enter a positive number
 4. Add all increments for the sortie, then click Log sortie.
 
