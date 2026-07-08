@@ -1,0 +1,710 @@
+Option Explicit
+
+' ========================================================================
+' SITS MODULE — Offline Aircraft SITS v2 (Phase 3)
+' ========================================================================
+' Baseline life remaining from GOLDesp import; usage deltas applied after
+' sorties. Calendar DD tasks use imported due dates. View sheet with forecast
+' filter and warning highlighting.
+' ========================================================================
+
+Private Const SITS_VIEW_HEADER_ROW As Long = 7
+Private Const SITS_FORECAST_HOURS_CELL As String = "B3"
+Private Const SITS_FORECAST_DAYS_CELL As String = "B4"
+
+Public Sub RunRefreshSITS()
+    RefreshSITS
+End Sub
+
+Public Sub RefreshSITS()
+    If Not ValidateWorkbookStructure(showError:=False) Then Exit Sub
+    SaveForecastSettingsFromView
+    RecalculateSITS
+    RefreshSITSView
+End Sub
+
+Public Sub RecalculateSITS()
+    Dim wsData As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim intervalCode As String
+    Dim taskCode As String
+    Dim formatType As String
+    Dim currentUsage As Variant
+    Dim snapshotUsage As Variant
+    Dim usageDelta As Double
+    Dim baselineHours As Variant
+    Dim baselineNumber As Variant
+    Dim baselineDue As Variant
+    Dim newLifeHours As Double
+    Dim newLifeNumber As Double
+    Dim colInterval As Long
+    Dim colTaskCode As Long
+    Dim colCurHours As Long
+    Dim colCurNumber As Long
+    Dim colLRHours As Long
+    Dim colLRNumber As Long
+    Dim colDaysDue As Long
+    Dim colBaseHours As Long
+    Dim colBaseNumber As Long
+    Dim colBaseDue As Long
+
+    Set wsData = GetWorksheet(SHEET_DATA_SITS, showError:=False)
+    If wsData Is Nothing Then Exit Sub
+
+    Set tbl = GetTable(wsData, TBL_SITS, showError:=False)
+    If tbl Is Nothing Then Exit Sub
+
+    EnsureSITSBaselineColumns tbl
+
+    colInterval = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)
+    colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
+    colCurHours = GetTableColumnIndex(tbl, HDR_CURRENT_USAGE_HOURS)
+    colCurNumber = GetTableColumnIndex(tbl, HDR_CURRENT_USAGE_NUMBER)
+    colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+    colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+    colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
+    colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
+    colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
+
+    If tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    SetExcelState "disable"
+
+    For Each row In tbl.ListRows
+        intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, colInterval).Value)))
+        taskCode = Trim$(CStr(row.Range.Cells(1, colTaskCode).Value))
+
+        If intervalCode = TYPE_DD Then
+            ApplyDDTaskRecalc row, colCurHours, colCurNumber, colLRHours, colLRNumber, _
+                colDaysDue, colBaseDue
+        ElseIf IsHourUsageInterval(intervalCode) Or _
+               (IsHourBasedIntervalType(intervalCode) And Not IsSecondsCountInterval(intervalCode)) Then
+            formatType = FORMAT_TYPE_HOURS
+            currentUsage = LookupUsageValueByInterval(intervalCode, formatType)
+            snapshotUsage = LookupSnapshotValueByInterval(intervalCode, formatType)
+
+            WriteCurrentUsageHours row.Range.Cells(1, colCurHours), currentUsage, formatType
+            row.Range.Cells(1, colCurNumber).ClearContents
+
+            baselineHours = row.Range.Cells(1, colBaseHours).Value
+            If IsEmptyBaselineValue(baselineHours) Then
+                baselineHours = row.Range.Cells(1, colLRHours).Value
+                If Not IsEmptyBaselineValue(baselineHours) Then
+                    WriteFormattedUsageValue row.Range.Cells(1, colBaseHours), baselineHours, formatType
+                End If
+            End If
+
+            If Not IsEmptyBaselineValue(baselineHours) And Not IsMissingUsageValue(currentUsage) And _
+               Not IsMissingUsageValue(snapshotUsage) Then
+                usageDelta = UsageValueAsDayFraction(currentUsage, formatType) - _
+                             UsageValueAsDayFraction(snapshotUsage, formatType)
+                newLifeHours = UsageValueAsDayFraction(baselineHours, formatType) - usageDelta
+                If newLifeHours < 0# Then newLifeHours = 0#
+                WriteFormattedUsageValue row.Range.Cells(1, colLRHours), newLifeHours, formatType
+            End If
+
+            row.Range.Cells(1, colDaysDue).ClearContents
+        Else
+            formatType = ResolveUsageFormatType(intervalCode, taskCode)
+            currentUsage = LookupUsageValueByInterval(intervalCode, formatType)
+            snapshotUsage = LookupSnapshotValueByInterval(intervalCode, formatType)
+
+            row.Range.Cells(1, colCurHours).ClearContents
+            WriteCurrentUsageNumber row.Range.Cells(1, colCurNumber), currentUsage, formatType
+
+            baselineNumber = row.Range.Cells(1, colBaseNumber).Value
+            If IsEmptyBaselineValue(baselineNumber) Then
+                baselineNumber = row.Range.Cells(1, colLRNumber).Value
+                If Not IsEmptyBaselineValue(baselineNumber) Then
+                    row.Range.Cells(1, colBaseNumber).Value = CDbl(baselineNumber)
+                    row.Range.Cells(1, colBaseNumber).NumberFormat = FORMAT_DECIMAL
+                End If
+            End If
+
+            If Not IsEmptyBaselineValue(baselineNumber) And Not IsMissingUsageValue(currentUsage) And _
+               Not IsMissingUsageValue(snapshotUsage) Then
+                usageDelta = CDbl(NzSITSNumber(currentUsage)) - CDbl(NzSITSNumber(snapshotUsage))
+                newLifeNumber = CDbl(NzSITSNumber(baselineNumber)) - usageDelta
+                If newLifeNumber < 0# Then newLifeNumber = 0#
+                row.Range.Cells(1, colLRNumber).Value = newLifeNumber
+                row.Range.Cells(1, colLRNumber).NumberFormat = FORMAT_DECIMAL
+            End If
+
+            row.Range.Cells(1, colDaysDue).ClearContents
+        End If
+    Next row
+
+    ApplySITSTableFormats
+    SetExcelState "enable"
+End Sub
+
+Public Sub RefreshSITSView()
+    Dim wsView As Worksheet
+    Dim wsData As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim headers As Collection
+    Dim headerName As Variant
+    Dim colIndex As Long
+    Dim outputCol As Long
+    Dim outputRow As Long
+    Dim intervalCode As String
+    Dim forecastHours As Double
+    Dim forecastDays As Long
+    Dim includeRow As Boolean
+    Dim lifeHoursFraction As Double
+    Dim daysUntilDue As Long
+    Dim warnHoursFraction As Double
+    Dim warnDays As Long
+
+    Set wsView = GetWorksheet(SHEET_SITS, showError:=False)
+    Set wsData = GetWorksheet(SHEET_DATA_SITS, showError:=False)
+    If wsView Is Nothing Or wsData Is Nothing Then Exit Sub
+
+    Set tbl = GetTable(wsData, TBL_SITS, showError:=False)
+    If tbl Is Nothing Then Exit Sub
+
+    Set headers = BuildSITSViewHeaders(tbl)
+    forecastHours = GetForecastHoursSetting()
+    forecastDays = GetForecastDaysSetting()
+    warnHoursFraction = ParseWarnHoursSetting()
+    warnDays = CLng(NzSITSNumber(GetConfigValue(CFG_WARN_DAYS, 7)))
+
+    SetExcelState "disable"
+
+    wsView.Cells.Clear
+    WriteSITSViewShell wsView
+
+    outputCol = 1
+    For Each headerName In headers
+        wsView.Cells(SITS_VIEW_HEADER_ROW, outputCol).Value = CStr(headerName)
+        outputCol = outputCol + 1
+    Next headerName
+
+    With wsView.Range(wsView.Cells(SITS_VIEW_HEADER_ROW, 1), _
+                      wsView.Cells(SITS_VIEW_HEADER_ROW, headers.Count))
+        .Font.Bold = True
+        .Font.Color = vbWhite
+        .Interior.Color = COLOR_HEADER_BLUE
+    End With
+
+    outputRow = SITS_VIEW_HEADER_ROW + 1
+
+    If Not tbl.DataBodyRange Is Nothing Then
+        For Each row In tbl.ListRows
+            intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, _
+                GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)).Value)))
+
+            includeRow = TaskPassesForecastFilter(row, tbl, intervalCode, _
+                forecastHours, forecastDays, lifeHoursFraction, daysUntilDue)
+            If Not includeRow Then GoTo NextViewRow
+
+            outputCol = 1
+            For Each headerName In headers
+                colIndex = GetTableColumnIndex(tbl, CStr(headerName))
+                If colIndex > 0 Then
+                    CopySITSViewCell row.Range.Cells(1, colIndex), _
+                        wsView.Cells(outputRow, outputCol), CStr(headerName)
+                End If
+                outputCol = outputCol + 1
+            Next headerName
+
+            ApplySITSViewRowWarnings wsView, outputRow, headers.Count, _
+                intervalCode, lifeHoursFraction, daysUntilDue, _
+                warnHoursFraction, warnDays
+
+            outputRow = outputRow + 1
+NextViewRow:
+        Next row
+    End If
+
+    wsView.Columns.AutoFit
+    SetExcelState "enable"
+End Sub
+
+Public Sub SnapshotUsageForSITS()
+    Dim wsCurrent As Worksheet
+    Dim tblCurrent As ListObject
+    Dim wsConfig As Worksheet
+    Dim tblSnapshot As ListObject
+    Dim row As ListRow
+    Dim intervalCode As String
+    Dim taskCode As String
+    Dim formatType As String
+    Dim newRow As ListRow
+    Dim seen As Object
+
+    Set wsCurrent = GetWorksheet(SHEET_DATA_USAGE_CURRENT, showError:=False)
+    If wsCurrent Is Nothing Then Exit Sub
+
+    Set tblCurrent = GetTable(wsCurrent, TBL_USAGE_CURRENT, showError:=False)
+    If tblCurrent Is Nothing Then Exit Sub
+
+    Set wsConfig = GetWorksheet(SHEET_CONFIG, showError:=False)
+    If wsConfig Is Nothing Then Exit Sub
+
+    EnsureUsageSnapshotTable wsConfig
+    Set tblSnapshot = GetTable(wsConfig, TBL_USAGE_SNAPSHOT, showError:=False)
+    If tblSnapshot Is Nothing Then Exit Sub
+
+    ClearTableData tblSnapshot
+    Set seen = CreateObject("Scripting.Dictionary")
+
+    If Not tblCurrent.DataBodyRange Is Nothing Then
+        For Each row In tblCurrent.ListRows
+            intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, 1).Value)))
+            If Len(intervalCode) = 0 Then GoTo NextUsageRow
+            If seen.Exists(intervalCode) Then GoTo NextUsageRow
+
+            taskCode = Trim$(CStr(row.Range.Cells(1, 2).Value))
+            formatType = ResolveUsageFormatType(intervalCode, taskCode)
+            seen.Add intervalCode, True
+
+            Set newRow = tblSnapshot.ListRows.Add
+            newRow.Range.Cells(1, 1).Value = intervalCode
+            WriteSnapshotValueCell newRow.Range.Cells(1, 2), row.Range.Cells(1, 3).Value, formatType
+            newRow.Range.Cells(1, 3).Value = formatType
+NextUsageRow:
+        Next row
+    End If
+
+    SetConfigValue CFG_SITS_SNAPSHOT_DATE, Date
+End Sub
+
+Public Sub CaptureTaskBaselineFromImport(ByVal tbl As ListObject, ByVal newRow As ListRow, _
+                                         ByVal intervalCode As String)
+    Dim colLRHours As Long
+    Dim colLRNumber As Long
+    Dim colDaysDue As Long
+    Dim colBaseHours As Long
+    Dim colBaseNumber As Long
+    Dim colBaseDue As Long
+    Dim dueValue As Variant
+
+    EnsureSITSBaselineColumns tbl
+
+    colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+    colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+    colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
+    colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
+    colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
+
+    If intervalCode = TYPE_DD Then
+        dueValue = newRow.Range.Cells(1, colDaysDue).Value
+        If IsDate(dueValue) Then
+            newRow.Range.Cells(1, colBaseDue).Value = CDate(dueValue)
+            newRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
+        ElseIf IsNumeric(dueValue) Then
+            newRow.Range.Cells(1, colBaseDue).Value = CDbl(dueValue)
+            newRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DECIMAL
+        End If
+        Exit Sub
+    End If
+
+    If IsHourUsageInterval(intervalCode) Or _
+       (IsHourBasedIntervalType(intervalCode) And Not IsSecondsCountInterval(intervalCode)) Then
+        If Not IsEmpty(newRow.Range.Cells(1, colLRHours).Value) Then
+            newRow.Range.Cells(1, colBaseHours).Value = newRow.Range.Cells(1, colLRHours).Value
+            newRow.Range.Cells(1, colBaseHours).NumberFormat = newRow.Range.Cells(1, colLRHours).NumberFormat
+        End If
+    Else
+        If Not IsEmpty(newRow.Range.Cells(1, colLRNumber).Value) Then
+            newRow.Range.Cells(1, colBaseNumber).Value = newRow.Range.Cells(1, colLRNumber).Value
+            newRow.Range.Cells(1, colBaseNumber).NumberFormat = newRow.Range.Cells(1, colLRNumber).NumberFormat
+        End If
+    End If
+End Sub
+
+Private Sub ApplyDDTaskRecalc(ByVal row As ListRow, _
+                              ByVal colCurHours As Long, _
+                              ByVal colCurNumber As Long, _
+                              ByVal colLRHours As Long, _
+                              ByVal colLRNumber As Long, _
+                              ByVal colDaysDue As Long, _
+                              ByVal colBaseDue As Long)
+    Dim baselineDue As Variant
+    Dim snapshotDate As Variant
+    Dim elapsedDays As Long
+    Dim daysRemaining As Double
+
+    row.Range.Cells(1, colCurHours).ClearContents
+    row.Range.Cells(1, colCurNumber).ClearContents
+    row.Range.Cells(1, colLRHours).ClearContents
+    row.Range.Cells(1, colLRNumber).ClearContents
+
+    baselineDue = row.Range.Cells(1, colBaseDue).Value
+    If IsEmptyBaselineValue(baselineDue) Then
+        baselineDue = row.Range.Cells(1, colDaysDue).Value
+        If IsDate(baselineDue) Then
+            row.Range.Cells(1, colBaseDue).Value = CDate(baselineDue)
+            row.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
+        ElseIf IsNumeric(baselineDue) Then
+            row.Range.Cells(1, colBaseDue).Value = CDbl(baselineDue)
+            row.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DECIMAL
+        End If
+    Else
+        baselineDue = row.Range.Cells(1, colBaseDue).Value
+    End If
+
+    If IsDate(baselineDue) Then
+        row.Range.Cells(1, colDaysDue).Value = CDate(baselineDue)
+        row.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
+    ElseIf IsNumeric(baselineDue) Then
+        snapshotDate = GetConfigValue(CFG_SITS_SNAPSHOT_DATE, "")
+        daysRemaining = CDbl(baselineDue)
+        If IsDate(snapshotDate) Then
+            elapsedDays = DateDiff("d", CDate(snapshotDate), Date)
+            If elapsedDays > 0 Then daysRemaining = daysRemaining - elapsedDays
+        End If
+        If daysRemaining < 0# Then daysRemaining = 0#
+        row.Range.Cells(1, colDaysDue).Value = daysRemaining
+        row.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
+    End If
+End Sub
+
+Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
+                                          ByVal tbl As ListObject, _
+                                          ByVal intervalCode As String, _
+                                          ByVal forecastHours As Double, _
+                                          ByVal forecastDays As Long, _
+                                          ByRef lifeHoursFraction As Double, _
+                                          ByRef daysUntilDue As Long) As Boolean
+    Dim colLRHours As Long
+    Dim colDaysDue As Long
+    Dim dueValue As Variant
+
+    lifeHoursFraction = -1#
+    daysUntilDue = -1
+
+    Select Case intervalCode
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+            If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
+                lifeHoursFraction = CDbl(row.Range.Cells(1, colLRHours).Value)
+            End If
+            If forecastHours <= 0# Then
+                TaskPassesForecastFilter = True
+            ElseIf lifeHoursFraction < 0# Then
+                TaskPassesForecastFilter = True
+            Else
+                TaskPassesForecastFilter = (lifeHoursFraction <= (forecastHours / 24#))
+            End If
+
+        Case TYPE_DD
+            colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+            dueValue = row.Range.Cells(1, colDaysDue).Value
+            If IsDate(dueValue) Then
+                daysUntilDue = CLng(DateDiff("d", Date, CDate(dueValue)))
+            ElseIf IsNumeric(dueValue) Then
+                daysUntilDue = CLng(CDbl(dueValue))
+            End If
+            If forecastDays <= 0 Then
+                TaskPassesForecastFilter = True
+            ElseIf daysUntilDue < 0 Then
+                TaskPassesForecastFilter = True
+            Else
+                TaskPassesForecastFilter = (daysUntilDue <= forecastDays)
+            End If
+
+        Case Else
+            TaskPassesForecastFilter = True
+    End Select
+End Function
+
+Private Sub WriteSITSViewShell(ByVal ws As Worksheet)
+    With ws.Range("A1")
+        .Value = "SITS — Task View"
+        .Font.Size = 14
+        .Font.Bold = True
+        .Font.Color = COLOR_HEADER_BLUE
+    End With
+
+    ws.Range("A2").Value = "Tail:"
+    ws.Range("B2").Value = GetTailNumber()
+
+    ws.Range("A3").Value = "Forecast hours (HH/E1/E2):"
+    ws.Range("B3").Value = GetForecastHoursSetting()
+    ws.Range("B3").NumberFormat = FORMAT_GENERAL
+
+    ws.Range("A4").Value = "Forecast days (DD):"
+    ws.Range("B4").Value = GetForecastDaysSetting()
+    ws.Range("B4").NumberFormat = FORMAT_GENERAL
+
+    ws.Range("A5").Value = "Assign RunRefreshSITS to a button here to refresh. Selector is display-only until work packages."
+    ws.Range("A5").Font.Size = 9
+    ws.Range("A5").Font.Italic = True
+End Sub
+
+Private Sub SaveForecastSettingsFromView()
+    Dim ws As Worksheet
+    Dim hoursValue As Variant
+    Dim daysValue As Variant
+
+    Set ws = GetWorksheet(SHEET_SITS, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    hoursValue = ws.Range(SITS_FORECAST_HOURS_CELL).Value
+    If IsNumeric(hoursValue) Then
+        SetConfigValue CFG_FORECAST_HOURS, CDbl(hoursValue)
+    End If
+
+    daysValue = ws.Range(SITS_FORECAST_DAYS_CELL).Value
+    If IsNumeric(daysValue) Then
+        SetConfigValue CFG_FORECAST_DAYS, CLng(daysValue)
+    End If
+End Sub
+
+Private Function GetForecastHoursSetting() As Double
+    Dim ws As Worksheet
+    Dim value As Variant
+
+    Set ws = GetWorksheet(SHEET_SITS, showError:=False)
+    If Not ws Is Nothing Then
+        value = ws.Range(SITS_FORECAST_HOURS_CELL).Value
+        If IsNumeric(value) Then
+            GetForecastHoursSetting = CDbl(value)
+            Exit Function
+        End If
+    End If
+
+    value = GetConfigValue(CFG_FORECAST_HOURS, 50)
+    If IsNumeric(value) Then
+        GetForecastHoursSetting = CDbl(value)
+    Else
+        GetForecastHoursSetting = 50#
+    End If
+End Function
+
+Private Function GetForecastDaysSetting() As Long
+    Dim ws As Worksheet
+    Dim value As Variant
+
+    Set ws = GetWorksheet(SHEET_SITS, showError:=False)
+    If Not ws Is Nothing Then
+        value = ws.Range(SITS_FORECAST_DAYS_CELL).Value
+        If IsNumeric(value) Then
+            GetForecastDaysSetting = CLng(value)
+            Exit Function
+        End If
+    End If
+
+    value = GetConfigValue(CFG_FORECAST_DAYS, 90)
+    If IsNumeric(value) Then
+        GetForecastDaysSetting = CLng(value)
+    Else
+        GetForecastDaysSetting = 90
+    End If
+End Function
+
+Private Function ParseWarnHoursSetting() As Double
+    Dim rawValue As Variant
+    Dim parsed As Variant
+
+    rawValue = GetConfigValue(CFG_WARN_HOURS, "10:00")
+    parsed = ParseTimeUsageValue(rawValue, CStr(rawValue))
+    If IsEmpty(parsed) Then
+        ParseWarnHoursSetting = 10# / 24#
+    Else
+        ParseWarnHoursSetting = CDbl(parsed)
+    End If
+End Function
+
+Private Function BuildSITSViewHeaders(ByVal tbl As ListObject) As Collection
+    Dim result As New Collection
+    Dim col As ListColumn
+
+    For Each col In tbl.ListColumns
+        If Not IsBaselineColumn(col.Name) Then
+            result.Add col.Name
+        End If
+    Next col
+
+    Set BuildSITSViewHeaders = result
+End Function
+
+Private Function IsBaselineColumn(ByVal columnName As String) As Boolean
+    Select Case columnName
+        Case HDR_BASELINE_LR_HOURS, HDR_BASELINE_LR_NUMBER, HDR_BASELINE_DAYS_DUE
+            IsBaselineColumn = True
+        Case Else
+            IsBaselineColumn = False
+    End Select
+End Function
+
+Private Sub CopySITSViewCell(ByVal source As Range, ByVal target As Range, _
+                             ByVal columnName As String)
+    If StrComp(columnName, HDR_SELECTOR, vbTextCompare) = 0 Then
+        target.Value = CBool(source.Value)
+        target.NumberFormat = FORMAT_GENERAL
+        Exit Sub
+    End If
+
+    target.Value = source.Value
+    target.NumberFormat = source.NumberFormat
+End Sub
+
+Private Sub ApplySITSViewRowWarnings(ByVal ws As Worksheet, _
+                                     ByVal rowIndex As Long, _
+                                     ByVal colCount As Long, _
+                                     ByVal intervalCode As String, _
+                                     ByVal lifeHoursFraction As Double, _
+                                     ByVal daysUntilDue As Long, _
+                                     ByVal warnHoursFraction As Double, _
+                                     ByVal warnDays As Long)
+    Dim warnColor As Long
+
+    warnColor = 0
+
+    Select Case intervalCode
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            If lifeHoursFraction >= 0# And lifeHoursFraction <= warnHoursFraction Then
+                warnColor = RGB(255, 199, 206)
+            End If
+        Case TYPE_DD
+            If daysUntilDue >= 0 And daysUntilDue <= warnDays Then
+                warnColor = RGB(255, 199, 206)
+            End If
+    End Select
+
+    If warnColor <> 0 Then
+        ws.Range(ws.Cells(rowIndex, 1), ws.Cells(rowIndex, colCount)).Interior.Color = warnColor
+    End If
+End Sub
+
+Private Function LookupUsageValueByInterval(ByVal intervalCode As String, _
+                                            ByRef formatType As String) As Variant
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim taskCode As String
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_CURRENT, showError:=False)
+    If ws Is Nothing Then Exit Function
+
+    Set tbl = GetTable(ws, TBL_USAGE_CURRENT, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), intervalCode, vbTextCompare) = 0 Then
+            taskCode = Trim$(CStr(row.Range.Cells(1, 2).Value))
+            formatType = ResolveUsageFormatType(intervalCode, taskCode)
+            LookupUsageValueByInterval = row.Range.Cells(1, 3).Value
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Function LookupSnapshotValueByInterval(ByVal intervalCode As String, _
+                                                 ByVal formatType As String) As Variant
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+
+    Set ws = GetWorksheet(SHEET_CONFIG, showError:=False)
+    If ws Is Nothing Then Exit Function
+
+    Set tbl = GetTable(ws, TBL_USAGE_SNAPSHOT, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), intervalCode, vbTextCompare) = 0 Then
+            LookupSnapshotValueByInterval = row.Range.Cells(1, 2).Value
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Sub WriteCurrentUsageHours(ByVal target As Range, _
+                                   ByVal value As Variant, _
+                                   ByVal formatType As String)
+    If IsMissingUsageValue(value) Then
+        target.ClearContents
+        Exit Sub
+    End If
+    WriteFormattedUsageValue target, value, formatType
+End Sub
+
+Private Sub WriteCurrentUsageNumber(ByVal target As Range, _
+                                    ByVal value As Variant, _
+                                    ByVal formatType As String)
+    If IsMissingUsageValue(value) Then
+        target.Value = "---"
+        Exit Sub
+    End If
+
+    If StrComp(formatType, FORMAT_TYPE_NUMBER, vbTextCompare) = 0 Then
+        target.Value = CDbl(NzSITSNumber(value))
+        target.NumberFormat = FORMAT_DECIMAL
+    Else
+        WriteFormattedUsageValue target, value, formatType
+    End If
+End Sub
+
+Private Sub WriteSnapshotValueCell(ByVal target As Range, _
+                                   ByVal value As Variant, _
+                                   ByVal formatType As String)
+    If StrComp(formatType, FORMAT_TYPE_NUMBER, vbTextCompare) = 0 Then
+        target.Value = CDbl(NzSITSNumber(value))
+        target.NumberFormat = FORMAT_DECIMAL
+    Else
+        WriteFormattedUsageValue target, value, formatType
+    End If
+End Sub
+
+Public Sub EnsureSITSBaselineColumns(ByVal tbl As ListObject)
+    If tbl Is Nothing Then Exit Sub
+    EnsureTableColumn tbl, HDR_BASELINE_LR_HOURS
+    EnsureTableColumn tbl, HDR_BASELINE_LR_NUMBER
+    EnsureTableColumn tbl, HDR_BASELINE_DAYS_DUE
+End Sub
+
+Private Sub EnsureUsageSnapshotTable(ByVal ws As Worksheet)
+    Dim tbl As ListObject
+
+    If TableExists(ws, TBL_USAGE_SNAPSHOT) Then Exit Sub
+
+    ws.Cells(1, 13).Value = HDR_SNAPSHOT_INTERVAL_CODE
+    ws.Cells(1, 14).Value = HDR_SNAPSHOT_VALUE
+    ws.Cells(1, 15).Value = HDR_SNAPSHOT_FORMAT
+    Set tbl = ws.ListObjects.Add(xlSrcRange, ws.Range("M1:O1"), , xlYes)
+    tbl.Name = TBL_USAGE_SNAPSHOT
+    tbl.TableStyle = "TableStyleMedium4"
+End Sub
+
+Private Sub EnsureTableColumn(ByVal tbl As ListObject, ByVal columnName As String)
+    If GetTableColumnIndex(tbl, columnName) = 0 Then
+        tbl.ListColumns.Add
+        tbl.ListColumns(tbl.ListColumns.Count).Name = columnName
+    End If
+End Sub
+
+Private Function IsEmptyBaselineValue(ByVal value As Variant) As Boolean
+    If IsEmpty(value) Then
+        IsEmptyBaselineValue = True
+    ElseIf Len(Trim$(CStr(value))) = 0 Then
+        IsEmptyBaselineValue = True
+    ElseIf VarType(value) = vbString Then
+        IsEmptyBaselineValue = (Trim$(CStr(value)) = "---")
+    End If
+End Function
+
+Private Function IsMissingUsageValue(ByVal value As Variant) As Boolean
+    If IsEmpty(value) Then
+        IsMissingUsageValue = True
+    ElseIf Len(Trim$(CStr(value))) = 0 Then
+        IsMissingUsageValue = True
+    End If
+End Function
+
+Private Function NzSITSNumber(ByVal value As Variant) As Double
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
+        NzSITSNumber = 0#
+    ElseIf VarType(value) = vbString And Trim$(CStr(value)) = "---" Then
+        NzSITSNumber = 0#
+    Else
+        NzSITSNumber = CDbl(value)
+    End If
+End Function

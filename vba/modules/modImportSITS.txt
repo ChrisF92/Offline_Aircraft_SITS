@@ -144,9 +144,10 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
             WriteSerialCell .Cells(1, GetTableColumnIndex(tbl, HDR_END_ITEM_SERIAL)), _
                 srcWs.Cells(rowIndex, colMap("End Item Serial")).Value, _
                 srcWs.Cells(rowIndex, colMap("End Item Serial")).Text
-            ApplyTimeOrNumberCell .Cells(1, GetTableColumnIndex(tbl, HDR_EXTENSION)), _
+            ApplyImportedExtension .Cells(1, GetTableColumnIndex(tbl, HDR_EXTENSION)), _
+                intervalCode, taskCode, optCols, srcWs, rowIndex, _
                 srcWs.Cells(rowIndex, colMap("Extension")).Value, _
-                srcWs.Cells(rowIndex, colMap("Extension")).Text, intervalCode
+                srcWs.Cells(rowIndex, colMap("Extension")).Text
 
             ApplyActualIntervalValue .Cells(1, GetTableColumnIndex(tbl, HDR_ACTUAL_INTERVAL)), _
                 srcWs.Cells(rowIndex, colMap("Actual Interval")).Value, intervalCode, _
@@ -154,6 +155,7 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
             ApplyLifeRemainingValues tbl, newRow, intervalCode, lifeRemaining, _
                 srcWs.Cells(rowIndex, colMap("Life Remaining")).Text
             ApplyOptionalSITSColumns tbl, newRow, optCols, srcWs, rowIndex
+            CaptureTaskBaselineFromImport tbl, newRow, intervalCode
             .Cells(1, GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)).Value = _
                 "SITS-" & Format$(importedRows + 1, "00000")
         End With
@@ -165,6 +167,9 @@ NextRow:
 
     srcWb.Close SaveChanges:=False
     ApplyWorkbookDataFormats
+    SnapshotUsageForSITS
+    RecalculateSITS
+    RefreshSITSView
     SetExcelState "enable"
 
     LogAction "SITS_IMPORTED", "", "Imported " & importedRows & " rows from " & filePath
@@ -295,6 +300,36 @@ Private Function DefaultSelectorValue(ByVal intervalCode As String, _
             DefaultSelectorValue = False
     End Select
 End Function
+
+Private Sub ApplyImportedExtension(ByVal targetCell As Range, _
+                                   ByVal intervalCode As String, _
+                                   ByVal taskCode As String, _
+                                   ByVal optCols As Object, _
+                                   ByVal srcWs As Worksheet, _
+                                   ByVal rowIndex As Long, _
+                                   ByVal rawValue As Variant, _
+                                   ByVal displayText As String)
+    Dim taskTypeCode As String
+
+    taskTypeCode = ""
+    If Not optCols Is Nothing Then
+        If optCols.Exists(OPT_TASK_TYPE_CODE) Then
+            taskTypeCode = UCase$(Trim$(CStr(srcWs.Cells(rowIndex, optCols(OPT_TASK_TYPE_CODE)).Value)))
+        End If
+    End If
+
+    If IsDeferredFaultTaskCode(taskCode) Or IsDeferredFaultTaskCode(taskTypeCode) Then
+        If IsHourUsageInterval(intervalCode) Or IsHourBasedIntervalType(intervalCode) Then
+            WriteFormattedUsageValue targetCell, 0#, FORMAT_TYPE_HOURS
+        Else
+            targetCell.Value = 0#
+            targetCell.NumberFormat = FORMAT_DECIMAL
+        End If
+        Exit Sub
+    End If
+
+    ApplyTimeOrNumberCell targetCell, rawValue, displayText, intervalCode
+End Sub
 
 Private Sub ApplyActualIntervalValue(ByVal targetCell As Range, _
                                      ByVal rawValue As Variant, _

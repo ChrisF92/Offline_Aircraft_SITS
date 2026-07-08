@@ -812,6 +812,7 @@ Public Sub RepairWorkbookFormats()
     ApplyWorkbookDataFormats
     RepairSerialColumns
     RefreshUsageView
+    RefreshSITSView
     MsgBox "Workbook data formats have been repaired.", vbInformation, APP_NAME
 End Sub
 
@@ -840,6 +841,9 @@ Public Sub ApplySITSTableFormats()
     ApplyColumnFormat tbl, HDR_EXTENSION, FORMAT_TIME_HOURS
     ApplyColumnFormat tbl, HDR_DATE_WHEN_COMPLETE, FORMAT_DATE
     ApplyColumnFormat tbl, HDR_PROJECTED_DUE_DATE, FORMAT_DATE
+    ApplyColumnFormat tbl, HDR_BASELINE_LR_HOURS, FORMAT_TIME_HOURS
+    ApplyColumnFormat tbl, HDR_BASELINE_LR_NUMBER, FORMAT_DECIMAL
+    ApplyColumnFormat tbl, HDR_BASELINE_DAYS_DUE, FORMAT_GENERAL
     ApplyColumnFormat tbl, HDR_NUMBER_LIFE_REMAINING, FORMAT_DECIMAL
     ApplyColumnFormat tbl, HDR_DAYS_WHEN_DUE, FORMAT_DECIMAL
 End Sub

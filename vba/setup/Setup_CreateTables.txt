@@ -48,7 +48,8 @@ Private Sub CreateSITSTable()
         HDR_HOURS_LIFE_REMAINING, HDR_NUMBER_LIFE_REMAINING, HDR_DAYS_WHEN_DUE, _
         HDR_EXTENSION, HDR_EXTENSION_SNOW, HDR_TASK_TYPE_CODE, HDR_ACTUAL_INTERVAL, _
         HDR_WARNING_INTERVAL, HDR_TASK_CODE, HDR_TASK_SEQUENCE, HDR_TASK_DESCRIPTION, _
-        HDR_SERIAL, HDR_PROJECTED_DUE_DATE, HDR_SITS_ROW_ID _
+        HDR_SERIAL, HDR_PROJECTED_DUE_DATE, HDR_SITS_ROW_ID, _
+        HDR_BASELINE_LR_HOURS, HDR_BASELINE_LR_NUMBER, HDR_BASELINE_DAYS_DUE _
     )
 
     CreateTableOnSheet ws, TBL_SITS, headers
@@ -131,6 +132,26 @@ Private Sub CreateConfigTables()
     ws.Range("I1").Value = "Notes"
     ws.Range("I2").Value = "Runtime settings are stored in tblConfig."
     ws.Range("I3").Value = "tblIntervalMap holds optional import mappings."
+    ws.Range("I4").Value = "tblUsageSnapshot (col M) stores usage at last SITS import."
+
+    CreateUsageSnapshotTable ws
+End Sub
+
+Private Sub CreateUsageSnapshotTable(ByVal ws As Worksheet)
+    Dim tbl As ListObject
+
+    ws.Cells(1, 13).Value = HDR_SNAPSHOT_INTERVAL_CODE
+    ws.Cells(1, 14).Value = HDR_SNAPSHOT_VALUE
+    ws.Cells(1, 15).Value = HDR_SNAPSHOT_FORMAT
+    StyleHeaderRow ws.Range("M1:O1")
+
+    If TableExists(ws, TBL_USAGE_SNAPSHOT) Then
+        ws.ListObjects(TBL_USAGE_SNAPSHOT).Delete
+    End If
+
+    Set tbl = ws.ListObjects.Add(xlSrcRange, ws.Range("M1:O1"), , xlYes)
+    tbl.Name = TBL_USAGE_SNAPSHOT
+    tbl.TableStyle = "TableStyleMedium4"
 End Sub
 
 Private Sub CreateAuditTable()
@@ -200,9 +221,11 @@ Private Sub FormatSITSView()
 
     ws.Range("A2").Value = "Tail:"
     ws.Range("B2").Value = "(set during setup)"
-    ws.Range("A3").Value = "Only the Selector column is user-editable. All other changes use forms."
-
-    ws.Range("A5").Value = "Data view will link to " & TBL_SITS & " in Phase 3."
+    ws.Range("A3").Value = "Forecast hours (HH/E1/E2):"
+    ws.Range("B3").Value = 50
+    ws.Range("A4").Value = "Forecast days (DD):"
+    ws.Range("B4").Value = 90
+    ws.Range("A5").Value = "Assign RunRefreshSITS to a button here to refresh. Selector is display-only until work packages."
 End Sub
 
 Private Sub FormatUsageView()

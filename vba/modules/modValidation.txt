@@ -59,6 +59,7 @@ Private Sub ValidateRequiredTables(ByRef issues As Collection)
         Array(SHEET_DATA_WP_TASKS, TBL_WP_TASKS), _
         Array(SHEET_CONFIG, TBL_CONFIG), _
         Array(SHEET_CONFIG, TBL_INTERVAL_MAP), _
+        Array(SHEET_CONFIG, TBL_USAGE_SNAPSHOT), _
         Array(SHEET_AUDIT, "tblAudit") _
     )
 

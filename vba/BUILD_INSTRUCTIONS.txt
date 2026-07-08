@@ -1,4 +1,4 @@
-Offline Aircraft SITS v2 — Build Instructions (Phase 2)
+Offline Aircraft SITS v2 — Build Instructions (Phase 3)
 =========================================================
 
 You build the .xlsm workbook locally from the .txt VBA sources in this folder.
@@ -48,6 +48,7 @@ Runtime modules:
   vba/modules/modImportUsage.txt        modImportUsage
   vba/modules/modSetupWizard.txt        modSetupWizard
   vba/modules/modUsageLog.txt           modUsageLog
+  vba/modules/modSITS.txt               modSITS
 
 Setup modules (one-time use):
 
@@ -110,6 +111,23 @@ Each logged increment:
   - Appends a row to tblUsageLog
   - Updates tblUsageCurrent
   - Refreshes the Usage sheet view
+  - Recalculates and refreshes the SITS view (Phase 3)
+
+Step 7 — SITS view and refresh (Phase 3)
+------------------------------------------
+1. Open the **SITS** sheet after setup or import.
+2. Set **Forecast hours** (B3) and **Forecast days** (B4) to filter the view:
+   - HH/E1/E2 tasks: shown only if life remaining is within the hour threshold
+   - DD tasks: shown only if due within the day threshold
+   - Other interval types: always shown
+3. Assign macro **RunRefreshSITS** to a button on the SITS sheet (Insert > Button).
+4. Life remaining warnings highlight rows in pink when below config thresholds
+   (default 10:00 hours / 7 days).
+
+SITS recalculation runs automatically after:
+  - SITS import (Import SITS / Setup Wizard)
+  - Sortie logging
+  - Manual RunRefreshSITS
 
 Dashboard buttons (created by Setup_RunAll / Rebuild Dashboard)
 ---------------------------------------------------------------
@@ -119,23 +137,39 @@ User Actions:
 Developer Tools:
   Repair Formats, Repair Visibility, Validate Structure, Rebuild Dashboard, Phase 0 Setup
 
-Step 7 — Save
+Step 8 — Save
 -------------
 Save the workbook.
 
-What Phase 2 includes
+What Phase 3 includes
 ---------------------
-- Log Sortie UserForm (frmLogSortie) — baseline-driven increment entry
-- tblUsageLog append on each sortie
-- tblUsageCurrent rolling totals
-- Usage sheet refresh (RefreshUsageView)
-- Master template workflow and Dashboard action buttons
+- modSITS — baseline + usage-delta life remaining recalculation
+- tblUsageSnapshot — usage per interval code at last SITS import/setup
+- Baseline columns on tblSITS (hidden from view, used for delta maths)
+- SITS sheet view linked to tblSITS with forecast filter
+- Warning highlighting (default 10:00 hours / 7 days)
+- PT2/PT3 import: extension reset to 0 / 0:00; life remaining from GOLDesp
+- DD tasks: days-when-due with calendar elapsed time since import
+- Auto-refresh after SITS import, setup, and sortie logging
 
 What is NOT included yet
 ------------------------
-- SITS calculations and view (Phase 3)
 - Work packages, extensions, deferrals (Phases 4–5)
+- Selector editing (display-only until work packages)
 - Sortie correction / reversal UI (CorrectedFrom column reserved)
+- Forecast settings UserForm (values editable on SITS sheet B3/B4 for now)
+
+SITS life remaining model (Phase 3)
+-----------------------------------
+GOLDesp life remaining at import is the **baseline** (trusted — may include
+life accrued on other airframes). After import, each sortie increments usage;
+life remaining is updated by **usage delta since the import snapshot**:
+
+  Life Remaining = Baseline Life Remaining − (Current Usage − Snapshot Usage)
+
+Current usage is looked up from tblUsageCurrent by **interval type code only**.
+DD calendar tasks count down elapsed days since the SITS snapshot date when
+GOLDesp provides a days count; absolute due dates are shown as imported.
 
 Import rules (strict — abort if any required column missing)
 ------------------------------------------------------------
@@ -153,6 +187,13 @@ Sample files in repo root:
   20260706-Long Forecast_ZZ382.xlsx   — SITS export sample (tail ZZ382)
   ZZ383 Item Usage.xlsx               — Airframe usage sample
   ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)
+
+Upgrading an existing Phase 0–2 workbook to Phase 3
+-----------------------------------------------------
+1. Import the new modSITS module and update all changed .txt modules.
+2. Re-run **Setup_CreateTables** (or Phase 0 Setup) to add baseline columns and
+   tblUsageSnapshot — this clears data tables; prefer running on a fresh copy.
+3. Re-run Setup Wizard or re-import SITS to establish baselines and snapshots.
 
 Troubleshooting
 ---------------
@@ -179,6 +220,10 @@ Time values calculate incorrectly / show as 86.61 or plain text
      as day fractions with [h]:mm (same principle as SITS), not as text.
   -> Click Repair Formats on the Dashboard, or re-run setup wizard import.
   -> HH/E1/E2 Format column will show Hours; Baseline and Usage show [h]:mm.
+
+SITS life remaining does not change after sorties
+  -> Re-import SITS or run Setup Wizard to refresh tblUsageSnapshot.
+  -> Run RunRefreshSITS on the SITS sheet.
 
 Dashboard buttons missing after updating VBA
   -> Click Rebuild Dashboard on the Dashboard (Developer Tools section).

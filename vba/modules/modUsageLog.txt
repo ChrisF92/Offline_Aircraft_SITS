@@ -104,6 +104,7 @@ NextItem:
 
     ApplyUsageTableFormats
     RefreshUsageView
+    RefreshSITS
     SetExcelState "enable"
 
     LogAction "SORTIE_LOGGED", "", _

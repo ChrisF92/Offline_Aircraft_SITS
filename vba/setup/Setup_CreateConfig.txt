@@ -21,8 +21,11 @@ Public Sub Setup_CreateConfig(Optional ByVal silent As Boolean = False, _
     SetConfigValue CFG_ORN_PATTERN, ORN_FORMAT_PATTERN
     SetConfigValue CFG_EXT_STANDARD_PCT, MAX_EXTENSION_STANDARD
     SetConfigValue CFG_EXT_EXTENDED_PCT, MAX_EXTENSION_EXTENDED
-    SetConfigValue CFG_WARN_HOURS, "50:00"
-    SetConfigValue CFG_WARN_DAYS, 30
+    SetConfigValue CFG_WARN_HOURS, "10:00"
+    SetConfigValue CFG_WARN_DAYS, 7
+    SetConfigValue CFG_FORECAST_HOURS, 50
+    SetConfigValue CFG_FORECAST_DAYS, 90
+    SetConfigValue CFG_SITS_SNAPSHOT_DATE, ""
 
     SeedIntervalMapDefaults
     WriteConfigNotes

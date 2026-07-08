@@ -37,6 +37,7 @@ Public Const TBL_WORK_PACKAGES As String = "tblWorkPackages"
 Public Const TBL_WP_TASKS As String = "tblWPTasks"
 Public Const TBL_CONFIG As String = "tblConfig"
 Public Const TBL_INTERVAL_MAP As String = "tblIntervalMap"
+Public Const TBL_USAGE_SNAPSHOT As String = "tblUsageSnapshot"
 
 ' --- SITS column headers ---
 Public Const HDR_SELECTOR As String = "Selector"
@@ -64,6 +65,9 @@ Public Const HDR_CURRENT_USAGE_NUMBER As String = "Current Usage (Number)"
 Public Const HDR_END_ITEM_SERIAL As String = "End Item Serial"
 Public Const HDR_PROJECTED_DUE_DATE As String = "Projected Due Date"
 Public Const HDR_SITS_ROW_ID As String = "SITS_RowID"
+Public Const HDR_BASELINE_LR_HOURS As String = "Baseline LR (Hours)"
+Public Const HDR_BASELINE_LR_NUMBER As String = "Baseline LR (Number)"
+Public Const HDR_BASELINE_DAYS_DUE As String = "Baseline Days When Due"
 
 ' --- Usage baseline / log headers ---
 Public Const HDR_BASE_INTERVAL_CODE As String = "Interval Code"
@@ -73,6 +77,10 @@ Public Const HDR_BASE_VALUE As String = "Baseline"
 Public Const HDR_BASE_FORMAT As String = "Format"
 Public Const HDR_BASE_SOURCE As String = "Source"
 Public Const HDR_BASE_SERIAL As String = "Serial"
+
+Public Const HDR_SNAPSHOT_INTERVAL_CODE As String = "IntervalCode"
+Public Const HDR_SNAPSHOT_VALUE As String = "SnapshotValue"
+Public Const HDR_SNAPSHOT_FORMAT As String = "Format"
 
 Public Const HDR_LOG_SORTIE_DATE As String = "SortieDate"
 Public Const HDR_LOG_SORTIE_REF As String = "SortieRef"
@@ -108,6 +116,9 @@ Public Const CFG_EXT_EXTENDED_PCT As String = "ExtExtendedPct"
 Public Const CFG_WARN_HOURS As String = "WarnHoursRemaining"
 Public Const CFG_WARN_DAYS As String = "WarnDaysRemaining"
 Public Const CFG_MASTER_TEMPLATE As String = "MasterTemplate"
+Public Const CFG_SITS_SNAPSHOT_DATE As String = "SITSSnapshotDate"
+Public Const CFG_FORECAST_HOURS As String = "ForecastHours"
+Public Const CFG_FORECAST_DAYS As String = "ForecastDays"
 
 ' --- Interval type codes ---
 Public Const TYPE_HH As String = "HH"
