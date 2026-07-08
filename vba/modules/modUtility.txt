@@ -463,6 +463,11 @@ Public Function DetectUsageFormat(ByVal sampleValue As Variant, _
                                   Optional ByVal taskCode As String = "", _
                                   Optional ByVal description As String = "", _
                                   Optional ByVal displayText As String = "") As String
+    If IsSecondsCountInterval(intervalCode) Then
+        DetectUsageFormat = FORMAT_TYPE_NUMBER
+        Exit Function
+    End If
+
     If IsMinutesUsageCounter(intervalCode, taskCode, description) Then
         DetectUsageFormat = FORMAT_TYPE_MINUTES
         Exit Function
@@ -483,10 +488,7 @@ Public Function DetectUsageFormat(ByVal sampleValue As Variant, _
         Exit Function
     End If
 
-    If IsDate(sampleValue) Then
-        DetectUsageFormat = FORMAT_TYPE_HOURS
-        Exit Function
-    End If
+    ' Do not use IsDate() here — VBA returns True for any numeric serial (e.g. 3.38).
 
     If InStr(CStr(sampleValue), ":") > 0 Then
         DetectUsageFormat = FORMAT_TYPE_HOURS
@@ -613,7 +615,9 @@ Public Function ResolveUsageFormatType(ByVal intervalCode As String, _
                                        ByVal taskCode As String, _
                                        Optional ByVal storedFormat As String = "", _
                                        Optional ByVal description As String = "") As String
-    If IsMinutesUsageCounter(intervalCode, taskCode, description) Then
+    If IsSecondsCountInterval(intervalCode) Then
+        ResolveUsageFormatType = FORMAT_TYPE_NUMBER
+    ElseIf IsMinutesUsageCounter(intervalCode, taskCode, description) Then
         ResolveUsageFormatType = FORMAT_TYPE_MINUTES
     ElseIf IsHourUsageInterval(intervalCode) Then
         ResolveUsageFormatType = FORMAT_TYPE_HOURS
