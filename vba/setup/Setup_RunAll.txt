@@ -3,7 +3,7 @@ Option Explicit
 
 ' ========================================================================
 ' ONE-TIME SETUP — Run complete Phase 0 skeleton build
-' Build marker: Phase0-setup-v5 (ReuseSheetAs single argument)
+' Build marker: Phase0-setup-v6 (hide sheets last)
 ' ========================================================================
 
 Private mSetupStep As String
@@ -41,6 +41,9 @@ Public Sub Setup_RunAll()
 
     mSetupStep = "Formatting dashboard"
     Setup_CreateDashboard True
+
+    mSetupStep = "Finalizing sheet layout"
+    FinalizeSetupSheetLayout
 
     Application.DisplayAlerts = True
     SetExcelState "enable"
@@ -85,24 +88,7 @@ Private Sub BuildSheetsSilent()
     AddSetupSheet SHEET_DATA_WP_TASKS
     AddSetupSheet SHEET_WP_STATE
 
-    OrderSheets
-    FinalizeSetupSheetLayout
-End Sub
-
-Private Sub OrderSheets()
-    Dim order As Variant
-    Dim i As Long
-
-    order = Array( _
-        SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT, _
-        SHEET_CONFIG, SHEET_DATA_SITS, SHEET_DATA_USAGE_BASELINE, _
-        SHEET_DATA_USAGE_LOG, SHEET_DATA_USAGE_CURRENT, _
-        SHEET_DATA_WP, SHEET_DATA_WP_TASKS, SHEET_WP_STATE _
-    )
-
-    For i = LBound(order) To UBound(order)
-        ThisWorkbook.Worksheets(CStr(order(i))).Move Before:=ThisWorkbook.Worksheets(i + 1)
-    Next i
+    OrderSetupSheets
 End Sub
 
 Private Sub WritePhase0AuditEntry(ByVal tail As String)

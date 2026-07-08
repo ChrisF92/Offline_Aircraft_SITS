@@ -117,9 +117,9 @@ Troubleshooting
      not deleted).
 
 "A workbook must contain at least one visible worksheet" during setup
-  -> Ensure modUtility ReuseSheetAs takes ONE argument only (Phase0-setup-v5).
-  -> Call must be: ReuseSheetAs SHEET_DASHBOARD
-     NOT: ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+  -> Build marker Phase0-setup-v6: all sheets stay visible until the
+     "Finalizing sheet layout" step at the end of Setup_RunAll.
+  -> OrderSetupSheets skips moving a sheet before itself (error 1004).
 
 If setup fails, the error message shows which step failed (e.g. Building sheets).
   20260706-Long Forecast_ZZ382.xlsx   — SITS export sample

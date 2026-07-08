@@ -23,7 +23,7 @@ Public Sub Setup_CreateSheets()
     End If
 
     CreateAdditionalSheets
-    OrderSheets
+    OrderSetupSheets
     FinalizeSetupSheetLayout
 
     Application.DisplayAlerts = True
@@ -44,20 +44,4 @@ Private Sub CreateAdditionalSheets()
     AddSetupSheet SHEET_DATA_WP
     AddSetupSheet SHEET_DATA_WP_TASKS
     AddSetupSheet SHEET_WP_STATE
-End Sub
-
-Private Sub OrderSheets()
-    Dim order As Variant
-    Dim i As Long
-
-    order = Array( _
-        SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT, _
-        SHEET_CONFIG, SHEET_DATA_SITS, SHEET_DATA_USAGE_BASELINE, _
-        SHEET_DATA_USAGE_LOG, SHEET_DATA_USAGE_CURRENT, _
-        SHEET_DATA_WP, SHEET_DATA_WP_TASKS, SHEET_WP_STATE _
-    )
-
-    For i = LBound(order) To UBound(order)
-        ThisWorkbook.Worksheets(CStr(order(i))).Move Before:=ThisWorkbook.Worksheets(i + 1)
-    Next i
 End Sub
