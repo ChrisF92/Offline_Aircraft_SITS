@@ -185,6 +185,7 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) 
     Dim rowData As Variant
     Dim newRow As ListRow
     Dim rowCount As Long
+    Dim resolvedFormat As String
 
     CommitUsageImport = False
 
@@ -226,14 +227,17 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) 
 
     For Each mergeKey In mUsageRows.Keys
         rowData = mUsageRows(mergeKey)
+        Dim resolvedFormat As String
+        resolvedFormat = ResolveUsageFormatType(CStr(rowData(0)), CStr(rowData(1)), _
+            CStr(rowData(4)), CStr(rowData(2)))
 
         Set newRow = tblBaseline.ListRows.Add
         With newRow.Range
             .Cells(1, 1).Value = rowData(0)
             .Cells(1, 2).Value = rowData(1)
             .Cells(1, 3).Value = rowData(2)
-            WriteFormattedUsageValue .Cells(1, 4), rowData(3), CStr(rowData(4))
-            .Cells(1, 5).Value = rowData(4)
+            WriteUsageBaselineCell .Cells(1, 4), rowData(3), resolvedFormat
+            .Cells(1, 5).Value = resolvedFormat
             .Cells(1, 6).Value = rowData(5)
             WriteSerialCell .Cells(1, 7), rowData(6)
         End With
@@ -242,7 +246,7 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) 
         With newRow.Range
             .Cells(1, 1).Value = rowData(0)
             .Cells(1, 2).Value = rowData(1)
-            WriteFormattedUsageValue .Cells(1, 3), rowData(3), CStr(rowData(4))
+            WriteUsageCurrentCell .Cells(1, 3), rowData(3), resolvedFormat
         End With
 
         rowCount = rowCount + 1

@@ -156,10 +156,10 @@ Serial numbers show as 1.11E+12 or lose leading zeros
   -> Re-import SITS/usage after updating modUtility, or run RepairWorkbookFormats.
   -> Serial columns are stored as text (@) using the source cell display text.
 
-Time values calculate incorrectly
-  -> Hours use [h]:mm (Excel day-fraction storage). Minutes use [m]:ss.
-  -> HH/E1/E2 showing as 86.61 means Format was Number not Hours — run
-     RepairWorkbookFormats (fixes Format column and applies [h]:mm display).
-  -> Underlying 86.61 for 2078:43 is correct; the cell must use [h]:mm to display it.
+Time values calculate incorrectly / show as 86.61
+  -> 86.61 is the internal day-fraction for 2078:43 — Baseline now stores
+     display text (2078:43) for hour counters after RepairWorkbookFormats.
+  -> Run RepairWorkbookFormats, or re-run setup wizard import with updated modules.
+  -> HH/E1/E2 Format column will show Hours; Baseline shows h:mm text.
 
 Build marker: Phase2-usage-entry-v2

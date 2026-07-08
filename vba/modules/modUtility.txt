@@ -525,9 +525,9 @@ End Function
 
 Public Function GetFormatPatternForType(ByVal formatType As String) As String
     Select Case UCase$(Trim$(formatType))
-        Case FORMAT_TYPE_HOURS
+        Case UCase$(FORMAT_TYPE_HOURS)
             GetFormatPatternForType = FORMAT_TIME_HOURS
-        Case FORMAT_TYPE_MINUTES
+        Case UCase$(FORMAT_TYPE_MINUTES)
             GetFormatPatternForType = FORMAT_TIME_MINUTES
         Case Else
             GetFormatPatternForType = FORMAT_DECIMAL
@@ -610,11 +610,120 @@ Public Function NormalizeUsageImportValue(ByVal rawVal As Variant, _
     End Select
 End Function
 
+Public Function ResolveUsageFormatType(ByVal intervalCode As String, _
+                                       ByVal taskCode As String, _
+                                       Optional ByVal storedFormat As String = "", _
+                                       Optional ByVal description As String = "") As String
+    If IsMinutesUsageCounter(intervalCode, taskCode, description) Then
+        ResolveUsageFormatType = FORMAT_TYPE_MINUTES
+    ElseIf IsHourUsageInterval(intervalCode) Then
+        ResolveUsageFormatType = FORMAT_TYPE_HOURS
+    ElseIf Len(Trim$(storedFormat)) > 0 Then
+        ResolveUsageFormatType = Trim$(storedFormat)
+    Else
+        ResolveUsageFormatType = FORMAT_TYPE_NUMBER
+    End If
+End Function
+
+Public Function UsageValueAsDayFraction(ByVal value As Variant, _
+                                        ByVal formatType As String, _
+                                        Optional ByVal displayText As String = "") As Double
+    Dim parsed As Variant
+
+    If Len(Trim$(displayText)) > 0 And InStr(displayText, ":") > 0 Then
+        Select Case UCase$(Trim$(formatType))
+            Case FORMAT_TYPE_MINUTES
+                parsed = ParseMinutesSecondsValue(value, displayText)
+            Case Else
+                parsed = ParseTimeUsageValue(value, displayText)
+        End Select
+        If Not IsEmpty(parsed) Then
+            UsageValueAsDayFraction = CDbl(parsed)
+            Exit Function
+        End If
+    End If
+
+    If VarType(value) = vbString Then
+        Select Case UCase$(Trim$(formatType))
+            Case FORMAT_TYPE_MINUTES
+                parsed = ParseMinutesSecondsValue(value, CStr(value))
+            Case FORMAT_TYPE_HOURS
+                parsed = ParseTimeUsageValue(value, CStr(value))
+        End Select
+        If Not IsEmpty(parsed) Then
+            UsageValueAsDayFraction = CDbl(parsed)
+            Exit Function
+        End If
+    End If
+
+    If IsNumeric(value) Then
+        Select Case UCase$(Trim$(formatType))
+            Case FORMAT_TYPE_HOURS, FORMAT_TYPE_MINUTES
+                If CDbl(value) < 100# Then
+                    UsageValueAsDayFraction = CDbl(value)
+                ElseIf UCase$(Trim$(formatType)) = FORMAT_TYPE_HOURS Then
+                    UsageValueAsDayFraction = CDbl(value) / 24#
+                Else
+                    UsageValueAsDayFraction = CDbl(value) / 86400#
+                End If
+            Case Else
+                UsageValueAsDayFraction = CDbl(value)
+        End Select
+    Else
+        UsageValueAsDayFraction = 0#
+    End If
+End Function
+
+Public Sub WriteUsageBaselineCell(ByVal target As Range, _
+                                  ByVal value As Variant, _
+                                  ByVal formatType As String, _
+                                  Optional ByVal displayText As String = "")
+    Dim dayFraction As Double
+
+    dayFraction = UsageValueAsDayFraction(value, formatType, displayText)
+
+    Select Case UCase$(Trim$(formatType))
+        Case FORMAT_TYPE_HOURS
+            target.NumberFormat = FORMAT_TEXT
+            target.Value = FormatElapsedHoursFromDayFraction(dayFraction)
+        Case FORMAT_TYPE_MINUTES
+            target.NumberFormat = FORMAT_TEXT
+            target.Value = FormatElapsedMinutesFromDayFraction(dayFraction)
+        Case Else
+            target.NumberFormat = FORMAT_DECIMAL
+            target.Value = dayFraction
+    End Select
+End Sub
+
+Public Sub WriteUsageCurrentCell(ByVal target As Range, _
+                                 ByVal value As Variant, _
+                                 ByVal formatType As String, _
+                                 Optional ByVal displayText As String = "")
+    Dim dayFraction As Double
+    Dim pattern As String
+
+    dayFraction = UsageValueAsDayFraction(value, formatType, displayText)
+    pattern = GetFormatPatternForType(formatType)
+
+    target.Value2 = dayFraction
+    target.NumberFormat = pattern
+End Sub
+
 Public Sub WriteFormattedUsageValue(ByVal target As Range, _
                                     ByVal value As Variant, _
                                     ByVal formatType As String)
-    target.NumberFormat = GetFormatPatternForType(formatType)
-    target.Value = value
+    Dim dayFraction As Double
+    Dim pattern As String
+
+    dayFraction = UsageValueAsDayFraction(value, formatType, CStr(target.Text))
+    pattern = GetFormatPatternForType(formatType)
+
+    If StrComp(pattern, FORMAT_DECIMAL, vbTextCompare) = 0 Then
+        target.Value = dayFraction
+    Else
+        target.Value2 = dayFraction
+    End If
+    target.NumberFormat = pattern
 End Sub
 
 Public Function FormatUsageValueForDisplay(ByVal value As Variant, _
@@ -710,51 +819,9 @@ Public Sub RepairWorkbookFormats()
     MsgBox "Workbook data formats have been repaired.", vbInformation, APP_NAME
 End Sub
 
-' Correct Format column and baseline values when hour counters were stored as Number.
+' Correct Format column and rewrite baseline/current cells for display and maths.
 Public Sub RepairUsageFormatMetadata()
-    Dim ws As Worksheet
-    Dim tbl As ListObject
-    Dim row As ListRow
-    Dim intervalCode As String
-    Dim taskCode As String
-    Dim description As String
-    Dim formatType As String
-    Dim displayText As String
-    Dim baselineValue As Variant
-
-    Set ws = GetWorksheet(SHEET_DATA_USAGE_BASELINE, showError:=False)
-    If ws Is Nothing Then Exit Sub
-
-    Set tbl = GetTable(ws, TBL_USAGE_BASELINE, showError:=False)
-    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Sub
-
-    For Each row In tbl.ListRows
-        intervalCode = Trim$(CStr(row.Range.Cells(1, 1).Value))
-        taskCode = Trim$(CStr(row.Range.Cells(1, 2).Value))
-        description = Trim$(CStr(row.Range.Cells(1, 3).Value))
-        baselineValue = row.Range.Cells(1, 4).Value
-        displayText = CStr(row.Range.Cells(1, 4).Text)
-
-        formatType = DetectUsageFormat(baselineValue, intervalCode, taskCode, description, displayText)
-        row.Range.Cells(1, 5).Value = formatType
-        baselineValue = NormalizeUsageImportValue(baselineValue, formatType, displayText)
-        WriteFormattedUsageValue row.Range.Cells(1, 4), baselineValue, formatType
-    Next row
-
-    Set ws = GetWorksheet(SHEET_DATA_USAGE_CURRENT, showError:=False)
-    If ws Is Nothing Then Exit Sub
-
-    Set tbl = GetTable(ws, TBL_USAGE_CURRENT, showError:=False)
-    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Sub
-
-    For Each row In tbl.ListRows
-        intervalCode = Trim$(CStr(row.Range.Cells(1, 1).Value))
-        taskCode = Trim$(CStr(row.Range.Cells(1, 2).Value))
-        formatType = GetUsageFormatType(intervalCode, taskCode)
-        If Len(formatType) > 0 Then
-            WriteFormattedUsageValue row.Range.Cells(1, 3), row.Range.Cells(1, 3).Value, formatType
-        End If
-    Next row
+    FormatAllUsageDataTables
 End Sub
 
 Public Sub ApplySITSTableFormats()
@@ -781,32 +848,31 @@ Public Sub ApplySITSTableFormats()
     ApplyColumnFormat tbl, HDR_DAYS_WHEN_DUE, FORMAT_DECIMAL
 End Sub
 
-Public Sub ApplyUsageTableFormats()
+Public Sub FormatAllUsageDataTables()
     Dim ws As Worksheet
     Dim tbl As ListObject
     Dim row As ListRow
+    Dim intervalCode As String
+    Dim taskCode As String
+    Dim description As String
     Dim formatType As String
+    Dim baselineValue As Variant
 
     Set ws = GetWorksheet(SHEET_DATA_USAGE_BASELINE, showError:=False)
     If Not ws Is Nothing Then
         Set tbl = GetTable(ws, TBL_USAGE_BASELINE, showError:=False)
-        If Not tbl Is Nothing Then
-            ApplyColumnFormat tbl, HDR_BASE_SERIAL, FORMAT_TEXT
-            If Not tbl.DataBodyRange Is Nothing Then
-                For Each row In tbl.ListRows
-                    formatType = Trim$(CStr(row.Range.Cells(1, 5).Value))
-                    If Len(formatType) = 0 Then
-                        formatType = DetectUsageFormat( _
-                            row.Range.Cells(1, 4).Value, _
-                            CStr(row.Range.Cells(1, 1).Value), _
-                            CStr(row.Range.Cells(1, 2).Value), _
-                            CStr(row.Range.Cells(1, 3).Value), _
-                            CStr(row.Range.Cells(1, 4).Text))
-                        row.Range.Cells(1, 5).Value = formatType
-                    End If
-                    row.Range.Cells(1, 4).NumberFormat = GetFormatPatternForType(formatType)
-                Next row
-            End If
+        If Not tbl Is Nothing And Not tbl.DataBodyRange Is Nothing Then
+            For Each row In tbl.ListRows
+                intervalCode = Trim$(CStr(row.Range.Cells(1, 1).Value))
+                taskCode = Trim$(CStr(row.Range.Cells(1, 2).Value))
+                description = Trim$(CStr(row.Range.Cells(1, 3).Value))
+                baselineValue = row.Range.Cells(1, 4).Value
+                formatType = ResolveUsageFormatType(intervalCode, taskCode, _
+                    CStr(row.Range.Cells(1, 5).Value), description)
+                row.Range.Cells(1, 5).Value = formatType
+                WriteUsageBaselineCell row.Range.Cells(1, 4), baselineValue, formatType, _
+                    CStr(row.Range.Cells(1, 4).Text)
+            Next row
         End If
     End If
 
@@ -815,10 +881,11 @@ Public Sub ApplyUsageTableFormats()
         Set tbl = GetTable(ws, TBL_USAGE_CURRENT, showError:=False)
         If Not tbl Is Nothing And Not tbl.DataBodyRange Is Nothing Then
             For Each row In tbl.ListRows
-                formatType = GetUsageFormatType( _
-                    CStr(row.Range.Cells(1, 1).Value), _
-                    CStr(row.Range.Cells(1, 2).Value))
-                row.Range.Cells(1, 3).NumberFormat = GetFormatPatternForType(formatType)
+                intervalCode = Trim$(CStr(row.Range.Cells(1, 1).Value))
+                taskCode = Trim$(CStr(row.Range.Cells(1, 2).Value))
+                formatType = ResolveUsageFormatType(intervalCode, taskCode)
+                WriteUsageCurrentCell row.Range.Cells(1, 3), row.Range.Cells(1, 3).Value, _
+                    formatType, CStr(row.Range.Cells(1, 3).Text)
             Next row
         End If
     End If
@@ -826,20 +893,19 @@ Public Sub ApplyUsageTableFormats()
     Set ws = GetWorksheet(SHEET_DATA_USAGE_LOG, showError:=False)
     If Not ws Is Nothing Then
         Set tbl = GetTable(ws, TBL_USAGE_LOG, showError:=False)
-        If Not tbl Is Nothing Then
-            ApplyColumnFormat tbl, HDR_LOG_SORTIE_DATE, FORMAT_DATE
-            ApplyColumnFormat tbl, HDR_LOG_ENTERED_AT, FORMAT_DATETIME
-            ApplyColumnFormat tbl, HDR_LOG_INCREMENT, FORMAT_DECIMAL
-            If Not tbl.DataBodyRange Is Nothing Then
-                For Each row In tbl.ListRows
-                    formatType = GetUsageFormatType( _
-                        CStr(row.Range.Cells(1, 3).Value), _
-                        CStr(row.Range.Cells(1, 4).Value))
-                    row.Range.Cells(1, 5).NumberFormat = GetFormatPatternForType(formatType)
-                Next row
-            End If
+        If Not tbl Is Nothing And Not tbl.DataBodyRange Is Nothing Then
+            For Each row In tbl.ListRows
+                intervalCode = Trim$(CStr(row.Range.Cells(1, 3).Value))
+                taskCode = Trim$(CStr(row.Range.Cells(1, 4).Value))
+                formatType = ResolveUsageFormatType(intervalCode, taskCode)
+                WriteFormattedUsageValue row.Range.Cells(1, 5), row.Range.Cells(1, 5).Value, formatType
+            Next row
         End If
     End If
+End Sub
+
+Public Sub ApplyUsageTableFormats()
+    FormatAllUsageDataTables
 End Sub
 
 Private Sub ApplyColumnFormat(ByVal tbl As ListObject, _
