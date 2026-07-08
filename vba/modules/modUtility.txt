@@ -260,9 +260,15 @@ End Sub
 
 Public Sub FinalizeSetupSheetLayout()
     ' Call once at the very end of setup, after tables/config/dashboard exist.
-    ' All sheets stay visible until this runs.
+    ' Phase 0: unhide everything first, then hide data sheets with xlSheetHidden only
+    ' (not xlSheetVeryHidden — that is hard to recover from if something goes wrong).
 
     Dim ws As Worksheet
+
+    ' Recover from any hidden state left by a partial or earlier failed run.
+    For Each ws In ThisWorkbook.Worksheets
+        ws.Visible = xlSheetVisible
+    Next ws
 
     ThisWorkbook.Worksheets(SHEET_DASHBOARD).Tab.Color = COLOR_TAB_VISIBLE
     ThisWorkbook.Worksheets(SHEET_SITS).Tab.Color = COLOR_TAB_VISIBLE
@@ -277,32 +283,53 @@ Public Sub FinalizeSetupSheetLayout()
     ThisWorkbook.Worksheets(SHEET_DATA_WP_TASKS).Tab.Color = COLOR_TAB_DATA
     ThisWorkbook.Worksheets(SHEET_WP_STATE).Tab.Color = COLOR_TAB_SYSTEM
 
-    ' Ensure a visible sheet is active before hiding anything else.
-    ThisWorkbook.Worksheets(SHEET_DASHBOARD).Visible = xlSheetVisible
-    ThisWorkbook.Worksheets(SHEET_SITS).Visible = xlSheetVisible
-    ThisWorkbook.Worksheets(SHEET_USAGE).Visible = xlSheetVisible
-    ThisWorkbook.Worksheets(SHEET_AUDIT).Visible = xlSheetVisible
     ThisWorkbook.Worksheets(SHEET_DASHBOARD).Activate
 
-    HideSetupSheet SHEET_CONFIG
-    HideSetupSheet SHEET_DATA_SITS
-    HideSetupSheet SHEET_DATA_USAGE_BASELINE
-    HideSetupSheet SHEET_DATA_USAGE_LOG
-    HideSetupSheet SHEET_DATA_USAGE_CURRENT
-    HideSetupSheet SHEET_DATA_WP
-    HideSetupSheet SHEET_DATA_WP_TASKS
-    HideSetupSheet SHEET_WP_STATE
+    HideDataSetupSheet SHEET_CONFIG
+    HideDataSetupSheet SHEET_DATA_SITS
+    HideDataSetupSheet SHEET_DATA_USAGE_BASELINE
+    HideDataSetupSheet SHEET_DATA_USAGE_LOG
+    HideDataSetupSheet SHEET_DATA_USAGE_CURRENT
+    HideDataSetupSheet SHEET_DATA_WP
+    HideDataSetupSheet SHEET_DATA_WP_TASKS
+    HideDataSetupSheet SHEET_WP_STATE
 
     ThisWorkbook.Worksheets(SHEET_DASHBOARD).Activate
 End Sub
 
-Private Sub HideSetupSheet(ByVal sheetName As String)
+' Run manually from VBA if sheets are stuck hidden after a failed setup.
+Public Sub RepairSetupSheetVisibility()
     Dim ws As Worksheet
 
+    For Each ws In ThisWorkbook.Worksheets
+        ws.Visible = xlSheetVisible
+    Next ws
+
+    On Error Resume Next
+    ThisWorkbook.Worksheets(SHEET_DASHBOARD).Activate
+    On Error GoTo 0
+
+    MsgBox "All worksheets are now visible." & vbCrLf & vbCrLf & _
+           "Run Setup_RunAll again, or run FinalizeSetupSheetLayout to apply tab colours.", _
+           vbInformation, APP_NAME
+End Sub
+
+Private Function IsUserFacingSetupSheet(ByVal sheetName As String) As Boolean
+    Select Case sheetName
+        Case SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT
+            IsUserFacingSetupSheet = True
+        Case Else
+            IsUserFacingSetupSheet = False
+    End Select
+End Function
+
+Private Sub HideDataSetupSheet(ByVal sheetName As String)
+    Dim ws As Worksheet
+
+    If IsUserFacingSetupSheet(sheetName) Then Exit Sub
+
     Set ws = ThisWorkbook.Worksheets(sheetName)
-    If ws.Visible = xlSheetVisible Then
-        ws.Visible = xlSheetVeryHidden
-    End If
+    ws.Visible = xlSheetHidden
 End Sub
 
 Public Sub ProtectSheetUI(ByVal ws As Worksheet, Optional ByVal password As String = "")

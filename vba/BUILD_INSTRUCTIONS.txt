@@ -122,6 +122,14 @@ Troubleshooting
   -> OrderSetupSheets skips moving a sheet before itself (error 1004).
 
 If setup fails, the error message shows which step failed (e.g. Building sheets).
+
+All worksheets stuck as xlSheetVeryHidden / hidden
+  -> In VBA, open modUtility and run RepairSetupSheetVisibility (F5).
+  -> Update modUtility to Phase0-setup-v7: data sheets use xlSheetHidden only,
+     not xlSheetVeryHidden. User sheets Dashboard/SITS/Usage/Audit Log always
+     stay visible.
+  -> Then run Setup_RunAll again on a fresh workbook, or run
+     FinalizeSetupSheetLayout after repair.
   20260706-Long Forecast_ZZ382.xlsx   — SITS export sample
   ZZ383 Item Usage.xlsx               — Airframe usage sample
   ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)

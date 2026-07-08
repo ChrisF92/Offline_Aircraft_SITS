@@ -3,7 +3,7 @@ Option Explicit
 
 ' ========================================================================
 ' ONE-TIME SETUP — Run complete Phase 0 skeleton build
-' Build marker: Phase0-setup-v6 (hide sheets last)
+' Build marker: Phase0-setup-v7 (no xlSheetVeryHidden; repair macro)
 ' ========================================================================
 
 Private mSetupStep As String
