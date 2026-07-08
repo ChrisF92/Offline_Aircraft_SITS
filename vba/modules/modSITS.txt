@@ -11,6 +11,16 @@ Option Explicit
 Private Const SITS_VIEW_HEADER_ROW As Long = 7
 Private Const SITS_FORECAST_HOURS_CELL As String = "B3"
 Private Const SITS_FORECAST_DAYS_CELL As String = "B4"
+Private Const SITS_SORT_KEY_MISSING As Double = 9.9E+307
+
+Private Type SITSViewSortEntry
+    ListRowIndex As Long
+    IntervalCode As String
+    GroupOrder As Long
+    SortKey As Double
+    LifeHoursFraction As Double
+    DaysUntilDue As Long
+End Type
 
 Public Sub RunRefreshSITS()
     RefreshSITS
@@ -153,7 +163,6 @@ Public Sub RefreshSITSView()
     Dim intervalCode As String
     Dim forecastHours As Double
     Dim forecastDays As Long
-    Dim includeRow As Boolean
     Dim lifeHoursFraction As Double
     Dim daysUntilDue As Long
     Dim warnHoursFraction As Double
@@ -193,31 +202,60 @@ Public Sub RefreshSITSView()
     outputRow = SITS_VIEW_HEADER_ROW + 1
 
     If Not tbl.DataBodyRange Is Nothing Then
+        Dim sortEntries() As SITSViewSortEntry
+        Dim sortCount As Long
+        Dim entryIndex As Long
+        Dim includeRow As Boolean
+
+        sortCount = 0
+        ReDim sortEntries(1 To tbl.ListRows.Count)
+
         For Each row In tbl.ListRows
             intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, _
                 GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)).Value)))
 
             includeRow = TaskPassesForecastFilter(row, tbl, intervalCode, _
                 forecastHours, forecastDays, lifeHoursFraction, daysUntilDue)
-            If Not includeRow Then GoTo NextViewRow
+            If Not includeRow Then GoTo NextCollectRow
 
-            outputCol = 1
-            For Each headerName In headers
-                colIndex = GetTableColumnIndex(tbl, CStr(headerName))
-                If colIndex > 0 Then
-                    CopySITSViewCell row.Range.Cells(1, colIndex), _
-                        wsView.Cells(outputRow, outputCol), CStr(headerName)
-                End If
-                outputCol = outputCol + 1
-            Next headerName
+            sortCount = sortCount + 1
+            sortEntries(sortCount).ListRowIndex = row.Index
+            sortEntries(sortCount).IntervalCode = intervalCode
+            sortEntries(sortCount).GroupOrder = SITSIntervalGroupOrder(intervalCode)
+            sortEntries(sortCount).SortKey = SITSTaskSortKey(row, tbl, intervalCode)
+            sortEntries(sortCount).LifeHoursFraction = lifeHoursFraction
+            sortEntries(sortCount).DaysUntilDue = daysUntilDue
 
-            ApplySITSViewRowWarnings wsView, outputRow, headers.Count, _
-                intervalCode, lifeHoursFraction, daysUntilDue, _
-                warnHoursFraction, warnDays
-
-            outputRow = outputRow + 1
-NextViewRow:
+NextCollectRow:
         Next row
+
+        If sortCount > 0 Then
+            ReDim Preserve sortEntries(1 To sortCount)
+            SortSITSViewEntries sortEntries
+
+            For entryIndex = 1 To sortCount
+                Set row = tbl.ListRows(sortEntries(entryIndex).ListRowIndex)
+                intervalCode = sortEntries(entryIndex).IntervalCode
+                lifeHoursFraction = sortEntries(entryIndex).LifeHoursFraction
+                daysUntilDue = sortEntries(entryIndex).DaysUntilDue
+
+                outputCol = 1
+                For Each headerName In headers
+                    colIndex = GetTableColumnIndex(tbl, CStr(headerName))
+                    If colIndex > 0 Then
+                        CopySITSViewCell row.Range.Cells(1, colIndex), _
+                            wsView.Cells(outputRow, outputCol), CStr(headerName)
+                    End If
+                    outputCol = outputCol + 1
+                Next headerName
+
+                ApplySITSViewRowWarnings wsView, outputRow, headers.Count, _
+                    intervalCode, lifeHoursFraction, daysUntilDue, _
+                    warnHoursFraction, warnDays
+
+                outputRow = outputRow + 1
+            Next entryIndex
+        End If
     End If
 
     wsView.Columns.AutoFit
@@ -364,6 +402,103 @@ Private Sub ApplyDDTaskRecalc(ByVal row As ListRow, _
         row.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
     End If
 End Sub
+
+Private Function SITSIntervalGroupOrder(ByVal intervalCode As String) As Long
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_E1
+            SITSIntervalGroupOrder = 1
+        Case TYPE_E2
+            SITSIntervalGroupOrder = 2
+        Case TYPE_HH
+            SITSIntervalGroupOrder = 3
+        Case TYPE_DD
+            SITSIntervalGroupOrder = 4
+        Case Else
+            SITSIntervalGroupOrder = 5
+    End Select
+End Function
+
+Private Function SITSTaskSortKey(ByVal row As ListRow, _
+                                 ByVal tbl As ListObject, _
+                                 ByVal intervalCode As String) As Double
+    Dim colLRHours As Long
+    Dim colLRNumber As Long
+    Dim colDaysDue As Long
+    Dim colTaskCode As Long
+    Dim dueValue As Variant
+
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_E1, TYPE_E2, TYPE_HH
+            colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+            If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
+                SITSTaskSortKey = CDbl(row.Range.Cells(1, colLRHours).Value)
+                Exit Function
+            End If
+
+        Case TYPE_DD
+            colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+            dueValue = row.Range.Cells(1, colDaysDue).Value
+            If IsDate(dueValue) Then
+                SITSTaskSortKey = CDbl(CDate(dueValue))
+                Exit Function
+            ElseIf IsNumeric(dueValue) Then
+                SITSTaskSortKey = CDbl(dueValue)
+                Exit Function
+            End If
+
+        Case Else
+            colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+            If colLRNumber > 0 And IsNumeric(row.Range.Cells(1, colLRNumber).Value) Then
+                SITSTaskSortKey = CDbl(row.Range.Cells(1, colLRNumber).Value)
+                Exit Function
+            End If
+
+            colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+            If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
+                SITSTaskSortKey = CDbl(row.Range.Cells(1, colLRHours).Value)
+                Exit Function
+            End If
+
+            colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
+            If colTaskCode > 0 Then
+                SITSTaskSortKey = 1E+15 + Len(CStr(row.Range.Cells(1, colTaskCode).Value))
+                Exit Function
+            End If
+    End Select
+
+    SITSTaskSortKey = SITS_SORT_KEY_MISSING
+End Function
+
+Private Sub SortSITSViewEntries(ByRef entries() As SITSViewSortEntry)
+    Dim i As Long
+    Dim j As Long
+    Dim temp As SITSViewSortEntry
+
+    For i = LBound(entries) To UBound(entries) - 1
+        For j = i + 1 To UBound(entries)
+            If SITSViewEntryLess(entries(j), entries(i)) Then
+                temp = entries(i)
+                entries(i) = entries(j)
+                entries(j) = temp
+            End If
+        Next j
+    Next i
+End Sub
+
+Private Function SITSViewEntryLess(ByRef leftEntry As SITSViewSortEntry, _
+                                   ByRef rightEntry As SITSViewSortEntry) As Boolean
+    If leftEntry.GroupOrder < rightEntry.GroupOrder Then
+        SITSViewEntryLess = True
+    ElseIf leftEntry.GroupOrder > rightEntry.GroupOrder Then
+        SITSViewEntryLess = False
+    ElseIf leftEntry.SortKey < rightEntry.SortKey Then
+        SITSViewEntryLess = True
+    ElseIf leftEntry.SortKey > rightEntry.SortKey Then
+        SITSViewEntryLess = False
+    Else
+        SITSViewEntryLess = (leftEntry.ListRowIndex < rightEntry.ListRowIndex)
+    End If
+End Function
 
 Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
                                           ByVal tbl As ListObject, _

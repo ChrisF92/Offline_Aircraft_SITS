@@ -152,6 +152,16 @@ What Phase 3 includes
 - DD tasks: days-when-due with calendar elapsed time since import
 - Auto-refresh after SITS import, setup, and sortie logging
 
+SITS view sort order
+--------------------
+Tasks are grouped and sorted ascending (most urgent first) within each group:
+
+1. E1 — by Life Remaining (Hours)
+2. E2 — by Life Remaining (Hours)
+3. HH — by Life Remaining (Hours)
+4. DD — by Days When Due (date or days count)
+5. All other interval types — by Life Remaining (Number), then Hours, then Task Code
+
 What is NOT included yet
 ------------------------
 - Work packages, extensions, deferrals (Phases 4–5)
