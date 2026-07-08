@@ -1,4 +1,4 @@
-Attribute VB_Name = "Setup_CreateTables"
+Attribute VB_Name = "modSetupTables"
 Option Explicit
 
 ' ========================================================================

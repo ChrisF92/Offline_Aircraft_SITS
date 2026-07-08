@@ -1,4 +1,4 @@
-Attribute VB_Name = "Setup_CreateDashboard"
+Attribute VB_Name = "modSetupDashboard"
 Option Explicit
 
 ' ========================================================================

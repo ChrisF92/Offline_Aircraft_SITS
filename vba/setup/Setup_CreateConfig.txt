@@ -1,4 +1,4 @@
-Attribute VB_Name = "Setup_CreateConfig"
+Attribute VB_Name = "modSetupConfig"
 Option Explicit
 
 ' ========================================================================

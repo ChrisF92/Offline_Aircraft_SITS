@@ -19,22 +19,37 @@ Step 1 — Create a new workbook
 Step 2 — Import VBA modules (order recommended)
 -----------------------------------------------
 Open the VBA editor (Alt+F11). For each file below, insert a new standard module
-(Insert > Module), set the module Name property to match, and paste the file contents.
+(Insert > Module), set the module Name property exactly as shown, and paste the
+file contents.
 
-  vba/modules/CONFIG.txt              -> Module name: CONFIG
-  vba/modules/modUtility.txt          -> modUtility
-  vba/modules/modValidation.txt       -> modValidation
-  vba/modules/modImportValidation.txt -> modImportValidation
-  vba/modules/modAuditTrail.txt       -> modAuditTrail
+IMPORTANT: The module Name must match the Attribute VB_Name line at the top of
+each file. Module names must NOT be the same as a macro you call from another
+module (e.g. do not name a module "Setup_CreateTables" — that causes a compile
+error "Expected variable or procedure, not module").
 
-Setup scripts (one-time use):
+Runtime modules:
 
-  vba/setup/Setup_CreateSheets.txt
-  vba/setup/Setup_CreateTables.txt
-  vba/setup/Setup_CreateConfig.txt
-  vba/setup/Setup_CreateNamedRanges.txt
-  vba/setup/Setup_CreateDashboard.txt
-  vba/setup/Setup_RunAll.txt
+  File                              Module Name (Name property)
+  --------------------------------  ---------------------------
+  vba/modules/CONFIG.txt            CONFIG
+  vba/modules/modUtility.txt        modUtility
+  vba/modules/modValidation.txt     modValidation
+  vba/modules/modImportValidation.txt modImportValidation
+  vba/modules/modAuditTrail.txt     modAuditTrail
+
+Setup modules (one-time use):
+
+  File                                  Module Name
+  ------------------------------------  -------------
+  vba/setup/Setup_CreateSheets.txt      modSetupSheets
+  vba/setup/Setup_CreateTables.txt      modSetupTables
+  vba/setup/Setup_CreateConfig.txt      modSetupConfig
+  vba/setup/Setup_CreateNamedRanges.txt modSetupNames
+  vba/setup/Setup_CreateDashboard.txt   modSetupDashboard
+  vba/setup/Setup_RunAll.txt            modSetupRunAll
+
+The macros you run still use their procedure names, e.g. Setup_CreateTables and
+Setup_RunAll — only the module container names differ.
 
 ThisWorkbook code:
 

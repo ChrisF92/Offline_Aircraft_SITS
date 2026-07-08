@@ -1,4 +1,4 @@
-Attribute VB_Name = "Setup_CreateSheets"
+Attribute VB_Name = "modSetupSheets"
 Option Explicit
 
 ' ========================================================================
