@@ -1,0 +1,150 @@
+Attribute VB_Name = "frmLogSortie"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Explicit
+
+' ========================================================================
+' LOG SORTIE USERFORM — Offline Aircraft SITS v2 (Phase 2)
+' ========================================================================
+' Create this UserForm manually in the VBA IDE and paste this code.
+' See vba/forms/LOG_SORTIE_FORM_LAYOUT.txt for control names and layout.
+' ========================================================================
+
+Private mPending As Collection
+
+Private Sub UserForm_Initialize()
+    Set mPending = New Collection
+    txtSortieDate.Value = Format$(Date, FORMAT_DATE)
+    txtSortieRef.Value = ""
+    PopulateSortieCounterList lstCounters
+    RefreshPendingList
+    UpdateSelectionLabel
+End Sub
+
+Private Sub lstCounters_Click()
+    UpdateSelectionLabel
+End Sub
+
+Private Sub cmdAdd_Click()
+    Dim selectedIndex As Long
+    Dim intervalCode As String
+    Dim taskCode As String
+    Dim formatType As String
+    Dim incrementValue As Variant
+    Dim failReason As String
+    Dim i As Long
+    Dim rowData As Variant
+
+    selectedIndex = lstCounters.ListIndex
+    If selectedIndex < 0 Then
+        MsgBox "Select a usage counter from the list.", vbExclamation, APP_NAME
+        Exit Sub
+    End If
+
+    intervalCode = lstCounters.List(selectedIndex, 0)
+    taskCode = lstCounters.List(selectedIndex, 3)
+    formatType = lstCounters.List(selectedIndex, 2)
+
+    incrementValue = ParseUsageIncrement(txtIncrement.Value, formatType, failReason)
+    If IsEmpty(incrementValue) Then
+        MsgBox failReason, vbExclamation, APP_NAME
+        txtIncrement.SetFocus
+        Exit Sub
+    End If
+
+    For i = mPending.Count To 1 Step -1
+        rowData = mPending(i)
+        If StrComp(CStr(rowData(0)), intervalCode, vbTextCompare) = 0 And _
+           StrComp(CStr(rowData(1)), taskCode, vbTextCompare) = 0 Then
+            mPending.Remove i
+            Exit For
+        End If
+    Next i
+
+    mPending.Add Array(intervalCode, taskCode, incrementValue, formatType)
+    txtIncrement.Value = ""
+    RefreshPendingList
+End Sub
+
+Private Sub cmdRemove_Click()
+    If lstPending.ListIndex < 0 Then
+        MsgBox "Select a pending increment to remove.", vbExclamation, APP_NAME
+        Exit Sub
+    End If
+
+    mPending.Remove lstPending.ListIndex + 1
+    RefreshPendingList
+End Sub
+
+Private Sub cmdSubmit_Click()
+    Dim sortieDate As Date
+    Dim cleanPending As Object
+    Dim i As Long
+    Dim rowData As Variant
+
+    If Not TryParseSortieDate(sortieDate) Then Exit Sub
+
+    Set cleanPending = CreateObject("Scripting.Dictionary")
+    For i = 1 To mPending.Count
+        rowData = mPending(i)
+        cleanPending(CStr(rowData(0)) & "|" & CStr(rowData(1))) = rowData(2)
+    Next i
+
+    If CommitSortie(sortieDate, Trim$(txtSortieRef.Value), cleanPending, True) Then
+        Unload Me
+    End If
+End Sub
+
+Private Sub cmdCancel_Click()
+    Unload Me
+End Sub
+
+Private Sub UpdateSelectionLabel()
+    Dim selectedIndex As Long
+
+    selectedIndex = lstCounters.ListIndex
+    If selectedIndex < 0 Then
+        lblSelected.Caption = "Select a counter, enter increment, then click Add."
+        Exit Sub
+    End If
+
+    lblSelected.Caption = lstCounters.List(selectedIndex, 0) & _
+                          "  current " & lstCounters.List(selectedIndex, 1) & _
+                          "  (" & lstCounters.List(selectedIndex, 2) & ")"
+End Sub
+
+Private Sub RefreshPendingList()
+    Dim i As Long
+    Dim rowData As Variant
+    Dim displayLine As String
+
+    lstPending.Clear
+
+    For i = 1 To mPending.Count
+        rowData = mPending(i)
+        displayLine = CStr(rowData(0)) & "  +" & _
+                      FormatUsageValueForDisplay(rowData(2), CStr(rowData(3)))
+        lstPending.AddItem displayLine
+    Next i
+End Sub
+
+Private Function TryParseSortieDate(ByRef sortieDate As Date) As Boolean
+    Dim entered As String
+
+    entered = Trim$(txtSortieDate.Value)
+    If Len(entered) = 0 Then
+        MsgBox "Enter a sortie date (dd/mm/yyyy).", vbExclamation, APP_NAME
+        txtSortieDate.SetFocus
+        Exit Function
+    End If
+
+    If IsDate(entered) Then
+        sortieDate = DateValue(CDate(entered))
+        TryParseSortieDate = True
+    Else
+        MsgBox "Enter a valid sortie date (dd/mm/yyyy).", vbExclamation, APP_NAME
+        txtSortieDate.SetFocus
+    End If
+End Function
