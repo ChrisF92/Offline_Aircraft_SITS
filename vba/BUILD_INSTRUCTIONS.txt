@@ -1,0 +1,89 @@
+Offline Aircraft SITS v2 — Build Instructions (Phase 0)
+=========================================================
+
+You build the .xlsm workbook locally from the .txt VBA sources in this folder.
+
+Prerequisites
+-------------
+- Microsoft Excel 2016 (Office 16) with macros enabled
+- Trust access to the VBA project object model (optional, for import tools):
+  File > Options > Trust Center > Trust Center Settings > Macro Settings >
+  check "Trust access to the VBA project object model"
+
+Step 1 — Create a new workbook
+------------------------------
+1. Open Excel and create a blank workbook.
+2. Save As > Excel Macro-Enabled Workbook (.xlsm)
+   Example: ZZ383_SITS_v2.xlsm
+
+Step 2 — Import VBA modules (order recommended)
+-----------------------------------------------
+Open the VBA editor (Alt+F11). For each file below, insert a new standard module
+(Insert > Module), set the module Name property to match, and paste the file contents.
+
+  vba/modules/CONFIG.txt              -> Module name: CONFIG
+  vba/modules/modUtility.txt          -> modUtility
+  vba/modules/modValidation.txt       -> modValidation
+  vba/modules/modImportValidation.txt -> modImportValidation
+  vba/modules/modAuditTrail.txt       -> modAuditTrail
+
+Setup scripts (one-time use):
+
+  vba/setup/Setup_CreateSheets.txt
+  vba/setup/Setup_CreateTables.txt
+  vba/setup/Setup_CreateConfig.txt
+  vba/setup/Setup_CreateNamedRanges.txt
+  vba/setup/Setup_CreateDashboard.txt
+  vba/setup/Setup_RunAll.txt
+
+ThisWorkbook code:
+
+  vba/modules/ThisWorkbook.txt        -> Paste into ThisWorkbook object (not a module)
+
+Step 3 — Run Phase 0 setup
+--------------------------
+1. In the VBA editor, open the Setup_RunAll module.
+2. Place the cursor inside Setup_RunAll and press F5.
+3. Enter the aircraft tail number when prompted (e.g. ZZ383).
+4. When complete, run ValidateWorkbookStructure (modValidation) to confirm.
+
+Alternatively, run each Setup_* macro individually in this order:
+  Setup_CreateSheets
+  Setup_CreateTables
+  Setup_CreateConfig
+  Setup_CreateNamedRanges
+  Setup_CreateDashboard
+
+Step 4 — Save
+-------------
+Save the workbook. The Phase 0 skeleton includes:
+
+  Visible sheets:  Dashboard, SITS, Usage, Audit Log
+  Hidden sheets:   _CONFIG, _DATA_SITS, _DATA_USAGE_*, _DATA_WP*, _WP_STATE
+  Tables:          tblSITS, tblUsageBaseline, tblUsageLog, tblUsageCurrent,
+                   tblWorkPackages, tblWPTasks, tblConfig, tblIntervalMap, tblAudit
+
+What Phase 0 does NOT include yet
+---------------------------------
+- Setup Wizard (Phase 1)
+- GOLDesp file import macros (Phase 1)
+- Usage entry form (Phase 2)
+- SITS calculations and view (Phase 3)
+- Work packages, extensions, deferrals (Phases 4–5)
+
+Import rules (for Phase 1 reference)
+------------------------------------
+SITS Long Forecast — ALL required (abort if any missing):
+  Interval Type Code, Life Remaining, Task Code, Task Sequence,
+  Task Description, Serial, Actual Interval, Extension, End Item Serial
+
+Usage exports (airframe + engine) — ALL required:
+  Interval Type, Task Code, Life Used, Top Serial
+
+Engine usage must include SM and SN after import (WC/STARTS/ECU).
+
+Sample files in the repository
+------------------------------
+  20260706-Long Forecast_ZZ382.xlsx   — SITS export sample
+  ZZ383 Item Usage.xlsx               — Airframe usage sample
+  ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)

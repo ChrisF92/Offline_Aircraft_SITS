@@ -1,0 +1,35 @@
+Attribute VB_Name = "Setup_CreateNamedRanges"
+Option Explicit
+
+' ========================================================================
+' ONE-TIME SETUP — Create named ranges
+' ========================================================================
+
+Public Sub Setup_CreateNamedRanges(Optional ByVal silent As Boolean = False)
+    If Not silent Then
+        If MsgBox("Create named ranges?", vbQuestion + vbYesNo, "Setup — Names") <> vbYes Then Exit Sub
+    End If
+
+    SetExcelState "disable"
+    On Error GoTo ErrorHandler
+
+    DeleteNamedRangeIfExists NAMED_ACTIVE_WP
+    DeleteNamedRangeIfExists NAMED_EXTENSION_SNOW
+
+    ThisWorkbook.Names.Add Name:=NAMED_ACTIVE_WP, RefersTo:="=" & SHEET_DASHBOARD & "!$C$8"
+    ThisWorkbook.Names.Add Name:=NAMED_EXTENSION_SNOW, RefersTo:="=" & SHEET_DASHBOARD & "!$C$10"
+
+    SetExcelState "enable"
+    If Not silent Then MsgBox "Named ranges created.", vbInformation, "Setup — Names"
+    Exit Sub
+
+ErrorHandler:
+    SetExcelState "enable"
+    MsgBox "Error creating named ranges: " & Err.Description, vbCritical, "Setup — Names"
+End Sub
+
+Private Sub DeleteNamedRangeIfExists(ByVal rangeName As String)
+    On Error Resume Next
+    ThisWorkbook.Names(rangeName).Delete
+    On Error GoTo 0
+End Sub

@@ -1,0 +1,82 @@
+Attribute VB_Name = "Setup_CreateSheets"
+Option Explicit
+
+' ========================================================================
+' ONE-TIME SETUP — Create worksheets
+' ========================================================================
+' Run from a new macro-enabled workbook after importing CONFIG and modUtility.
+' ========================================================================
+
+Public Sub Setup_CreateSheets()
+    Dim response As VbMsgBoxResult
+
+    response = MsgBox("This will create all worksheets for " & APP_NAME & " v" & APP_VERSION & "." & vbCrLf & vbCrLf & _
+                      "Continue?", vbQuestion + vbYesNo, "Setup — Sheets")
+    If response <> vbYes Then Exit Sub
+
+    SetExcelState "disable"
+    Application.DisplayAlerts = False
+
+    DeleteDefaultSheets
+    CreateVisibleSheets
+    CreateHiddenSheets
+    OrderSheets
+
+    Application.DisplayAlerts = True
+    SetExcelState "enable"
+
+    MsgBox "Worksheets created successfully.", vbInformation, "Setup — Sheets"
+End Sub
+
+Private Sub DeleteDefaultSheets()
+    Dim ws As Worksheet
+
+    Do While ThisWorkbook.Worksheets.Count > 0
+        Set ws = ThisWorkbook.Worksheets(1)
+        ws.Delete
+    Loop
+End Sub
+
+Private Sub CreateVisibleSheets()
+    AddSheet SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+    AddSheet SHEET_SITS, xlSheetVisible, COLOR_TAB_VISIBLE
+    AddSheet SHEET_USAGE, xlSheetVisible, COLOR_TAB_VISIBLE
+    AddSheet SHEET_AUDIT, xlSheetVisible, COLOR_TAB_SYSTEM
+End Sub
+
+Private Sub CreateHiddenSheets()
+    AddSheet SHEET_CONFIG, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_SITS, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_USAGE_BASELINE, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_USAGE_LOG, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_USAGE_CURRENT, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_WP, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_WP_TASKS, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_WP_STATE, xlSheetVeryHidden, COLOR_TAB_SYSTEM
+End Sub
+
+Private Sub AddSheet(ByVal sheetName As String, ByVal visibility As XlSheetVisibility, ByVal tabColor As Long)
+    Dim ws As Worksheet
+
+    DeleteSheetIfExists sheetName
+    Set ws = ThisWorkbook.Worksheets.Add
+    ws.Name = sheetName
+    ws.Visible = visibility
+    ws.Tab.Color = tabColor
+End Sub
+
+Private Sub OrderSheets()
+    Dim order As Variant
+    Dim i As Long
+
+    order = Array( _
+        SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT, _
+        SHEET_CONFIG, SHEET_DATA_SITS, SHEET_DATA_USAGE_BASELINE, _
+        SHEET_DATA_USAGE_LOG, SHEET_DATA_USAGE_CURRENT, _
+        SHEET_DATA_WP, SHEET_DATA_WP_TASKS, SHEET_WP_STATE _
+    )
+
+    For i = LBound(order) To UBound(order)
+        ThisWorkbook.Worksheets(CStr(order(i))).Move Before:=ThisWorkbook.Worksheets(i + 1)
+    Next i
+End Sub

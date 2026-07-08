@@ -1,0 +1,217 @@
+Attribute VB_Name = "modImportValidation"
+Option Explicit
+
+' ========================================================================
+' IMPORT VALIDATION MODULE — Offline Aircraft SITS v2
+' ========================================================================
+' Shared header discovery and strict required-column validation for all
+' GOLDesp file imports. Missing required columns abort the import.
+' ========================================================================
+
+Public Function FindHeaderRow(ByVal srcWs As Worksheet, _
+                              ByVal requiredHeaders As Variant, _
+                              ByRef failReason As String, _
+                              Optional ByVal maxScanRows As Long = 10) As Long
+    Dim testRow As Long
+    Dim foundCount As Long
+    Dim requiredCount As Long
+    Dim item As Variant
+
+    requiredCount = UBound(requiredHeaders) - LBound(requiredHeaders) + 1
+
+    For testRow = 1 To maxScanRows
+        foundCount = 0
+
+        For Each item In requiredHeaders
+            If FindHeaderColumn(srcWs, testRow, CStr(item)) > 0 Then
+                foundCount = foundCount + 1
+            End If
+        Next item
+
+        If foundCount = requiredCount Then
+            FindHeaderRow = testRow
+            Exit Function
+        End If
+    Next testRow
+
+    failReason = BuildMissingHeaderMessage(srcWs, requiredHeaders, maxScanRows)
+    FindHeaderRow = 0
+End Function
+
+Public Function BuildHeaderMap(ByVal srcWs As Worksheet, _
+                               ByVal headerRow As Long, _
+                               ByVal requiredHeaders As Variant, _
+                               ByRef failReason As String) As Object
+    Dim dict As Object
+    Dim item As Variant
+    Dim colIndex As Long
+    Dim missing As String
+
+    Set dict = CreateObject("Scripting.Dictionary")
+
+    For Each item In requiredHeaders
+        colIndex = FindHeaderColumn(srcWs, headerRow, CStr(item))
+        If colIndex = 0 Then
+            If Len(missing) > 0 Then missing = missing & ", "
+            missing = missing & CStr(item)
+        Else
+            dict(CStr(item)) = colIndex
+        End If
+    Next item
+
+    If Len(missing) > 0 Then
+        failReason = "The imported file is missing required column(s): " & missing & vbCrLf & vbCrLf & _
+                     DescribeRequiredHeaders(requiredHeaders)
+        Set BuildHeaderMap = Nothing
+    Else
+        Set BuildHeaderMap = dict
+    End If
+End Function
+
+Public Function FindHeaderColumn(ByVal ws As Worksheet, _
+                                 ByVal headerRow As Long, _
+                                 ByVal canonicalHeader As String) As Long
+    Dim aliases As Variant
+    Dim aliasItem As Variant
+    Dim lastCol As Long
+    Dim col As Long
+    Dim cellHeader As String
+
+    aliases = HeaderAliases(canonicalHeader)
+    lastCol = ws.Cells(headerRow, ws.Columns.Count).End(xlToLeft).Column
+
+    For Each aliasItem In aliases
+        For col = 1 To lastCol
+            cellHeader = NormaliseHeaderText(CStr(ws.Cells(headerRow, col).Value))
+            If cellHeader = NormaliseHeaderText(CStr(aliasItem)) Then
+                FindHeaderColumn = col
+                Exit Function
+            End If
+        Next col
+    Next aliasItem
+End Function
+
+Public Function ValidateImportTail(ByVal srcWs As Worksheet, _
+                                   ByVal firstDataRow As Long, _
+                                   ByVal lastDataRow As Long, _
+                                   ByVal tailColumn As Long, _
+                                   ByVal expectedTail As String, _
+                                   ByRef failReason As String) As Boolean
+    Dim rowIndex As Long
+    Dim validRows As Long
+    Dim mismatchCount As Long
+    Dim mismatches As String
+    Dim sourceSerial As String
+    Dim expected As String
+
+    expected = NormaliseTailText(expectedTail)
+
+    For rowIndex = firstDataRow To lastDataRow
+        sourceSerial = NormaliseTailText(CStr(srcWs.Cells(rowIndex, tailColumn).Value))
+        If Len(sourceSerial) = 0 Then GoTo NextRow
+
+        validRows = validRows + 1
+
+        If sourceSerial <> expected Then
+            mismatchCount = mismatchCount + 1
+            If mismatchCount <= 10 Then
+                mismatches = mismatches & "Row " & rowIndex & ": '" & _
+                             CStr(srcWs.Cells(rowIndex, tailColumn).Value) & _
+                             "' does not match '" & expectedTail & "'" & vbCrLf
+            End If
+        End If
+
+NextRow:
+    Next rowIndex
+
+    If validRows = 0 Then
+        failReason = "No data rows were found below the header row."
+        Exit Function
+    End If
+
+    If mismatchCount > 0 Then
+        If mismatchCount > 10 Then
+            mismatches = mismatches & "...and " & CStr(mismatchCount - 10) & " more mismatch(es)."
+        End If
+        failReason = "Tail validation failed for " & expectedTail & "." & vbCrLf & vbCrLf & mismatches
+        Exit Function
+    End If
+
+    ValidateImportTail = True
+End Function
+
+Public Function RowHasAnyValue(ByVal ws As Worksheet, _
+                               ByVal rowIndex As Long, _
+                               ParamArray columns() As Variant) As Boolean
+    Dim i As Long
+
+    For i = LBound(columns) To UBound(columns)
+        If Len(Trim$(CStr(ws.Cells(rowIndex, columns(i)).Value))) > 0 Then
+            RowHasAnyValue = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+Public Function ImportOpenReadOnly(ByVal filePath As String, _
+                                 ByRef failReason As String) As Workbook
+    Dim srcWb As Workbook
+    Dim errNum As Long
+    Dim errDesc As String
+
+    On Error Resume Next
+    Set srcWb = Workbooks.Open(filePath, ReadOnly:=True)
+    If Err.Number <> 0 Then
+        errNum = Err.Number
+        errDesc = Err.Description
+        Err.Clear
+    End If
+    On Error GoTo 0
+
+    If srcWb Is Nothing Then
+        failReason = "Could not open file." & vbCrLf & vbCrLf & _
+                     "Error " & errNum & ": " & errDesc
+    Else
+        Set ImportOpenReadOnly = srcWb
+    End If
+End Function
+
+Public Function PromptImportFile(ByVal dialogTitle As String) As String
+    Dim filePath As Variant
+
+    filePath = Application.GetOpenFilename( _
+        "Excel (*.xlsx;*.xls;*.xlsm;*.csv),*.xlsx;*.xls;*.xlsm;*.csv", , _
+        dialogTitle)
+
+    If filePath = False Then
+        PromptImportFile = ""
+    Else
+        PromptImportFile = CStr(filePath)
+    End If
+End Function
+
+Public Sub ShowImportFailure(ByVal context As String, ByVal failReason As String)
+    MsgBox context & " import failed." & vbCrLf & vbCrLf & failReason, _
+           vbExclamation, APP_NAME
+End Sub
+
+Private Function BuildMissingHeaderMessage(ByVal srcWs As Worksheet, _
+                                           ByVal requiredHeaders As Variant, _
+                                           ByVal maxScanRows As Long) As String
+    BuildMissingHeaderMessage = _
+        "Could not find a header row containing all required columns in the first " & _
+        CStr(maxScanRows) & " rows." & vbCrLf & vbCrLf & _
+        DescribeRequiredHeaders(requiredHeaders)
+End Function
+
+Private Function DescribeRequiredHeaders(ByVal requiredHeaders As Variant) As String
+    Dim item As Variant
+    Dim result As String
+
+    result = "Required columns:" & vbCrLf
+    For Each item In requiredHeaders
+        result = result & "  • " & CStr(item) & vbCrLf
+    Next item
+
+    DescribeRequiredHeaders = result
+End Function

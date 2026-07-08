@@ -1,0 +1,23 @@
+Attribute VB_Name = "ThisWorkbook"
+Option Explicit
+
+Private Sub Workbook_Open()
+    On Error Resume Next
+
+    If Not ValidateWorkbookStructure() Then
+        MsgBox "Workbook structure validation found issues." & vbCrLf & vbCrLf & _
+               "Run Setup_RunAll if this is a new workbook, or re-import the VBA modules.", _
+               vbExclamation, APP_NAME
+    ElseIf Not IsSetupComplete() Then
+        MsgBox "Welcome to " & APP_NAME & " v" & APP_VERSION & "." & vbCrLf & vbCrLf & _
+               "This aircraft workbook has not been set up yet." & vbCrLf & _
+               "Run the Setup Wizard when it is available (Phase 1).", _
+               vbInformation, APP_NAME
+    End If
+
+    On Error GoTo 0
+End Sub
+
+Private Sub Workbook_BeforeClose(Cancel As Boolean)
+    SetExcelState "enable"
+End Sub

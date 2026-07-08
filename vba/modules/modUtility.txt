@@ -1,0 +1,255 @@
+Attribute VB_Name = "modUtility"
+Option Explicit
+
+' ========================================================================
+' UTILITY MODULE — Offline Aircraft SITS v2
+' ========================================================================
+
+Public Sub SetExcelState(ByVal action As String)
+    Select Case LCase$(Trim$(action))
+        Case "disable"
+            Application.ScreenUpdating = False
+            Application.EnableEvents = False
+            Application.Calculation = xlCalculationManual
+        Case "enable"
+            Application.Calculation = xlCalculationAutomatic
+            Application.EnableEvents = True
+            Application.ScreenUpdating = True
+        Case "fast"
+            Application.ScreenUpdating = False
+            Application.EnableEvents = False
+            Application.Calculation = xlCalculationManual
+    End Select
+End Sub
+
+Public Function GetWorksheet(ByVal sheetName As String, _
+                               Optional ByVal showError As Boolean = True) As Worksheet
+    On Error Resume Next
+    Set GetWorksheet = ThisWorkbook.Worksheets(sheetName)
+    On Error GoTo 0
+
+    If GetWorksheet Is Nothing And showError Then
+        MsgBox "Worksheet '" & sheetName & "' was not found.", vbCritical, APP_NAME
+    End If
+End Function
+
+Public Function GetTable(ByVal ws As Worksheet, _
+                           ByVal tableName As String, _
+                           Optional ByVal showError As Boolean = True) As ListObject
+    On Error Resume Next
+    Set GetTable = ws.ListObjects(tableName)
+    On Error GoTo 0
+
+    If GetTable Is Nothing And showError Then
+        MsgBox "Table '" & tableName & "' was not found on '" & ws.Name & "'.", _
+               vbCritical, APP_NAME
+    End If
+End Function
+
+Public Function GetTableColumnIndex(ByVal tbl As ListObject, _
+                                    ByVal columnName As String) As Long
+    Dim col As ListColumn
+
+    GetTableColumnIndex = 0
+    If tbl Is Nothing Then Exit Function
+
+    For Each col In tbl.ListColumns
+        If StrComp(col.Name, columnName, vbTextCompare) = 0 Then
+            GetTableColumnIndex = col.Index
+            Exit Function
+        End If
+    Next col
+End Function
+
+Public Function SheetExists(ByVal sheetName As String) As Boolean
+    On Error Resume Next
+    SheetExists = Not ThisWorkbook.Worksheets(sheetName) Is Nothing
+    On Error GoTo 0
+End Function
+
+Public Function TableExists(ByVal ws As Worksheet, ByVal tableName As String) As Boolean
+    On Error Resume Next
+    TableExists = Not ws.ListObjects(tableName) Is Nothing
+    On Error GoTo 0
+End Function
+
+Public Function NamedRangeExists(ByVal rangeName As String) As Boolean
+    Dim testRange As Range
+
+    On Error Resume Next
+    Set testRange = ThisWorkbook.Names(rangeName).RefersToRange
+    On Error GoTo 0
+
+    NamedRangeExists = Not testRange Is Nothing
+End Function
+
+Public Function CleanText(ByVal text As String) As String
+    CleanText = Trim$(Replace(Replace(text, Chr$(160), " "), vbTab, " "))
+    Do While InStr(CleanText, "  ") > 0
+        CleanText = Replace(CleanText, "  ", " ")
+    Loop
+End Function
+
+Public Function NormaliseHeaderText(ByVal headerText As String) As String
+    NormaliseHeaderText = LCase$(CleanText(CStr(headerText)))
+End Function
+
+Public Function NormaliseTailText(ByVal tail As String) As String
+    NormaliseTailText = UCase$(Replace(CleanText(CStr(tail)), " ", ""))
+End Function
+
+Public Function IsValidORN(ByVal orn As String) As Boolean
+    Dim pattern As String
+    Dim i As Long
+    Dim ch As String
+
+    orn = Trim$(orn)
+    If Len(orn) = 0 Then Exit Function
+
+    pattern = CStr(GetConfigValue(CFG_ORN_PATTERN, ORN_FORMAT_PATTERN))
+    If Len(orn) <> Len(pattern) Then Exit Function
+
+    For i = 1 To Len(pattern)
+        ch = Mid$(orn, i, 1)
+        Select Case Mid$(pattern, i, 1)
+            Case "#"
+                If Not ch Like "#" Then Exit Function
+            Case Else
+                If ch <> Mid$(pattern, i, 1) Then Exit Function
+        End Select
+    Next i
+
+    IsValidORN = True
+End Function
+
+Public Function ConvertToBoolean(ByVal value As Variant) As Boolean
+    If IsError(value) Then Exit Function
+    If IsEmpty(value) Then Exit Function
+
+    Select Case VarType(value)
+        Case vbBoolean
+            ConvertToBoolean = value
+        Case vbString
+            Select Case UCase$(Trim$(CStr(value)))
+                Case "TRUE", "YES", "Y", "1"
+                    ConvertToBoolean = True
+            End Select
+        Case vbInteger, vbLong, vbSingle, vbDouble, vbCurrency, vbByte
+            ConvertToBoolean = (CLng(value) <> 0)
+    End Select
+End Function
+
+Public Function GetNamedRangeValue(ByVal rangeName As String) As Variant
+    On Error Resume Next
+    GetNamedRangeValue = ThisWorkbook.Names(rangeName).RefersToRange.Value
+    On Error GoTo 0
+End Function
+
+Public Sub SetNamedRangeValue(ByVal rangeName As String, ByVal newValue As Variant)
+    On Error Resume Next
+    ThisWorkbook.Names(rangeName).RefersToRange.Value = newValue
+    On Error GoTo 0
+End Sub
+
+Public Function LastUsedRowAnyColumn(ByVal ws As Worksheet) As Long
+    Dim lastCell As Range
+
+    On Error Resume Next
+    Set lastCell = ws.Cells.Find(What:="*", _
+                                 After:=ws.Range("A1"), _
+                                 LookIn:=xlFormulas, _
+                                 LookAt:=xlPart, _
+                                 SearchOrder:=xlByRows, _
+                                 SearchDirection:=xlPrevious)
+    On Error GoTo 0
+
+    If lastCell Is Nothing Then
+        LastUsedRowAnyColumn = 0
+    Else
+        LastUsedRowAnyColumn = lastCell.Row
+    End If
+End Function
+
+Public Function ConfirmOverwrite(ByVal dataDescription As String) As Boolean
+    ConfirmOverwrite = (MsgBox("This will replace existing " & dataDescription & "." & vbCrLf & vbCrLf & _
+                               "Continue?", _
+                               vbQuestion + vbYesNo + vbDefaultButton2, _
+                               "Confirm Overwrite") = vbYes)
+End Function
+
+Public Sub DeleteSheetIfExists(ByVal sheetName As String)
+    Dim ws As Worksheet
+
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(sheetName)
+    On Error GoTo 0
+
+    If Not ws Is Nothing Then
+        Application.DisplayAlerts = False
+        ws.Delete
+        Application.DisplayAlerts = True
+    End If
+End Sub
+
+Public Sub ProtectSheetUI(ByVal ws As Worksheet, Optional ByVal password As String = "")
+    On Error Resume Next
+    ws.Unprotect password
+    ws.Protect password, UserInterfaceOnly:=True, _
+                 AllowFiltering:=True, AllowSorting:=True
+    On Error GoTo 0
+End Sub
+
+Public Function BuildUsageKey(ByVal intervalCode As String, _
+                                ByVal taskCode As String) As String
+    BuildUsageKey = UCase$(Trim$(intervalCode)) & "|" & Trim$(taskCode)
+End Function
+
+Public Function StripAssociatedSuffix(ByVal taskCode As String) As String
+    taskCode = Trim$(taskCode)
+    If Right$(taskCode, Len(ASSOCIATED_TASK_SUFFIX)) = ASSOCIATED_TASK_SUFFIX Then
+        StripAssociatedSuffix = Left$(taskCode, Len(taskCode) - Len(ASSOCIATED_TASK_SUFFIX))
+    Else
+        StripAssociatedSuffix = taskCode
+    End If
+End Function
+
+Public Function BuildAssociatedLinkKey(ByVal taskCode As String, _
+                                       ByVal taskSequence As String) As String
+    BuildAssociatedLinkKey = StripAssociatedSuffix(taskCode) & "|" & Trim$(CStr(taskSequence))
+End Function
+
+Public Function IsDeferredFaultTaskCode(ByVal taskCode As String) As Boolean
+    Select Case UCase$(Trim$(taskCode))
+        Case FAULT_PT2_D, FAULT_PT2_H, FAULT_PT3_D, FAULT_PT3_H
+            IsDeferredFaultTaskCode = True
+        Case Else
+            IsDeferredFaultTaskCode = False
+    End Select
+End Function
+
+Public Function IsHourBasedIntervalType(ByVal intervalCode As String) As Boolean
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_HH, TYPE_E1, TYPE_E2, TYPE_DD
+            IsHourBasedIntervalType = True
+        Case Else
+            IsHourBasedIntervalType = (InStr(UCase$(intervalCode), "E") = 1 And Len(intervalCode) <= 2)
+    End Select
+End Function
+
+Public Function DetectUsageFormat(ByVal sampleValue As Variant) As String
+    If IsEmpty(sampleValue) Then
+        DetectUsageFormat = "Number"
+        Exit Function
+    End If
+
+    If IsDate(sampleValue) Then
+        DetectUsageFormat = "Hours"
+        Exit Function
+    End If
+
+    If InStr(CStr(sampleValue), ":") > 0 Then
+        DetectUsageFormat = "Hours"
+    Else
+        DetectUsageFormat = "Number"
+    End If
+End Function

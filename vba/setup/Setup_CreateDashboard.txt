@@ -1,0 +1,83 @@
+Attribute VB_Name = "Setup_CreateDashboard"
+Option Explicit
+
+' ========================================================================
+' ONE-TIME SETUP — Dashboard layout
+' ========================================================================
+
+Public Sub Setup_CreateDashboard(Optional ByVal silent As Boolean = False)
+    If Not silent Then
+        If MsgBox("Format the Dashboard sheet?", vbQuestion + vbYesNo, "Setup — Dashboard") <> vbYes Then Exit Sub
+    End If
+
+    Dim ws As Worksheet
+    Set ws = GetWorksheet(SHEET_DASHBOARD)
+
+    SetExcelState "disable"
+    ws.Cells.Clear
+    ws.Columns("A").ColumnWidth = 2
+    ws.Columns("B").ColumnWidth = 24
+    ws.Columns("C").ColumnWidth = 18
+    ws.Columns("D").ColumnWidth = 40
+
+    With ws.Range("B2")
+        .Value = APP_NAME
+        .Font.Size = 18
+        .Font.Bold = True
+        .Font.Color = COLOR_HEADER_BLUE
+    End With
+
+    ws.Range("B3").Value = "Version " & APP_VERSION & "  |  " & AIRCRAFT_TYPE
+    ws.Range("B3").Font.Color = RGB(89, 89, 89)
+
+    WriteSectionHeader ws, "B5", "Aircraft Status"
+    WriteLabelValue ws, "B6", "Tail Number:", "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_TAIL_NUMBER & """,tblConfig[Setting],0)),"""" )"
+    WriteLabelValue ws, "B7", "Setup Complete:", "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_SETUP_COMPLETE & """,tblConfig[Setting],0)),FALSE)"
+    WriteLabel ws, "B8", "Active WP (ORN):"
+    ws.Range("C8").Value = ""
+    ws.Range("C8").Interior.Color = COLOR_INPUT_HIGHLIGHT
+
+    WriteSectionHeader ws, "B10", "Extensions"
+    WriteLabel ws, "B11", "Extension SNOW:"
+    ws.Range("C10").Interior.Color = COLOR_INPUT_HIGHLIGHT
+    ws.Range("C10").Value = ""
+
+    WriteSectionHeader ws, "B13", "Actions (Phase 1+)"
+    ws.Range("B14").Value = "• Setup Wizard — not yet available"
+    ws.Range("B15").Value = "• Log Sortie — not yet available"
+    ws.Range("B16").Value = "• Work Packages — not yet available"
+    ws.Range("B17").Value = "• Extensions / Deferrals — not yet available"
+    ws.Range("B18").Value = "• View Audit Log — run ViewAuditLog macro"
+
+    WriteSectionHeader ws, "B20", "Import Requirements"
+    ws.Range("B21").Value = "SITS Long Forecast: 9 required columns (strict — abort if any missing)."
+    ws.Range("B22").Value = "Usage exports: Interval Type, Task Code, Life Used, Top Serial."
+    ws.Range("B23").Value = "Engine usage must include SM and SN (WC/STARTS/ECU)."
+
+    ws.Range("B25").Value = "Phase 0 skeleton — run ValidateWorkbookStructure to verify structure."
+    ws.Range("B25").Font.Italic = True
+
+    ws.Activate
+    ws.Range("B2").Select
+    SetExcelState "enable"
+    If Not silent Then MsgBox "Dashboard formatted.", vbInformation, "Setup — Dashboard"
+End Sub
+
+Private Sub WriteSectionHeader(ByVal ws As Worksheet, ByVal cellAddress As String, ByVal title As String)
+    With ws.Range(cellAddress)
+        .Value = title
+        .Font.Bold = True
+        .Font.Size = 12
+        .Font.Color = COLOR_HEADER_BLUE
+    End With
+End Sub
+
+Private Sub WriteLabel(ByVal ws As Worksheet, ByVal labelCell As String, ByVal caption As String)
+    ws.Range(labelCell).Value = caption
+    ws.Range(labelCell).Font.Bold = True
+End Sub
+
+Private Sub WriteLabelValue(ByVal ws As Worksheet, ByVal labelCell As String, ByVal caption As String, ByVal formulaText As String)
+    WriteLabel ws, labelCell, caption
+    ws.Range("C" & Mid$(labelCell, 2)).Formula = formulaText
+End Sub

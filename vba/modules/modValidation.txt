@@ -1,0 +1,133 @@
+Attribute VB_Name = "modValidation"
+Option Explicit
+
+' ========================================================================
+' VALIDATION MODULE — Offline Aircraft SITS v2
+' ========================================================================
+
+Public Function ValidateWorkbookStructure() As Boolean
+    Dim issues As Collection
+    Set issues = New Collection
+
+    ValidateRequiredSheets issues
+    ValidateRequiredTables issues
+    ValidateRequiredNamedRanges issues
+
+    If issues.Count = 0 Then
+        ValidateWorkbookStructure = True
+    Else
+        ValidateWorkbookStructure = False
+        MsgBox "Workbook validation found " & issues.Count & " issue(s):" & vbCrLf & vbCrLf & _
+               JoinCollectionText(issues), vbExclamation, APP_NAME
+    End If
+End Function
+
+Private Sub ValidateRequiredSheets(ByRef issues As Collection)
+    Dim sheetNames As Variant
+    Dim item As Variant
+
+    sheetNames = Array( _
+        SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT, _
+        SHEET_CONFIG, SHEET_DATA_SITS, SHEET_DATA_USAGE_BASELINE, _
+        SHEET_DATA_USAGE_LOG, SHEET_DATA_USAGE_CURRENT, _
+        SHEET_DATA_WP, SHEET_DATA_WP_TASKS, SHEET_WP_STATE _
+    )
+
+    For Each item In sheetNames
+        If Not SheetExists(CStr(item)) Then
+            issues.Add "Missing worksheet: " & CStr(item)
+        End If
+    Next item
+End Sub
+
+Private Sub ValidateRequiredTables(ByRef issues As Collection)
+    Dim specs As Variant
+    Dim i As Long
+    Dim ws As Worksheet
+
+    specs = Array( _
+        Array(SHEET_DATA_SITS, TBL_SITS), _
+        Array(SHEET_DATA_USAGE_BASELINE, TBL_USAGE_BASELINE), _
+        Array(SHEET_DATA_USAGE_LOG, TBL_USAGE_LOG), _
+        Array(SHEET_DATA_USAGE_CURRENT, TBL_USAGE_CURRENT), _
+        Array(SHEET_DATA_WP, TBL_WORK_PACKAGES), _
+        Array(SHEET_DATA_WP_TASKS, TBL_WP_TASKS), _
+        Array(SHEET_CONFIG, TBL_CONFIG), _
+        Array(SHEET_CONFIG, TBL_INTERVAL_MAP), _
+        Array(SHEET_AUDIT, "tblAudit") _
+    )
+
+    For i = LBound(specs) To UBound(specs)
+        Set ws = GetWorksheet(CStr(specs(i)(0)), showError:=False)
+        If ws Is Nothing Then
+            issues.Add "Cannot validate table " & CStr(specs(i)(1)) & " — sheet missing."
+        ElseIf Not TableExists(ws, CStr(specs(i)(1))) Then
+            issues.Add "Missing table: " & CStr(specs(i)(1)) & " on " & ws.Name
+        End If
+    Next i
+End Sub
+
+Private Sub ValidateRequiredNamedRanges(ByRef issues As Collection)
+    If Not NamedRangeExists(NAMED_ACTIVE_WP) Then
+        issues.Add "Missing named range: " & NAMED_ACTIVE_WP
+    End If
+    If Not NamedRangeExists(NAMED_EXTENSION_SNOW) Then
+        issues.Add "Missing named range: " & NAMED_EXTENSION_SNOW
+    End If
+End Sub
+
+Public Function ValidateSetupReady() As Boolean
+    Dim msg As String
+
+    If Not ValidateWorkbookStructure() Then Exit Function
+
+    If Len(GetTailNumber()) = 0 Then
+        msg = "Tail number has not been configured."
+    ElseIf Not IsSetupComplete() Then
+        msg = "Aircraft setup is not complete. Run the Setup Wizard."
+    Else
+        ValidateSetupReady = True
+        Exit Function
+    End If
+
+    MsgBox msg, vbExclamation, APP_NAME
+End Function
+
+Public Function ValidateSITSColumns(ByVal tbl As ListObject) As Boolean
+    Dim required As Variant
+    Dim item As Variant
+    Dim missing As String
+
+    required = Array( _
+        HDR_SELECTOR, HDR_ORN_INWORK, HDR_INTERVAL_TYPE_CODE, HDR_TASK_CODE, _
+        HDR_TASK_SEQUENCE, HDR_TASK_DESCRIPTION, HDR_ACTUAL_INTERVAL, _
+        HDR_EXTENSION, HDR_HOURS_LIFE_REMAINING, HDR_NUMBER_LIFE_REMAINING, _
+        HDR_DAYS_WHEN_DUE _
+    )
+
+    For Each item In required
+        If GetTableColumnIndex(tbl, CStr(item)) = 0 Then
+            missing = missing & CStr(item) & vbCrLf
+        End If
+    Next item
+
+    If Len(missing) > 0 Then
+        MsgBox "SITS table is missing required columns:" & vbCrLf & vbCrLf & missing, _
+               vbCritical, APP_NAME
+        Exit Function
+    End If
+
+    ValidateSITSColumns = True
+End Function
+
+Private Function JoinCollectionText(ByVal items As Collection) As String
+    Dim i As Long
+    Dim result As String
+
+    For i = 1 To items.Count
+        If Len(result) > 0 Then result = result & vbCrLf
+        result = result & "• " & CStr(items(i))
+    Next i
+
+    JoinCollectionText = result
+End Function

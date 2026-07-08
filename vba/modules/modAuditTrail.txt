@@ -1,0 +1,66 @@
+Attribute VB_Name = "modAuditTrail"
+Option Explicit
+
+' ========================================================================
+' AUDIT TRAIL MODULE — Offline Aircraft SITS v2
+' ========================================================================
+
+Private Const AUDIT_ACTION_COL As Long = 1
+Private Const AUDIT_USER_COL As Long = 2
+Private Const AUDIT_TYPE_COL As Long = 3
+Private Const AUDIT_ORN_COL As Long = 4
+Private Const AUDIT_DETAILS_COL As Long = 5
+Private Const AUDIT_VERSION_COL As Long = 6
+
+Public Sub LogAction(ByVal actionType As String, _
+                     Optional ByVal ornValue As String = "", _
+                     Optional ByVal details As String = "")
+    Dim wsAudit As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim userName As String
+
+    Set wsAudit = GetWorksheet(SHEET_AUDIT, showError:=False)
+    If wsAudit Is Nothing Then Exit Sub
+
+    Set tbl = GetTable(wsAudit, "tblAudit", showError:=False)
+    If tbl Is Nothing Then Exit Sub
+
+    userName = Environ$("USERNAME")
+    If Len(userName) = 0 Then userName = "Unknown"
+
+    Set row = tbl.ListRows.Add
+    With row.Range
+        .Cells(1, AUDIT_ACTION_COL).Value = Now
+        .Cells(1, AUDIT_USER_COL).Value = userName
+        .Cells(1, AUDIT_TYPE_COL).Value = actionType
+        .Cells(1, AUDIT_ORN_COL).Value = ornValue
+        .Cells(1, AUDIT_DETAILS_COL).Value = details
+        .Cells(1, AUDIT_VERSION_COL).Value = APP_VERSION
+    End With
+End Sub
+
+Public Sub LogSetupComplete(ByVal tailNumber As String, _
+                            ByVal sitsCount As Long, _
+                            ByVal usageCount As Long)
+    LogAction "SETUP_COMPLETE", "", _
+              "Tail " & tailNumber & "; SITS=" & sitsCount & "; Usage=" & usageCount
+End Sub
+
+Public Sub LogImportFailure(ByVal importType As String, ByVal failReason As String)
+    LogAction "IMPORT_FAILED", "", importType & ": " & Left$(failReason, 200)
+End Sub
+
+Public Sub LogError(ByVal procedureName As String, _
+                    ByVal errorNumber As Long, _
+                    ByVal errorDescription As String)
+    LogAction "ERROR", "", procedureName & " - " & errorNumber & ": " & errorDescription
+End Sub
+
+Public Sub ViewAuditLog()
+    Dim wsAudit As Worksheet
+
+    Set wsAudit = GetWorksheet(SHEET_AUDIT)
+    wsAudit.Visible = xlSheetVisible
+    wsAudit.Activate
+End Sub

@@ -1,0 +1,96 @@
+Attribute VB_Name = "Setup_RunAll"
+Option Explicit
+
+' ========================================================================
+' ONE-TIME SETUP — Run complete Phase 0 skeleton build
+' ========================================================================
+
+Public Sub Setup_RunAll()
+    Dim response As VbMsgBoxResult
+    Dim tail As String
+
+    response = MsgBox("This will build the complete " & APP_NAME & " v" & APP_VERSION & _
+                      " Phase 0 skeleton." & vbCrLf & vbCrLf & _
+                      "Existing sheets and data in this workbook will be removed." & vbCrLf & vbCrLf & _
+                      "Save a backup first. Continue?", _
+                      vbExclamation + vbYesNo, "Setup — Run All")
+
+    If response <> vbYes Then Exit Sub
+
+    tail = InputBox("Enter aircraft tail number (e.g. ZZ383):", "Aircraft Tail", "ZZ383")
+    If Len(Trim$(tail)) = 0 Then Exit Sub
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+
+    BuildSheetsSilent
+    Setup_CreateTables True
+    Setup_CreateConfig True, tail
+    Setup_CreateNamedRanges True
+    Setup_CreateDashboard True
+
+    SetExcelState "enable"
+
+    If ValidateWorkbookStructure() Then
+        MsgBox "Phase 0 setup completed successfully." & vbCrLf & vbCrLf & _
+               "Next steps:" & vbCrLf & _
+               "1. Save this workbook as " & UCase$(Trim$(tail)) & "_SITS_v2.xlsm" & vbCrLf & _
+               "2. Phase 1 will add the Setup Wizard and import macros", _
+               vbInformation, "Setup Complete"
+        LogAction "SETUP_PHASE0", "", "Phase 0 skeleton created for " & UCase$(Trim$(tail))
+    End If
+
+    Exit Sub
+
+ErrorHandler:
+    SetExcelState "enable"
+    MsgBox "Setup failed: " & Err.Description, vbCritical, "Setup — Run All"
+End Sub
+
+Private Sub BuildSheetsSilent()
+    Application.DisplayAlerts = False
+
+    Do While ThisWorkbook.Worksheets.Count > 0
+        ThisWorkbook.Worksheets(1).Delete
+    Loop
+
+    AddSheet SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
+    AddSheet SHEET_SITS, xlSheetVisible, COLOR_TAB_VISIBLE
+    AddSheet SHEET_USAGE, xlSheetVisible, COLOR_TAB_VISIBLE
+    AddSheet SHEET_AUDIT, xlSheetVisible, COLOR_TAB_SYSTEM
+    AddSheet SHEET_CONFIG, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_SITS, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_USAGE_BASELINE, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_USAGE_LOG, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_USAGE_CURRENT, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_WP, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_DATA_WP_TASKS, xlSheetVeryHidden, COLOR_TAB_DATA
+    AddSheet SHEET_WP_STATE, xlSheetVeryHidden, COLOR_TAB_SYSTEM
+
+    OrderSheets
+    Application.DisplayAlerts = True
+End Sub
+
+Private Sub AddSheet(ByVal sheetName As String, ByVal visibility As XlSheetVisibility, ByVal tabColor As Long)
+    Dim ws As Worksheet
+    Set ws = ThisWorkbook.Worksheets.Add
+    ws.Name = sheetName
+    ws.Visible = visibility
+    ws.Tab.Color = tabColor
+End Sub
+
+Private Sub OrderSheets()
+    Dim order As Variant
+    Dim i As Long
+
+    order = Array( _
+        SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT, _
+        SHEET_CONFIG, SHEET_DATA_SITS, SHEET_DATA_USAGE_BASELINE, _
+        SHEET_DATA_USAGE_LOG, SHEET_DATA_USAGE_CURRENT, _
+        SHEET_DATA_WP, SHEET_DATA_WP_TASKS, SHEET_WP_STATE _
+    )
+
+    For i = LBound(order) To UBound(order)
+        ThisWorkbook.Worksheets(CStr(order(i))).Move Before:=ThisWorkbook.Worksheets(i + 1)
+    Next i
+End Sub

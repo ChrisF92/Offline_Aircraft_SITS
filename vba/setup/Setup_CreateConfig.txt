@@ -1,0 +1,86 @@
+Attribute VB_Name = "Setup_CreateConfig"
+Option Explicit
+
+' ========================================================================
+' ONE-TIME SETUP — Seed configuration defaults
+' ========================================================================
+
+Public Sub Setup_CreateConfig(Optional ByVal silent As Boolean = False, _
+                            Optional ByVal tailNumber As String = "")
+    If Len(Trim$(tailNumber)) = 0 Then
+        tailNumber = InputBox("Enter aircraft tail number (e.g. ZZ383):", "Aircraft Tail", "ZZ383")
+        If Len(Trim$(tailNumber)) = 0 Then Exit Sub
+    End If
+
+    If Not silent Then
+        If MsgBox("Seed default configuration values?", vbQuestion + vbYesNo, "Setup — Config") <> vbYes Then Exit Sub
+    End If
+
+    SetExcelState "disable"
+
+    SetConfigValue CFG_TAIL_NUMBER, UCase$(Trim$(tailNumber))
+    SetConfigValue CFG_SETUP_COMPLETE, False
+    SetConfigValue CFG_SETUP_DATE, ""
+    SetConfigValue CFG_SETUP_BY, ""
+    SetConfigValue CFG_ORN_PATTERN, ORN_FORMAT_PATTERN
+    SetConfigValue CFG_EXT_STANDARD_PCT, MAX_EXTENSION_STANDARD
+    SetConfigValue CFG_EXT_EXTENDED_PCT, MAX_EXTENSION_EXTENDED
+    SetConfigValue CFG_WARN_HOURS, "50:00"
+    SetConfigValue CFG_WARN_DAYS, 30
+
+    SeedIntervalMapDefaults
+    WriteConfigNotes
+
+    SetExcelState "enable"
+    If Not silent Then
+        MsgBox "Configuration seeded for tail " & UCase$(Trim$(tailNumber)) & ".", vbInformation, "Setup — Config"
+    End If
+End Sub
+
+Private Sub SeedIntervalMapDefaults()
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+
+    Set ws = GetWorksheet(SHEET_CONFIG)
+    Set tbl = GetTable(ws, TBL_INTERVAL_MAP)
+
+    ClearTableData tbl
+
+    ' SM/SN are imported directly when Interval Type = SM/SN in engine export.
+    ' Mapping rows below are fallback documentation for WC/STARTS/ECU if needed.
+    AddIntervalMapRow tbl, "WC/STARTS/ECU", "P4N155", TYPE_SM, "Engine 1 starts"
+    AddIntervalMapRow tbl, "WC/STARTS/ECU", "P4N175", TYPE_SN, "Engine 2 starts"
+End Sub
+
+Private Sub AddIntervalMapRow(ByVal tbl As ListObject, _
+                              ByVal sourceTask As String, _
+                              ByVal sourceSerial As String, _
+                              ByVal targetInterval As String, _
+                              ByVal notes As String)
+    Dim row As ListRow
+
+    Set row = tbl.ListRows.Add
+    row.Range.Cells(1, 1).Value = sourceTask
+    row.Range.Cells(1, 2).Value = sourceSerial
+    row.Range.Cells(1, 3).Value = targetInterval
+    row.Range.Cells(1, 4).Value = notes
+End Sub
+
+Private Sub ClearTableData(ByVal tbl As ListObject)
+    On Error Resume Next
+    If Not tbl.DataBodyRange Is Nothing Then
+        tbl.DataBodyRange.Delete
+    End If
+    On Error GoTo 0
+End Sub
+
+Private Sub WriteConfigNotes()
+    Dim ws As Worksheet
+
+    Set ws = GetWorksheet(SHEET_CONFIG)
+    ws.Range("I1").Value = "Notes"
+    ws.Range("I2").Value = "Wildcat-only workbook. One tail per file."
+    ws.Range("I3").Value = "SM/SN required — imported from engine usage export."
+    ws.Range("I4").Value = "SITS import: strict required columns; abort if any missing."
+    ws.Range("I5").Value = "ORN pattern: ####ZZ#########"
+End Sub
