@@ -117,8 +117,9 @@ Troubleshooting
      not deleted).
 
 "A workbook must contain at least one visible worksheet" during setup
-  -> Ensure modUtility includes FinalizeSetupSheetLayout (Phase0-setup-v4).
-  -> All sheets are created visible first; data sheets are hidden at the end.
+  -> Ensure modUtility ReuseSheetAs takes ONE argument only (Phase0-setup-v5).
+  -> Call must be: ReuseSheetAs SHEET_DASHBOARD
+     NOT: ReuseSheetAs SHEET_DASHBOARD, xlSheetVisible, COLOR_TAB_VISIBLE
 
 If setup fails, the error message shows which step failed (e.g. Building sheets).
   20260706-Long Forecast_ZZ382.xlsx   — SITS export sample

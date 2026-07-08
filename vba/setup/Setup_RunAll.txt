@@ -3,7 +3,7 @@ Option Explicit
 
 ' ========================================================================
 ' ONE-TIME SETUP — Run complete Phase 0 skeleton build
-' Build marker: Phase0-setup-v4 (create visible, hide last)
+' Build marker: Phase0-setup-v5 (ReuseSheetAs single argument)
 ' ========================================================================
 
 Private mSetupStep As String
@@ -67,10 +67,10 @@ End Sub
 
 Private Sub BuildSheetsSilent()
     If ThisWorkbook.Worksheets.Count = 1 Then
-        ReuseSheetAs SHEET_DASHBOARD, COLOR_TAB_VISIBLE
+        ReuseSheetAs SHEET_DASHBOARD
     Else
         PrepareWorkbookForSetup
-        ReuseSheetAs SHEET_DASHBOARD, COLOR_TAB_VISIBLE
+        ReuseSheetAs SHEET_DASHBOARD
     End If
 
     AddSetupSheet SHEET_SITS

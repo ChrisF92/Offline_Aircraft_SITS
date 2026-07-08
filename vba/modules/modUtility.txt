@@ -210,8 +210,7 @@ Public Sub PrepareWorkbookForSetup()
     Application.DisplayAlerts = True
 End Sub
 
-Public Sub ReuseSheetAs(ByVal sheetName As String, _
-                        Optional ByVal tabColor As Long = -1)
+Public Sub ReuseSheetAs(ByVal sheetName As String)
     Dim ws As Worksheet
 
     Set ws = ThisWorkbook.Worksheets(1)
@@ -223,8 +222,6 @@ Public Sub ReuseSheetAs(ByVal sheetName As String, _
     ws.Name = sheetName
     ws.Visible = xlSheetVisible
     ws.Cells.Clear
-
-    If tabColor >= 0 Then ws.Tab.Color = tabColor
 End Sub
 
 Public Sub AddSetupSheet(ByVal sheetName As String)

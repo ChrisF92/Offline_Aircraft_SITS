@@ -16,10 +16,10 @@ Public Sub Setup_CreateSheets()
     Application.DisplayAlerts = False
 
     If ThisWorkbook.Worksheets.Count = 1 Then
-        ReuseSheetAs SHEET_DASHBOARD, COLOR_TAB_VISIBLE
+        ReuseSheetAs SHEET_DASHBOARD
     Else
         PrepareWorkbookForSetup
-        ReuseSheetAs SHEET_DASHBOARD, COLOR_TAB_VISIBLE
+        ReuseSheetAs SHEET_DASHBOARD
     End If
 
     CreateAdditionalSheets
