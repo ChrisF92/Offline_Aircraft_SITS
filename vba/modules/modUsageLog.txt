@@ -182,6 +182,7 @@ Public Sub RefreshUsageView()
         For Each row In tblBaseline.ListRows
             intervalCode = Trim$(CStr(row.Range.Cells(1, 1).Value))
             taskCode = Trim$(CStr(row.Range.Cells(1, 2).Value))
+            description = Trim$(CStr(row.Range.Cells(1, 3).Value))
             formatType = ResolveUsageFormatType(intervalCode, taskCode, _
                 CStr(row.Range.Cells(1, 5).Value), description)
             currentValue = GetCurrentUsageValue(intervalCode, taskCode)

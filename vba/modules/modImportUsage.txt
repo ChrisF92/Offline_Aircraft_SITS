@@ -227,7 +227,6 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) 
 
     For Each mergeKey In mUsageRows.Keys
         rowData = mUsageRows(mergeKey)
-        Dim resolvedFormat As String
         resolvedFormat = ResolveUsageFormatType(CStr(rowData(0)), CStr(rowData(1)), _
             CStr(rowData(4)), CStr(rowData(2)))
 
@@ -369,7 +368,9 @@ Private Function BuildUsageImportRow(ByVal srcWs As Worksheet, _
 
         lifeUsed = srcWs.Cells(rowIndex, colMap("Life Used")).Value
         displayText = srcWs.Cells(rowIndex, colMap("Life Used")).Text
-        .FormatType = DetectUsageFormat(lifeUsed, .IntervalCode, .TaskCode, .Description, displayText)
+        .FormatType = ResolveUsageFormatType(.IntervalCode, .TaskCode, _
+            DetectUsageFormat(lifeUsed, .IntervalCode, .TaskCode, .Description, displayText), _
+            .Description)
         .BaselineValue = NormalizeUsageImportValue(lifeUsed, .FormatType, displayText)
         .SerialValue = NormalizeSerialText( _
             srcWs.Cells(rowIndex, colMap("Top Serial")).Value, _
