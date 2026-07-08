@@ -33,6 +33,7 @@ Private Sub BuildAllTables()
     CreateConfigTables
     CreateAuditTable
     FormatViewSheets
+    ApplyWorkbookDataFormats
 End Sub
 
 Private Sub CreateSITSTable()

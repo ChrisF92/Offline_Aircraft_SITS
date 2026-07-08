@@ -44,8 +44,8 @@ Private Sub cmdAdd_Click()
     End If
 
     intervalCode = lstCounters.List(selectedIndex, 0)
-    taskCode = lstCounters.List(selectedIndex, 1)
-    formatType = lstCounters.List(selectedIndex, 4)
+    taskCode = lstCounters.List(selectedIndex, 3)
+    formatType = lstCounters.List(selectedIndex, 2)
 
     incrementValue = ParseUsageIncrement(txtIncrement.Value, formatType, failReason)
     If IsEmpty(incrementValue) Then
@@ -110,10 +110,9 @@ Private Sub UpdateSelectionLabel()
         Exit Sub
     End If
 
-    lblSelected.Caption = lstCounters.List(selectedIndex, 0) & " / " & _
-                          lstCounters.List(selectedIndex, 1) & " — " & _
-                          lstCounters.List(selectedIndex, 2) & _
-                          " (current " & lstCounters.List(selectedIndex, 3) & ")"
+    lblSelected.Caption = lstCounters.List(selectedIndex, 0) & _
+                          "  current " & lstCounters.List(selectedIndex, 1) & _
+                          "  (" & lstCounters.List(selectedIndex, 2) & ")"
 End Sub
 
 Private Sub RefreshPendingList()
@@ -125,7 +124,7 @@ Private Sub RefreshPendingList()
 
     For i = 1 To mPending.Count
         rowData = mPending(i)
-        displayLine = CStr(rowData(0)) & "  " & CStr(rowData(1)) & "  +" & _
+        displayLine = CStr(rowData(0)) & "  +" & _
                       FormatUsageValueForDisplay(rowData(2), CStr(rowData(3)))
         lstPending.AddItem displayLine
     Next i

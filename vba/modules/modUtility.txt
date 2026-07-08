@@ -458,20 +458,321 @@ Public Function ParseTimeUsageValue(ByVal rawVal As Variant, _
     End If
 End Function
 
-Public Function DetectUsageFormat(ByVal sampleValue As Variant) As String
+Public Function DetectUsageFormat(ByVal sampleValue As Variant, _
+                                  Optional ByVal intervalCode As String = "", _
+                                  Optional ByVal taskCode As String = "", _
+                                  Optional ByVal description As String = "") As String
+    If IsMinutesUsageCounter(intervalCode, taskCode, description) Then
+        DetectUsageFormat = FORMAT_TYPE_MINUTES
+        Exit Function
+    End If
+
     If IsEmpty(sampleValue) Then
-        DetectUsageFormat = "Number"
+        DetectUsageFormat = FORMAT_TYPE_NUMBER
         Exit Function
     End If
 
     If IsDate(sampleValue) Then
-        DetectUsageFormat = "Hours"
+        DetectUsageFormat = FORMAT_TYPE_HOURS
         Exit Function
     End If
 
     If InStr(CStr(sampleValue), ":") > 0 Then
-        DetectUsageFormat = "Hours"
+        DetectUsageFormat = FORMAT_TYPE_HOURS
     Else
-        DetectUsageFormat = "Number"
+        DetectUsageFormat = FORMAT_TYPE_NUMBER
     End If
 End Function
+
+Public Function IsMinutesUsageCounter(ByVal intervalCode As String, _
+                                      ByVal taskCode As String, _
+                                      Optional ByVal description As String = "") As Boolean
+    Dim code As String
+    Dim task As String
+    Dim desc As String
+
+    code = UCase$(Trim$(intervalCode))
+    task = UCase$(Trim$(taskCode))
+    desc = UCase$(Trim$(description))
+
+    Select Case code
+        Case "1E", "1G", "2E", "2G"
+            IsMinutesUsageCounter = True
+            Exit Function
+    End Select
+
+    If InStr(task, "/SEC") > 0 Or InStr(task, "/MIN/") > 0 Then IsMinutesUsageCounter = True
+    If InStr(desc, "SECOND") > 0 And InStr(desc, "HOUR") = 0 Then IsMinutesUsageCounter = True
+End Function
+
+Public Function GetFormatPatternForType(ByVal formatType As String) As String
+    Select Case UCase$(Trim$(formatType))
+        Case FORMAT_TYPE_HOURS
+            GetFormatPatternForType = FORMAT_TIME_HOURS
+        Case FORMAT_TYPE_MINUTES
+            GetFormatPatternForType = FORMAT_TIME_MINUTES
+        Case Else
+            GetFormatPatternForType = FORMAT_DECIMAL
+    End Select
+End Function
+
+Public Function NormalizeSerialText(ByVal rawVal As Variant, _
+                                    Optional ByVal displayText As String = "") As String
+    Dim s As String
+
+    s = Trim$(displayText)
+    If Len(s) > 0 And s <> "#####" Then
+        NormalizeSerialText = s
+        Exit Function
+    End If
+
+    If IsEmpty(rawVal) Then Exit Function
+
+    If IsNumeric(rawVal) Then
+        If CDbl(rawVal) = Fix(CDbl(rawVal)) Then
+            NormalizeSerialText = Format$(rawVal, "0")
+        Else
+            NormalizeSerialText = Trim$(CStr(rawVal))
+        End If
+    Else
+        NormalizeSerialText = Trim$(CStr(rawVal))
+    End If
+End Function
+
+Public Sub WriteSerialCell(ByVal target As Range, _
+                           ByVal rawVal As Variant, _
+                           Optional ByVal displayText As String = "")
+    Dim serialText As String
+
+    serialText = NormalizeSerialText(rawVal, displayText)
+    target.NumberFormat = FORMAT_TEXT
+    target.Value = serialText
+End Sub
+
+Public Function NormalizeUsageImportValue(ByVal rawVal As Variant, _
+                                          ByVal formatType As String, _
+                                          Optional ByVal displayText As String = "") As Variant
+    Dim parsedTime As Variant
+
+    Select Case UCase$(Trim$(formatType))
+        Case FORMAT_TYPE_HOURS
+            parsedTime = ParseTimeUsageValue(rawVal, displayText)
+            If Not IsEmpty(parsedTime) Then
+                NormalizeUsageImportValue = parsedTime
+            Else
+                NormalizeUsageImportValue = rawVal
+            End If
+        Case FORMAT_TYPE_MINUTES
+            If InStr(displayText, ":") > 0 Then
+                parsedTime = ParseMinutesSecondsValue(rawVal, displayText)
+                If Not IsEmpty(parsedTime) Then
+                    NormalizeUsageImportValue = parsedTime
+                    Exit Function
+                End If
+            End If
+            If IsNumeric(rawVal) Then
+                NormalizeUsageImportValue = CDbl(rawVal) / 86400#
+            Else
+                NormalizeUsageImportValue = rawVal
+            End If
+        Case Else
+            NormalizeUsageImportValue = rawVal
+    End Select
+End Function
+
+Public Sub WriteFormattedUsageValue(ByVal target As Range, _
+                                    ByVal value As Variant, _
+                                    ByVal formatType As String)
+    target.NumberFormat = GetFormatPatternForType(formatType)
+    target.Value = value
+End Sub
+
+Public Function FormatUsageValueForDisplay(ByVal value As Variant, _
+                                           ByVal formatType As String) As String
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
+        FormatUsageValueForDisplay = ""
+        Exit Function
+    End If
+
+    Select Case UCase$(Trim$(formatType))
+        Case FORMAT_TYPE_HOURS
+            FormatUsageValueForDisplay = Format$(CDbl(value), FORMAT_TIME_HOURS)
+        Case FORMAT_TYPE_MINUTES
+            FormatUsageValueForDisplay = Format$(CDbl(value), FORMAT_TIME_MINUTES)
+        Case Else
+            If IsNumeric(value) And CDbl(value) = Fix(CDbl(value)) Then
+                FormatUsageValueForDisplay = Format$(value, FORMAT_INTEGER)
+            Else
+                FormatUsageValueForDisplay = CStr(value)
+            End If
+    End Select
+End Function
+
+Public Function ParseMinutesSecondsValue(ByVal rawVal As Variant, _
+                                         Optional ByVal displayText As String = "") As Variant
+    Dim s As String
+    Dim parts() As String
+    Dim minutesPart As Double
+    Dim secondsPart As Double
+    Dim totalSeconds As Double
+
+    If IsEmpty(rawVal) Then Exit Function
+
+    s = Trim$(displayText)
+    If Len(s) = 0 Or s = "#####" Then s = Trim$(CStr(rawVal))
+
+    If InStr(s, ":") > 0 Then
+        parts = Split(s, ":")
+        If UBound(parts) >= 1 Then
+            If IsNumeric(parts(0)) And IsNumeric(parts(1)) Then
+                minutesPart = CDbl(parts(0))
+                secondsPart = CDbl(parts(1))
+                totalSeconds = (minutesPart * 60#) + secondsPart
+                ParseMinutesSecondsValue = totalSeconds / 86400#
+                Exit Function
+            End If
+        End If
+    End If
+
+    If IsNumeric(rawVal) Then
+        ParseMinutesSecondsValue = CDbl(rawVal) / 86400#
+    End If
+End Function
+
+Public Sub ApplyWorkbookDataFormats()
+    ApplySITSTableFormats
+    ApplyUsageTableFormats
+End Sub
+
+Public Sub RepairWorkbookFormats()
+    ApplyWorkbookDataFormats
+    RepairSerialColumns
+    RefreshUsageView
+    MsgBox "Workbook data formats have been repaired.", vbInformation, APP_NAME
+End Sub
+
+Public Sub ApplySITSTableFormats()
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+
+    Set ws = GetWorksheet(SHEET_DATA_SITS, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    Set tbl = GetTable(ws, TBL_SITS, showError:=False)
+    If tbl Is Nothing Then Exit Sub
+
+    ApplyColumnFormat tbl, HDR_SERIAL, FORMAT_TEXT
+    ApplyColumnFormat tbl, HDR_END_ITEM_SERIAL, FORMAT_TEXT
+    ApplyColumnFormat tbl, HDR_HOURS_WHEN_COMPLETE, FORMAT_TIME_HOURS
+    ApplyColumnFormat tbl, HDR_CURRENT_USAGE_HOURS, FORMAT_TIME_HOURS
+    ApplyColumnFormat tbl, HDR_HOURS_LIFE_REMAINING, FORMAT_TIME_HOURS
+    ApplyColumnFormat tbl, HDR_ACTUAL_INTERVAL, FORMAT_TIME_HOURS
+    ApplyColumnFormat tbl, HDR_WARNING_INTERVAL, FORMAT_TIME_HOURS
+    ApplyColumnFormat tbl, HDR_EXTENSION, FORMAT_TIME_HOURS
+    ApplyColumnFormat tbl, HDR_DATE_WHEN_COMPLETE, FORMAT_DATE
+    ApplyColumnFormat tbl, HDR_PROJECTED_DUE_DATE, FORMAT_DATE
+    ApplyColumnFormat tbl, HDR_NUMBER_LIFE_REMAINING, FORMAT_DECIMAL
+    ApplyColumnFormat tbl, HDR_DAYS_WHEN_DUE, FORMAT_DECIMAL
+End Sub
+
+Public Sub ApplyUsageTableFormats()
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim formatType As String
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_BASELINE, showError:=False)
+    If Not ws Is Nothing Then
+        Set tbl = GetTable(ws, TBL_USAGE_BASELINE, showError:=False)
+        If Not tbl Is Nothing Then
+            ApplyColumnFormat tbl, HDR_BASE_SERIAL, FORMAT_TEXT
+            ApplyColumnFormat tbl, HDR_BASE_VALUE, FORMAT_DECIMAL
+            If Not tbl.DataBodyRange Is Nothing Then
+                For Each row In tbl.ListRows
+                    formatType = Trim$(CStr(row.Range.Cells(1, 5).Value))
+                    row.Range.Cells(1, 4).NumberFormat = GetFormatPatternForType(formatType)
+                Next row
+            End If
+        End If
+    End If
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_CURRENT, showError:=False)
+    If Not ws Is Nothing Then
+        Set tbl = GetTable(ws, TBL_USAGE_CURRENT, showError:=False)
+        If Not tbl Is Nothing And Not tbl.DataBodyRange Is Nothing Then
+            For Each row In tbl.ListRows
+                formatType = GetUsageFormatType( _
+                    CStr(row.Range.Cells(1, 1).Value), _
+                    CStr(row.Range.Cells(1, 2).Value))
+                row.Range.Cells(1, 3).NumberFormat = GetFormatPatternForType(formatType)
+            Next row
+        End If
+    End If
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_LOG, showError:=False)
+    If Not ws Is Nothing Then
+        Set tbl = GetTable(ws, TBL_USAGE_LOG, showError:=False)
+        If Not tbl Is Nothing Then
+            ApplyColumnFormat tbl, HDR_LOG_SORTIE_DATE, FORMAT_DATE
+            ApplyColumnFormat tbl, HDR_LOG_ENTERED_AT, FORMAT_DATETIME
+            ApplyColumnFormat tbl, HDR_LOG_INCREMENT, FORMAT_DECIMAL
+            If Not tbl.DataBodyRange Is Nothing Then
+                For Each row In tbl.ListRows
+                    formatType = GetUsageFormatType( _
+                        CStr(row.Range.Cells(1, 3).Value), _
+                        CStr(row.Range.Cells(1, 4).Value))
+                    row.Range.Cells(1, 5).NumberFormat = GetFormatPatternForType(formatType)
+                Next row
+            End If
+        End If
+    End If
+End Sub
+
+Private Sub ApplyColumnFormat(ByVal tbl As ListObject, _
+                              ByVal columnName As String, _
+                              ByVal numberFormat As String)
+    Dim col As ListColumn
+
+    If tbl Is Nothing Then Exit Sub
+
+    For Each col In tbl.ListColumns
+        If StrComp(col.Name, columnName, vbTextCompare) = 0 Then
+            If Not col.DataBodyRange Is Nothing Then
+                col.DataBodyRange.NumberFormat = numberFormat
+            End If
+            Exit Sub
+        End If
+    Next col
+End Sub
+
+Private Sub RepairSerialColumns()
+    RepairTableSerialColumn SHEET_DATA_SITS, TBL_SITS, HDR_SERIAL
+    RepairTableSerialColumn SHEET_DATA_SITS, TBL_SITS, HDR_END_ITEM_SERIAL
+    RepairTableSerialColumn SHEET_DATA_USAGE_BASELINE, TBL_USAGE_BASELINE, HDR_BASE_SERIAL
+End Sub
+
+Private Sub RepairTableSerialColumn(ByVal sheetName As String, _
+                                    ByVal tableName As String, _
+                                    ByVal columnName As String)
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim colIndex As Long
+    Dim row As ListRow
+    Dim cell As Range
+
+    Set ws = GetWorksheet(sheetName, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    Set tbl = GetTable(ws, tableName, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    colIndex = GetTableColumnIndex(tbl, columnName)
+    If colIndex = 0 Then Exit Sub
+
+    For Each row In tbl.ListRows
+        Set cell = row.Range.Cells(1, colIndex)
+        If Not IsEmpty(cell.Value) Then
+            WriteSerialCell cell, cell.Value, cell.Text
+        End If
+    Next row
+End Sub

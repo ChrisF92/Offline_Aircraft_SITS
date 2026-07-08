@@ -12,17 +12,21 @@ lblDate           Label          Sortie date:
 txtSortieDate     TextBox        Default set in code (dd/mm/yyyy)
 lblRef            Label          Sortie ref:
 txtSortieRef      TextBox        Optional sortie reference
-lblCounters       Label          Usage counters (select row, enter increment below):
+lblCounters       Label          Usage counters (Interval | Current | Format):
 lstCounters       ListBox        Width ~420, Height ~180, MultiSelect fmMultiSelectSingle
 lblSelected       Label          (blank — selection hint set in code)
 lblIncrement      Label          Increment:
-txtIncrement      TextBox        h:mm for Hours counters, number otherwise
+txtIncrement      TextBox        h:mm for Hours, m:ss for Minutes, number otherwise
 cmdAdd            CommandButton  Add to sortie
 lblPending        Label          Pending increments:
 lstPending        ListBox        Width ~420, Height ~80
 cmdRemove         CommandButton  Remove selected
 cmdSubmit         CommandButton  Log sortie        (Default = True)
 cmdCancel         CommandButton  Cancel
+
+The counter list shows three visible columns:
+  Interval Code | Current Value | Format
+(Task code is stored in a hidden fourth column for data integrity.)
 
 Suggested positions (approximate):
   Row 1: lblDate [10,10]  txtSortieDate [90,8]  lblRef [220,10]  txtSortieRef [290,8]
@@ -36,8 +40,8 @@ Suggested positions (approximate):
 
 After creating controls, open the form's code window and paste the contents of:
   vba/forms/frmLogSortie.txt
-(delete the VERSION/Begin block at the top if the IDE already generated it —
- keep only the Attribute lines onward if needed, or paste the full code module
- over the default empty form code)
 
 Dashboard macro: assign ShowLogSortieForm or RunLogSortie to a button.
+
+If serial numbers or time columns display incorrectly on an existing workbook,
+run RepairWorkbookFormats from modUtility.

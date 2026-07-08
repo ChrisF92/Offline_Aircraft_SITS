@@ -89,8 +89,9 @@ Step 6 — Log sorties (Phase 2)
 1. Run macro RunLogSortie (or ShowLogSortieForm) from the Dashboard.
 2. Enter sortie date and optional sortie reference.
 3. Select a usage counter from the baseline list, enter increment, click Add.
-   - Hours counters (HH, E1, E2, etc.): enter h:mm (e.g. 1:30)
-   - Number counters (landings, starts, etc.): enter a positive number
+- Hours counters: enter h:mm (e.g. 1:30) — stored as [h]:mm
+- Minutes counters (e.g. 1E OEI seconds): enter m:ss — stored as [m]:ss
+- Number counters: enter a positive number
 4. Add all increments for the sortie, then click Log sortie.
 
 Each logged increment:
@@ -151,4 +152,12 @@ VBA name shadowing ("expects an array" on a function call)
 All worksheets stuck hidden
   -> Run RepairSetupSheetVisibility in modUtility, then FinalizeSetupSheetLayout.
 
-Build marker: Phase2-usage-entry-v1
+Serial numbers show as 1.11E+12 or lose leading zeros
+  -> Re-import SITS/usage after updating modUtility, or run RepairWorkbookFormats.
+  -> Serial columns are stored as text (@) using the source cell display text.
+
+Time values calculate incorrectly
+  -> Hours use [h]:mm (Excel day-fraction storage). Minutes use [m]:ss.
+  -> Run RepairWorkbookFormats after updating modules.
+
+Build marker: Phase2-usage-entry-v2

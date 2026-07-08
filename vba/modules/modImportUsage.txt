@@ -232,17 +232,17 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) 
             .Cells(1, 1).Value = rowData(0)
             .Cells(1, 2).Value = rowData(1)
             .Cells(1, 3).Value = rowData(2)
-            .Cells(1, 4).Value = rowData(3)
+            WriteFormattedUsageValue .Cells(1, 4), rowData(3), CStr(rowData(4))
             .Cells(1, 5).Value = rowData(4)
             .Cells(1, 6).Value = rowData(5)
-            .Cells(1, 7).Value = rowData(6)
+            WriteSerialCell .Cells(1, 7), rowData(6)
         End With
 
         Set newRow = tblCurrent.ListRows.Add
         With newRow.Range
             .Cells(1, 1).Value = rowData(0)
             .Cells(1, 2).Value = rowData(1)
-            .Cells(1, 3).Value = rowData(3)
+            WriteFormattedUsageValue .Cells(1, 3), rowData(3), CStr(rowData(4))
         End With
 
         rowCount = rowCount + 1
@@ -251,6 +251,7 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True) 
     SetExcelState "enable"
     CommitUsageImport = True
 
+    ApplyUsageTableFormats
     LogAction "USAGE_IMPORTED", "", "Committed " & rowCount & " merged usage row(s)"
     RefreshUsageView
     If showDialogs Then
@@ -360,22 +361,15 @@ Private Function BuildUsageImportRow(ByVal srcWs As Worksheet, _
         .IntervalCode = UCase$(Trim$(CStr(srcWs.Cells(rowIndex, colMap("Interval Type")).Value)))
         .TaskCode = Trim$(CStr(srcWs.Cells(rowIndex, colMap("Task Code")).Value))
         .Description = LookupOptionalDescription(srcWs, rowIndex, headerRow)
-        .SerialValue = Trim$(CStr(srcWs.Cells(rowIndex, colMap("Top Serial")).Value))
         .SourceName = sourceName
 
         lifeUsed = srcWs.Cells(rowIndex, colMap("Life Used")).Value
         displayText = srcWs.Cells(rowIndex, colMap("Life Used")).Text
-        .FormatType = DetectUsageFormat(lifeUsed)
-
-        If .FormatType = "Hours" Then
-            If Not IsEmpty(ParseTimeUsageValue(lifeUsed, displayText)) Then
-                .BaselineValue = ParseTimeUsageValue(lifeUsed, displayText)
-            Else
-                .BaselineValue = lifeUsed
-            End If
-        Else
-            .BaselineValue = lifeUsed
-        End If
+        .FormatType = DetectUsageFormat(lifeUsed, .IntervalCode, .TaskCode, .Description)
+        .BaselineValue = NormalizeUsageImportValue(lifeUsed, .FormatType, displayText)
+        .SerialValue = NormalizeSerialText( _
+            srcWs.Cells(rowIndex, colMap("Top Serial")).Value, _
+            srcWs.Cells(rowIndex, colMap("Top Serial")).Text)
     End With
 End Function
 

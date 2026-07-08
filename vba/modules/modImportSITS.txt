@@ -135,15 +135,19 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
                 srcWs.Cells(rowIndex, colMap("Task Sequence")).Value
             .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_DESCRIPTION)).Value = _
                 srcWs.Cells(rowIndex, colMap("Task Description")).Value
-            .Cells(1, GetTableColumnIndex(tbl, HDR_SERIAL)).Value = _
-                srcWs.Cells(rowIndex, colMap("Serial")).Value
-            .Cells(1, GetTableColumnIndex(tbl, HDR_END_ITEM_SERIAL)).Value = _
-                srcWs.Cells(rowIndex, colMap("End Item Serial")).Value
-            .Cells(1, GetTableColumnIndex(tbl, HDR_EXTENSION)).Value = _
-                srcWs.Cells(rowIndex, colMap("Extension")).Value
+            WriteSerialCell .Cells(1, GetTableColumnIndex(tbl, HDR_SERIAL)), _
+                srcWs.Cells(rowIndex, colMap("Serial")).Value, _
+                srcWs.Cells(rowIndex, colMap("Serial")).Text
+            WriteSerialCell .Cells(1, GetTableColumnIndex(tbl, HDR_END_ITEM_SERIAL)), _
+                srcWs.Cells(rowIndex, colMap("End Item Serial")).Value, _
+                srcWs.Cells(rowIndex, colMap("End Item Serial")).Text
+            ApplyTimeOrNumberCell .Cells(1, GetTableColumnIndex(tbl, HDR_EXTENSION)), _
+                srcWs.Cells(rowIndex, colMap("Extension")).Value, _
+                srcWs.Cells(rowIndex, colMap("Extension")).Text, intervalCode
 
             ApplyActualIntervalValue .Cells(1, GetTableColumnIndex(tbl, HDR_ACTUAL_INTERVAL)), _
-                srcWs.Cells(rowIndex, colMap("Actual Interval")).Value, intervalCode
+                srcWs.Cells(rowIndex, colMap("Actual Interval")).Value, intervalCode, _
+                srcWs.Cells(rowIndex, colMap("Actual Interval")).Text
             ApplyLifeRemainingValues tbl, newRow, intervalCode, lifeRemaining, _
                 srcWs.Cells(rowIndex, colMap("Life Remaining")).Text
             ApplyOptionalSITSColumns tbl, newRow, optCols, srcWs, rowIndex
@@ -157,6 +161,7 @@ NextRow:
     Next rowIndex
 
     srcWb.Close SaveChanges:=False
+    ApplyWorkbookDataFormats
     SetExcelState "enable"
 
     LogAction "SITS_IMPORTED", "", "Imported " & importedRows & " rows from " & filePath
@@ -290,19 +295,27 @@ End Function
 
 Private Sub ApplyActualIntervalValue(ByVal targetCell As Range, _
                                      ByVal rawValue As Variant, _
-                                     ByVal intervalCode As String)
+                                     ByVal intervalCode As String, _
+                                     Optional ByVal displayText As String = "")
+    ApplyTimeOrNumberCell targetCell, rawValue, displayText, intervalCode
+End Sub
+
+Private Sub ApplyTimeOrNumberCell(ByVal targetCell As Range, _
+                                  ByVal rawValue As Variant, _
+                                  ByVal displayText As String, _
+                                  ByVal intervalCode As String)
     Dim parsedTime As Variant
 
-    If IsHourBasedIntervalType(intervalCode) Or InStr(CStr(rawValue), ":") > 0 Then
-        parsedTime = ParseTimeUsageValue(rawValue, CStr(rawValue))
+    If InStr(displayText, ":") > 0 Or (IsHourBasedIntervalType(intervalCode) And intervalCode <> TYPE_DD) Then
+        parsedTime = ParseTimeUsageValue(rawValue, displayText)
         If Not IsEmpty(parsedTime) Then
-            targetCell.Value = parsedTime
-            targetCell.NumberFormat = FORMAT_TIME_HOURS
+            WriteFormattedUsageValue targetCell, parsedTime, FORMAT_TYPE_HOURS
             Exit Sub
         End If
     End If
 
     targetCell.Value = rawValue
+    targetCell.NumberFormat = FORMAT_DECIMAL
 End Sub
 
 Private Sub ApplyLifeRemainingValues(ByVal tbl As ListObject, _
@@ -322,15 +335,16 @@ Private Sub ApplyLifeRemainingValues(ByVal tbl As ListObject, _
     If InStr(displayText, ":") > 0 Or (IsHourBasedIntervalType(intervalCode) And intervalCode <> TYPE_DD) Then
         parsedTime = ParseTimeUsageValue(rawValue, displayText)
         If Not IsEmpty(parsedTime) Then
-            newRow.Range.Cells(1, colHours).Value = parsedTime
-            newRow.Range.Cells(1, colHours).NumberFormat = FORMAT_TIME_HOURS
+            WriteFormattedUsageValue newRow.Range.Cells(1, colHours), parsedTime, FORMAT_TYPE_HOURS
             Exit Sub
         End If
     End If
 
     newRow.Range.Cells(1, colNumber).Value = rawValue
+    newRow.Range.Cells(1, colNumber).NumberFormat = FORMAT_DECIMAL
     If intervalCode = TYPE_DD Then
         newRow.Range.Cells(1, colDays).Value = rawValue
+        newRow.Range.Cells(1, colDays).NumberFormat = FORMAT_DECIMAL
     End If
 End Sub
 
