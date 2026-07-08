@@ -183,6 +183,10 @@ Public Sub RefreshSITSView()
 
     SetExcelState "disable"
 
+    On Error Resume Next
+    If wsView.AutoFilterMode Then wsView.AutoFilterMode = False
+    On Error GoTo 0
+
     wsView.Cells.Clear
     WriteSITSViewShell wsView
 
@@ -259,6 +263,7 @@ NextCollectRow:
     End If
 
     wsView.Columns.AutoFit
+    ApplySITSViewAutoFilter wsView, outputRow - 1, headers.Count
     SetExcelState "enable"
 End Sub
 
@@ -549,6 +554,18 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
     End Select
 End Function
 
+Private Sub ApplySITSViewAutoFilter(ByVal ws As Worksheet, _
+                                    ByVal lastDataRow As Long, _
+                                    ByVal colCount As Long)
+    On Error Resume Next
+    If ws.AutoFilterMode Then ws.AutoFilterMode = False
+    On Error GoTo 0
+
+    If lastDataRow <= SITS_VIEW_HEADER_ROW Or colCount < 1 Then Exit Sub
+
+    ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 1), ws.Cells(lastDataRow, colCount)).AutoFilter
+End Sub
+
 Private Sub WriteSITSViewShell(ByVal ws As Worksheet)
     With ws.Range("A1")
         .Value = "SITS — Task View"
@@ -568,7 +585,7 @@ Private Sub WriteSITSViewShell(ByVal ws As Worksheet)
     ws.Range("B4").Value = GetForecastDaysSetting()
     ws.Range("B4").NumberFormat = FORMAT_GENERAL
 
-    ws.Range("A5").Value = "Assign RunRefreshSITS to a button here to refresh. Selector is display-only until work packages."
+    ws.Range("A5").Value = "Assign RunRefreshSITS to a button here to refresh. Selector is display-only until work packages. Use the header-row filter dropdowns to hide interval types (e.g. AU, OP)."
     ws.Range("A5").Font.Size = 9
     ws.Range("A5").Font.Italic = True
 End Sub

@@ -121,7 +121,9 @@ Step 7 — SITS view and refresh (Phase 3)
    - DD tasks: shown only if due within the day threshold
    - Other interval types: always shown
 3. Assign macro **RunRefreshSITS** to a button on the SITS sheet (Insert > Button).
-4. Life remaining warnings highlight rows in pink when below config thresholds
+4. Use the **AutoFilter** dropdowns on the header row (row 7) to show/hide interval
+   types (e.g. hide AU, OP) or other columns — standard Excel filtering.
+5. Life remaining warnings highlight rows in pink when below config thresholds
    (default 10:00 hours / 7 days).
 
 SITS recalculation runs automatically after:

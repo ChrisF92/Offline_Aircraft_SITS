@@ -225,7 +225,7 @@ Private Sub FormatSITSView()
     ws.Range("B3").Value = 50
     ws.Range("A4").Value = "Forecast days (DD):"
     ws.Range("B4").Value = 90
-    ws.Range("A5").Value = "Assign RunRefreshSITS to a button here to refresh. Selector is display-only until work packages."
+    ws.Range("A5").Value = "Assign RunRefreshSITS to a button here to refresh. Selector is display-only until work packages. Use the header-row filter dropdowns to hide interval types (e.g. AU, OP)."
 End Sub
 
 Private Sub FormatUsageView()
