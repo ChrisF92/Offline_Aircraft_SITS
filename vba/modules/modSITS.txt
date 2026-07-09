@@ -27,7 +27,7 @@ Public Sub RunRefreshSITS()
 End Sub
 
 Public Sub RefreshSITS()
-    If Not ValidateWorkbookStructure(showError:=False) Then Exit Sub
+    If Not ValidateWorkbookStructure(showDialogs:=False) Then Exit Sub
     SaveForecastSettingsFromView
     RecalculateSITS
     RefreshSITSView
