@@ -36,6 +36,7 @@ End Sub
 Public Sub RefreshSITS(Optional ByVal skipRecalculate As Boolean = False)
     If Not ValidateWorkbookStructure(showDialogs:=False) Then Exit Sub
     SaveForecastSettingsFromView
+    EnsureForecastConfigDefaults
     If Not skipRecalculate Then RecalculateSITS
     RefreshSITSView
 End Sub
@@ -44,6 +45,7 @@ End Sub
 Public Sub RefreshSITSViewOnly()
     If Not ValidateWorkbookStructure(showDialogs:=False) Then Exit Sub
     SaveForecastSettingsFromView
+    EnsureForecastConfigDefaults
     RefreshSITSView
 End Sub
 
@@ -1460,18 +1462,24 @@ Private Function GetForecastHoursSetting() As Double
     Set ws = GetWorksheet(SHEET_SITS, showError:=False)
     If Not ws Is Nothing Then
         value = ws.Range(SITS_FORECAST_HOURS_CELL).Value
+        ' Ignore blank or corrupted 0 left on the sheet after a clear/refresh.
         If IsPresentNumericSetting(value) Then
-            GetForecastHoursSetting = CDbl(value)
-            Exit Function
+            If CDbl(value) <> 0# Then
+                GetForecastHoursSetting = CDbl(value)
+                Exit Function
+            End If
         End If
     End If
 
     value = GetConfigValue(CFG_FORECAST_HOURS, 50)
     If IsPresentNumericSetting(value) Then
-        GetForecastHoursSetting = CDbl(value)
-    Else
-        GetForecastHoursSetting = 50#
+        If CDbl(value) <> 0# Then
+            GetForecastHoursSetting = CDbl(value)
+            Exit Function
+        End If
     End If
+
+    GetForecastHoursSetting = 50#
 End Function
 
 Private Function GetForecastDaysSetting() As Long
@@ -1482,17 +1490,22 @@ Private Function GetForecastDaysSetting() As Long
     If Not ws Is Nothing Then
         value = ws.Range(SITS_FORECAST_DAYS_CELL).Value
         If IsPresentNumericSetting(value) Then
-            GetForecastDaysSetting = CLng(value)
-            Exit Function
+            If CLng(value) <> 0 Then
+                GetForecastDaysSetting = CLng(value)
+                Exit Function
+            End If
         End If
     End If
 
     value = GetConfigValue(CFG_FORECAST_DAYS, 90)
     If IsPresentNumericSetting(value) Then
-        GetForecastDaysSetting = CLng(value)
-    Else
-        GetForecastDaysSetting = 90
+        If CLng(value) <> 0 Then
+            GetForecastDaysSetting = CLng(value)
+            Exit Function
+        End If
     End If
+
+    GetForecastDaysSetting = 90
 End Function
 
 ' True only for a real entered number — Empty/blank must not count (VBA
@@ -1506,6 +1519,27 @@ Private Function IsPresentNumericSetting(ByVal value As Variant) As Boolean
     End If
     IsPresentNumericSetting = IsNumeric(value)
 End Function
+
+' Defaults: 50 hours / 90 days. Also repairs config corrupted to 0 by the
+' empty-cell IsNumeric bug so B3/B4 mirror the intended settings again.
+Private Sub EnsureForecastConfigDefaults()
+    Dim hoursValue As Variant
+    Dim daysValue As Variant
+
+    hoursValue = GetConfigValue(CFG_FORECAST_HOURS, Empty)
+    If Not IsPresentNumericSetting(hoursValue) Then
+        SetConfigValue CFG_FORECAST_HOURS, 50
+    ElseIf CDbl(hoursValue) = 0# Then
+        SetConfigValue CFG_FORECAST_HOURS, 50
+    End If
+
+    daysValue = GetConfigValue(CFG_FORECAST_DAYS, Empty)
+    If Not IsPresentNumericSetting(daysValue) Then
+        SetConfigValue CFG_FORECAST_DAYS, 90
+    ElseIf CLng(daysValue) = 0 Then
+        SetConfigValue CFG_FORECAST_DAYS, 90
+    End If
+End Sub
 
 Private Function ParseWarnHoursSetting() As Double
     Dim rawValue As Variant
