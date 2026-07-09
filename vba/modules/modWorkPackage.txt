@@ -1,0 +1,1426 @@
+Option Explicit
+
+' ========================================================================
+' WORK PACKAGE MODULE — Offline Aircraft SITS v2 (Phase 4)
+' ========================================================================
+' Create / manage / delete / close work packages from SITS selectors.
+' Close reforecasts tasks, deletes PT2/PT3 deferred faults, resets
+' extensions, writes Task Description cell comments, and flags zero-
+' interval tasks for manual update.
+' ========================================================================
+
+Private Const SITS_VIEW_DATA_START_ROW As Long = 8
+Private Const SITS_VIEW_HEADER_ROW As Long = 7
+Private Const SITS_SELECTOR_COL As Long = 1
+Private Const SITS_ROW_ID_COL_NAME As String = "SITS_RowID"
+
+Public Sub RunCreateWorkPackage()
+    CreateWorkPackageFromSelection
+End Sub
+
+Public Sub RunManageWorkPackages()
+    ShowWorkPackageForm
+End Sub
+
+Public Sub ShowWorkPackageForm()
+    If Not ValidateSetupReady() Then Exit Sub
+    frmWorkPackage.Show
+End Sub
+
+Public Function CountOpenWorkPackages() As Long
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colStatus As Long
+    Dim count As Long
+
+    Set tbl = GetWorkPackagesTable(False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    colStatus = GetTableColumnIndex(tbl, HDR_WP_STATUS)
+    If colStatus = 0 Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, colStatus).Value), WP_STATUS_OPEN, vbTextCompare) = 0 Then
+            count = count + 1
+        End If
+    Next row
+
+    CountOpenWorkPackages = count
+End Function
+
+Public Function CountManualUpdateTasks() As Long
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colFlag As Long
+    Dim count As Long
+
+    Set tbl = GetSITSTable(False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    EnsureWorkPackageSITSColumns tbl
+    colFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
+    If colFlag = 0 Then Exit Function
+
+    For Each row In tbl.ListRows
+        If ConvertToBoolean(row.Range.Cells(1, colFlag).Value) Then
+            count = count + 1
+        End If
+    Next row
+
+    CountManualUpdateTasks = count
+End Function
+
+Public Function BuildManualUpdateDashboardComment() As String
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colFlag As Long
+    Dim colTaskCode As Long
+    Dim colCompletedOrn As Long
+    Dim colDateComplete As Long
+    Dim lines As String
+    Dim count As Long
+    Dim taskCode As String
+    Dim ornValue As String
+    Dim completedDate As String
+    Dim maxLines As Long
+
+    Set tbl = GetSITSTable(False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    EnsureWorkPackageSITSColumns tbl
+    colFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
+    colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
+    colCompletedOrn = GetTableColumnIndex(tbl, HDR_ORN_COMPLETED)
+    colDateComplete = GetTableColumnIndex(tbl, HDR_DATE_WHEN_COMPLETE)
+    If colFlag = 0 Or colTaskCode = 0 Then Exit Function
+
+    maxLines = 20
+    For Each row In tbl.ListRows
+        If Not ConvertToBoolean(row.Range.Cells(1, colFlag).Value) Then GoTo NextManualDash
+
+        count = count + 1
+        If count > maxLines Then GoTo NextManualDash
+
+        taskCode = Trim$(CStr(row.Range.Cells(1, colTaskCode).Value))
+        ornValue = ""
+        completedDate = ""
+        If colCompletedOrn > 0 Then ornValue = Trim$(CStr(row.Range.Cells(1, colCompletedOrn).Value))
+        If colDateComplete > 0 Then
+            If IsDate(row.Range.Cells(1, colDateComplete).Value) Then
+                completedDate = Format$(CDate(row.Range.Cells(1, colDateComplete).Value), FORMAT_DATE)
+            End If
+        End If
+
+        lines = lines & "• " & taskCode
+        If Len(ornValue) > 0 Then lines = lines & "  ORN " & ornValue
+        If Len(completedDate) > 0 Then lines = lines & "  completed " & completedDate
+        lines = lines & vbCrLf
+NextManualDash:
+    Next row
+
+    If count = 0 Then Exit Function
+
+    BuildManualUpdateDashboardComment = _
+        "Tasks needing manual life remaining update (" & count & "):" & vbCrLf & lines
+    If count > maxLines Then
+        BuildManualUpdateDashboardComment = BuildManualUpdateDashboardComment & _
+            "• … and " & (count - maxLines) & " more" & vbCrLf
+    End If
+End Function
+
+Public Function GetOpenWorkPackageORNs() As Collection
+    Dim result As New Collection
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colOrn As Long
+    Dim colStatus As Long
+    Dim orn As String
+
+    Set GetOpenWorkPackageORNs = result
+    Set tbl = GetWorkPackagesTable(False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    colOrn = GetTableColumnIndex(tbl, HDR_WP_ORN)
+    colStatus = GetTableColumnIndex(tbl, HDR_WP_STATUS)
+    If colOrn = 0 Or colStatus = 0 Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, colStatus).Value), WP_STATUS_OPEN, vbTextCompare) = 0 Then
+            orn = Trim$(CStr(row.Range.Cells(1, colOrn).Value))
+            If Len(orn) > 0 Then result.Add orn
+        End If
+    Next row
+End Function
+
+Public Function GetWorkPackageTaskDisplayRows(ByVal orn As String) As Collection
+    Dim result As New Collection
+    Dim tblWPTasks As ListObject
+    Dim tblSITS As ListObject
+    Dim row As ListRow
+    Dim sitsRow As ListRow
+    Dim colOrn As Long
+    Dim colRowId As Long
+    Dim colTaskCode As Long
+    Dim colDesc As Long
+    Dim rowId As String
+    Dim taskCode As String
+    Dim taskDesc As String
+    Dim rowIndex As Object
+
+    Set GetWorkPackageTaskDisplayRows = result
+
+    Set tblWPTasks = GetWPTasksTable(False)
+    Set tblSITS = GetSITSTable(False)
+    If tblWPTasks Is Nothing Or tblSITS Is Nothing Then Exit Function
+    If tblWPTasks.DataBodyRange Is Nothing Then Exit Function
+
+    colOrn = GetTableColumnIndex(tblWPTasks, HDR_WP_TASK_ORN)
+    colRowId = GetTableColumnIndex(tblWPTasks, HDR_WP_TASK_ROW_ID)
+    colTaskCode = GetTableColumnIndex(tblSITS, HDR_TASK_CODE)
+    colDesc = GetTableColumnIndex(tblSITS, HDR_TASK_DESCRIPTION)
+    If colOrn = 0 Or colRowId = 0 Or colTaskCode = 0 Or colDesc = 0 Then Exit Function
+
+    Set rowIndex = BuildSITSRowIdIndex(tblSITS)
+
+    orn = UCase$(Trim$(orn))
+    For Each row In tblWPTasks.ListRows
+        If StrComp(UCase$(Trim$(CStr(row.Range.Cells(1, colOrn).Value))), orn, vbTextCompare) = 0 Then
+            rowId = Trim$(CStr(row.Range.Cells(1, colRowId).Value))
+            Set sitsRow = ResolveSITSRowById(rowIndex, tblSITS, rowId)
+            If sitsRow Is Nothing Then
+                taskCode = "(missing)"
+                taskDesc = "SITS row " & rowId & " no longer present"
+            Else
+                taskCode = Trim$(CStr(sitsRow.Range.Cells(1, colTaskCode).Value))
+                taskDesc = Trim$(CStr(sitsRow.Range.Cells(1, colDesc).Value))
+            End If
+            result.Add Array(taskCode, taskDesc, rowId)
+        End If
+    Next row
+End Function
+
+Public Function CreateWorkPackageFromSelection() As Boolean
+    Const PROC_NAME As String = "CreateWorkPackageFromSelection"
+
+    Dim tblSITS As ListObject
+    Dim selectedIds As Object
+    Dim expandedIds As Object
+    Dim autoClaimed As Collection
+    Dim orn As String
+    Dim failReason As String
+    Dim claimMsg As String
+    Dim conflictOrn As String
+    Dim rowIndex As Object
+    Dim linkIndex As Object
+
+    CreateWorkPackageFromSelection = False
+
+    If Not ValidateSetupReady() Then Exit Function
+
+    Set tblSITS = GetSITSTable(True)
+    If tblSITS Is Nothing Then Exit Function
+    EnsureWorkPackageSITSColumns tblSITS
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+    Application.StatusBar = "Reading SITS selection…"
+
+    Set rowIndex = BuildSITSRowIdIndex(tblSITS)
+    Set selectedIds = CollectSelectedFromSITSView(tblSITS, rowIndex)
+
+    If selectedIds.Count = 0 Then
+        SetExcelState "enable"
+        MsgBox "Tick one or more tasks on the SITS view, then click Create Work Package.", _
+               vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    Application.StatusBar = "Checking associated tasks…"
+    Set linkIndex = BuildAssociatedLinkIndex(tblSITS)
+    Set expandedIds = ExpandSelectionWithAssociatedTasks(selectedIds, tblSITS, autoClaimed, _
+                                                         rowIndex, linkIndex)
+
+    ' Dialogs need a responsive UI — briefly restore Excel state.
+    SetExcelState "enable"
+    Application.StatusBar = False
+
+    claimMsg = DescribeAssociatedClaims(autoClaimed)
+    If Len(claimMsg) > 0 Then
+        If MsgBox(claimMsg & vbCrLf & "Continue and create the work package?", _
+                  vbQuestion + vbYesNo, APP_NAME) <> vbYes Then Exit Function
+    End If
+
+    If Not ValidateTasksAvailableForWP(expandedIds, tblSITS, rowIndex, conflictOrn, failReason) Then
+        MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    orn = PromptForORN(failReason)
+    If Len(orn) = 0 Then Exit Function
+
+    If OpenWorkPackageExists(orn) Then
+        MsgBox "An open work package already uses ORN " & orn & ".", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+    Application.StatusBar = "Creating work package…"
+
+    RemoveWPTaskRows orn
+    WriteWorkPackageHeader orn
+    WriteWorkPackageTasks orn, expandedIds
+    AssignORNToSITSTasks orn, expandedIds, tblSITS, rowIndex
+    ClearSelectedSITSSelectors expandedIds, tblSITS, rowIndex
+
+    ' Keep the existing SITS view — replace claimed selectors with IN WORK.
+    Application.StatusBar = "Updating SITS selectors…"
+    MarkSITSViewRowsInWork expandedIds
+
+    LogAction "WP_CREATED", orn, "Tasks=" & expandedIds.Count
+
+    Application.StatusBar = "Updating Dashboard…"
+    RefreshDashboardStatusCounts
+
+    SetExcelState "enable"
+    Application.StatusBar = False
+
+    MsgBox "Work package " & orn & " created with " & expandedIds.Count & " task(s).", _
+           vbInformation, APP_NAME
+    CreateWorkPackageFromSelection = True
+    Exit Function
+
+ErrorHandler:
+    Application.StatusBar = False
+    SetExcelState "force-enable"
+    LogError PROC_NAME, Err.Number, Err.Description
+    MsgBox "Failed to create work package: " & Err.Description, vbCritical, APP_NAME
+End Function
+
+Public Function DeleteWorkPackage(ByVal orn As String, _
+                                  Optional ByVal showDialogs As Boolean = True) As Boolean
+    Const PROC_NAME As String = "DeleteWorkPackage"
+
+    Dim tblSITS As ListObject
+    Dim taskIds As Collection
+    Dim taskIdDict As Object
+    Dim failReason As String
+    Dim item As Variant
+
+    DeleteWorkPackage = False
+    orn = UCase$(Trim$(orn))
+
+    If Len(orn) = 0 Then
+        If showDialogs Then MsgBox "Select a work package first.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If Not OpenWorkPackageExists(orn) Then
+        If showDialogs Then MsgBox "Open work package not found: " & orn, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If showDialogs Then
+        If MsgBox("Delete work package " & orn & "?" & vbCrLf & vbCrLf & _
+                  "This undoes the package only — SITS life remaining is not changed.", _
+                  vbQuestion + vbYesNo, APP_NAME) <> vbYes Then Exit Function
+    End If
+
+    Set tblSITS = GetSITSTable(True)
+    If tblSITS Is Nothing Then Exit Function
+    EnsureWorkPackageSITSColumns tblSITS
+
+    Set taskIds = CollectWPTaskRowIds(orn)
+    If taskIds Is Nothing Then
+        failReason = "Could not read work package tasks."
+        GoTo Failed
+    End If
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+    Application.StatusBar = "Deleting work package…"
+
+    ClearORNFromSITSTasks orn, taskIds, tblSITS
+    RemoveWPTaskRows orn
+    MarkWorkPackageStatus orn, WP_STATUS_DELETED, False
+
+    ' No full SITS rebuild — restore checkboxes for released tasks.
+    Set taskIdDict = CreateObject("Scripting.Dictionary")
+    taskIdDict.CompareMode = 1
+    For Each item In taskIds
+        taskIdDict(CStr(item)) = True
+    Next item
+    RestoreSITSViewSelectorsForRowIds taskIdDict
+
+    LogAction "WP_DELETED", orn, "Tasks released=" & taskIds.Count
+
+    Application.StatusBar = "Updating Dashboard…"
+    RefreshDashboardStatusCounts
+
+    SetExcelState "enable"
+    Application.StatusBar = False
+    DeleteWorkPackage = True
+    Exit Function
+
+Failed:
+    If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+    Exit Function
+
+ErrorHandler:
+    Application.StatusBar = False
+    SetExcelState "force-enable"
+    LogError PROC_NAME, Err.Number, Err.Description
+    If showDialogs Then MsgBox "Failed to delete work package: " & Err.Description, vbCritical, APP_NAME
+End Function
+
+Public Function CloseWorkPackage(ByVal orn As String, _
+                                 Optional ByVal showDialogs As Boolean = True) As Boolean
+    Const PROC_NAME As String = "CloseWorkPackage"
+
+    Dim tblSITS As ListObject
+    Dim taskIds As Collection
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim deletedFaults As Long
+    Dim reforecasted As Long
+    Dim manualCount As Long
+    Dim manualList As String
+    Dim closeDate As Date
+    Dim userName As String
+    Dim commentText As String
+    Dim rowsToDelete As Collection
+    Dim deleteRow As Variant
+    Dim rowIndex As Object
+    Dim closedRowIds As Object
+    Dim deletedRowIds As Object
+    Dim deletedRowId As String
+    Dim colRowId As Long
+
+    CloseWorkPackage = False
+    orn = UCase$(Trim$(orn))
+    closeDate = Date
+    userName = CurrentUserName()
+
+    If Len(orn) = 0 Then
+        If showDialogs Then MsgBox "Select a work package first.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If Not OpenWorkPackageExists(orn) Then
+        If showDialogs Then MsgBox "Open work package not found: " & orn, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If showDialogs Then
+        If MsgBox("Close work package " & orn & "?" & vbCrLf & vbCrLf & _
+                  "All tasks will be completed and reforecasted in one go." & vbCrLf & _
+                  "PT2/PT3 deferred faults will be removed from SITS.", _
+                  vbQuestion + vbYesNo, APP_NAME) <> vbYes Then Exit Function
+    End If
+
+    If Not PromptForCompletionDate(closeDate) Then Exit Function
+
+    Set tblSITS = GetSITSTable(True)
+    If tblSITS Is Nothing Then Exit Function
+    EnsureWorkPackageSITSColumns tblSITS
+
+    Set taskIds = CollectWPTaskRowIds(orn)
+    If taskIds Is Nothing Or taskIds.Count = 0 Then
+        If showDialogs Then MsgBox "Work package has no tasks.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    Set rowsToDelete = New Collection
+    Set closedRowIds = CreateObject("Scripting.Dictionary")
+    closedRowIds.CompareMode = 1
+    Set deletedRowIds = CreateObject("Scripting.Dictionary")
+    deletedRowIds.CompareMode = 1
+
+    commentText = "ORN: " & orn & vbCrLf & _
+                  "Closed: " & Format$(closeDate, FORMAT_DATE) & vbCrLf & _
+                  "User: " & userName
+
+    On Error GoTo ErrorHandler
+    Application.StatusBar = "Closing work package…"
+    SetExcelState "disable"
+
+    Set rowIndex = BuildSITSRowIdIndex(tblSITS)
+    colRowId = GetTableColumnIndex(tblSITS, HDR_SITS_ROW_ID)
+
+    For Each rowId In taskIds
+        Set sitsRow = ResolveSITSRowById(rowIndex, tblSITS, CStr(rowId))
+        If sitsRow Is Nothing Then GoTo NextCloseTask
+
+        If IsDeferredFaultTaskCode(GetSITSTaskCode(sitsRow, tblSITS)) Then
+            deletedRowId = Trim$(CStr(sitsRow.Range.Cells(1, colRowId).Value))
+            If Len(deletedRowId) > 0 Then deletedRowIds(deletedRowId) = True
+            rowsToDelete.Add sitsRow
+            deletedFaults = deletedFaults + 1
+            GoTo NextCloseTask
+        End If
+
+        ApplyTaskCompletionComment sitsRow, tblSITS, commentText
+        MarkTaskCompletedMetadata sitsRow, tblSITS, orn, closeDate
+
+        If IsZeroIntervalTask(sitsRow, tblSITS) Then
+            FlagManualUpdateTask sitsRow, tblSITS, True
+            manualCount = manualCount + 1
+            manualList = manualList & "• " & GetSITSTaskCode(sitsRow, tblSITS) & vbCrLf
+        Else
+            ReforecastCompletedTask sitsRow, tblSITS, closeDate
+            FlagManualUpdateTask sitsRow, tblSITS, False
+            reforecasted = reforecasted + 1
+        End If
+
+        ClearTaskOpenORN sitsRow, tblSITS
+        ClearTaskSelector sitsRow, tblSITS
+        closedRowIds(CStr(rowId)) = True
+NextCloseTask:
+    Next rowId
+
+    For Each deleteRow In rowsToDelete
+        deleteRow.Delete
+    Next deleteRow
+
+    MarkWPTasksCompleted orn
+    MarkWorkPackageStatus orn, WP_STATUS_CLOSED, True
+
+    LogAction "WP_CLOSED", orn, _
+              "Reforecasted=" & reforecasted & "; Manual=" & manualCount & _
+              "; DeletedFaults=" & deletedFaults
+
+    ' Targeted view update only — no full SITS rebuild / checkbox recreation.
+    Application.StatusBar = "Updating SITS view…"
+    ApplySITSViewAfterWorkPackageClose closedRowIds, deletedRowIds
+
+    Application.StatusBar = "Updating Dashboard…"
+    RefreshDashboardStatusCounts
+
+    SetExcelState "enable"
+    Application.StatusBar = False
+
+    If showDialogs Then
+        Dim msg As String
+        msg = "Work package " & orn & " closed." & vbCrLf & _
+              "Reforecasted: " & reforecasted & vbCrLf & _
+              "Deferred faults removed: " & deletedFaults
+        If manualCount > 0 Then
+            msg = msg & vbCrLf & vbCrLf & _
+                  "Tasks requiring manual life remaining update (" & manualCount & "):" & vbCrLf & _
+                  manualList & vbCrLf & _
+                  "These are highlighted amber on the SITS view and counted on the Dashboard."
+        End If
+        MsgBox msg, vbInformation, APP_NAME
+    End If
+
+    CloseWorkPackage = True
+    Exit Function
+
+ErrorHandler:
+    Application.StatusBar = False
+    SetExcelState "force-enable"
+    LogError PROC_NAME, Err.Number, Err.Description
+    If showDialogs Then MsgBox "Failed to close work package: " & Err.Description, vbCritical, APP_NAME
+End Function
+
+Public Sub EnsureWorkPackageSITSColumns(ByVal tbl As ListObject)
+    EnsureTableColumnExists tbl, HDR_NEEDS_MANUAL_UPDATE
+End Sub
+
+' ------------------------------------------------------------------------
+' Create helpers
+' ------------------------------------------------------------------------
+
+Private Function PromptForORN(ByRef failReason As String) As String
+    Dim entered As String
+    Dim clean As String
+    Dim tailNumber As String
+
+    failReason = ""
+    tailNumber = GetTailNumber()
+
+    entered = InputBox( _
+        "Enter ORN for the new work package." & vbCrLf & vbCrLf & _
+        "Format: ####" & NormaliseTailText(tailNumber) & "DDMMYY" & vbCrLf & _
+        "Example: 7034" & NormaliseTailText(tailNumber) & Format$(Date, "ddmmyy"), _
+        APP_NAME)
+
+    If Len(Trim$(entered)) = 0 Then
+        failReason = "Cancelled."
+        Exit Function
+    End If
+
+    clean = UCase$(Trim$(entered))
+    If Not ValidateORNForAircraft(clean, tailNumber, failReason) Then
+        MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    PromptForORN = clean
+End Function
+
+Private Function PromptForCompletionDate(ByRef closeDate As Date) As Boolean
+    Dim entered As String
+    Dim parsed As Date
+
+    entered = InputBox( _
+        "Enter the completion date for this work package (dd/mm/yyyy)." & vbCrLf & vbCrLf & _
+        "This date is written to task comments and Last Completed (Date).", _
+        APP_NAME, Format$(Date, FORMAT_DATE))
+
+    If Len(Trim$(entered)) = 0 Then
+        MsgBox "Close cancelled — a completion date is required.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If Not IsDate(entered) Then
+        MsgBox "Enter a valid completion date (dd/mm/yyyy).", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    parsed = DateValue(CDate(entered))
+    If parsed > Date Then
+        If MsgBox("Completion date is in the future. Continue anyway?", _
+                  vbQuestion + vbYesNo, APP_NAME) <> vbYes Then Exit Function
+    End If
+
+    closeDate = parsed
+    PromptForCompletionDate = True
+End Function
+
+Private Function CollectSelectedFromSITSView(ByVal tbl As ListObject, _
+                                             Optional ByVal rowIndex As Object = Nothing) As Object
+    Dim selected As Object
+    Dim wsView As Worksheet
+    Dim lastRow As Long
+    Dim rowId As String
+    Dim colRowIdView As Long
+    Dim headerCell As Range
+    Dim viewIds As Variant
+    Dim viewSelectors As Variant
+    Dim i As Long
+    Dim localIndex As Object
+
+    Set selected = CreateObject("Scripting.Dictionary")
+    selected.CompareMode = 1
+    Set CollectSelectedFromSITSView = selected
+
+    Set wsView = GetWorksheet(SHEET_SITS, showError:=False)
+    If wsView Is Nothing Or tbl Is Nothing Then Exit Function
+
+    If rowIndex Is Nothing Then
+        Set localIndex = BuildSITSRowIdIndex(tbl)
+    Else
+        Set localIndex = rowIndex
+    End If
+
+    colRowIdView = 0
+    For Each headerCell In wsView.Range(wsView.Cells(SITS_VIEW_HEADER_ROW, 1), _
+                                        wsView.Cells(SITS_VIEW_HEADER_ROW, 40))
+        If StrComp(Trim$(CStr(headerCell.Value)), SITS_ROW_ID_COL_NAME, vbTextCompare) = 0 Then
+            colRowIdView = headerCell.Column
+            Exit For
+        End If
+    Next headerCell
+    If colRowIdView = 0 Then Exit Function
+
+    lastRow = wsView.Cells(wsView.Rows.Count, colRowIdView).End(xlUp).Row
+    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Function
+
+    viewIds = wsView.Range(wsView.Cells(SITS_VIEW_DATA_START_ROW, colRowIdView), _
+                           wsView.Cells(lastRow, colRowIdView)).Value
+    viewSelectors = wsView.Range(wsView.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL), _
+                                 wsView.Cells(lastRow, SITS_SELECTOR_COL)).Value
+
+    If Not IsArray(viewIds) Then
+        If StrComp(Trim$(CStr(viewSelectors)), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then Exit Function
+        If ConvertToBoolean(viewSelectors) Then
+            rowId = Trim$(CStr(viewIds))
+            If Len(rowId) > 0 Then
+                If Not ResolveSITSRowById(localIndex, tbl, rowId) Is Nothing Then
+                    selected(rowId) = True
+                End If
+            End If
+        End If
+        Exit Function
+    End If
+
+    For i = LBound(viewIds, 1) To UBound(viewIds, 1)
+        ' IN WORK rows have no checkbox and cannot be selected again.
+        If StrComp(Trim$(CStr(viewSelectors(i, 1))), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then GoTo NextSelectedView
+        If Not ConvertToBoolean(viewSelectors(i, 1)) Then GoTo NextSelectedView
+        rowId = Trim$(CStr(viewIds(i, 1)))
+        If Len(rowId) = 0 Then GoTo NextSelectedView
+        If ResolveSITSRowById(localIndex, tbl, rowId) Is Nothing Then GoTo NextSelectedView
+        selected(rowId) = True
+NextSelectedView:
+    Next i
+End Function
+
+Private Function CollectSelectedSITSRowIds(ByVal tbl As ListObject) As Object
+    Dim selected As Object
+    Dim row As ListRow
+    Dim colSelector As Long
+    Dim colRowId As Long
+    Dim rowId As String
+
+    Set selected = CreateObject("Scripting.Dictionary")
+    selected.CompareMode = 1
+    Set CollectSelectedSITSRowIds = selected
+
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    colSelector = GetTableColumnIndex(tbl, HDR_SELECTOR)
+    colRowId = GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)
+    If colSelector = 0 Or colRowId = 0 Then Exit Function
+
+    For Each row In tbl.ListRows
+        If ConvertToBoolean(row.Range.Cells(1, colSelector).Value) Then
+            rowId = Trim$(CStr(row.Range.Cells(1, colRowId).Value))
+            If Len(rowId) > 0 Then selected(rowId) = True
+        End If
+    Next row
+End Function
+
+Private Sub SyncSelectorsFromSITSView(ByVal tbl As ListObject, _
+                                      Optional ByVal rowIndex As Object = Nothing)
+    Dim wsView As Worksheet
+    Dim lastRow As Long
+    Dim viewRow As Long
+    Dim rowId As String
+    Dim selected As Boolean
+    Dim sitsRow As ListRow
+    Dim colSelector As Long
+    Dim colRowIdView As Long
+    Dim headerCell As Range
+    Dim localIndex As Object
+    Dim viewIds As Variant
+    Dim viewSelectors As Variant
+    Dim i As Long
+
+    Set wsView = GetWorksheet(SHEET_SITS, showError:=False)
+    If wsView Is Nothing Or tbl Is Nothing Then Exit Sub
+
+    colSelector = GetTableColumnIndex(tbl, HDR_SELECTOR)
+    If colSelector = 0 Then Exit Sub
+
+    If rowIndex Is Nothing Then
+        Set localIndex = BuildSITSRowIdIndex(tbl)
+    Else
+        Set localIndex = rowIndex
+    End If
+
+    colRowIdView = 0
+    For Each headerCell In wsView.Range(wsView.Cells(SITS_VIEW_HEADER_ROW, 1), _
+                                        wsView.Cells(SITS_VIEW_HEADER_ROW, 40))
+        If StrComp(Trim$(CStr(headerCell.Value)), SITS_ROW_ID_COL_NAME, vbTextCompare) = 0 Then
+            colRowIdView = headerCell.Column
+            Exit For
+        End If
+    Next headerCell
+    If colRowIdView = 0 Then Exit Sub
+
+    lastRow = wsView.Cells(wsView.Rows.Count, colRowIdView).End(xlUp).Row
+    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+
+    ' Read view columns as arrays once — much faster than cell-by-cell.
+    viewIds = wsView.Range(wsView.Cells(SITS_VIEW_DATA_START_ROW, colRowIdView), _
+                           wsView.Cells(lastRow, colRowIdView)).Value
+    viewSelectors = wsView.Range(wsView.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL), _
+                                 wsView.Cells(lastRow, SITS_SELECTOR_COL)).Value
+
+    If Not IsArray(viewIds) Then
+        rowId = Trim$(CStr(viewIds))
+        If Len(rowId) > 0 Then
+            selected = ConvertToBoolean(viewSelectors)
+            Set sitsRow = ResolveSITSRowById(localIndex, tbl, rowId)
+            If Not sitsRow Is Nothing Then sitsRow.Range.Cells(1, colSelector).Value = selected
+        End If
+        Exit Sub
+    End If
+
+    For i = LBound(viewIds, 1) To UBound(viewIds, 1)
+        rowId = Trim$(CStr(viewIds(i, 1)))
+        If Len(rowId) = 0 Then GoTo NextViewRow
+
+        selected = ConvertToBoolean(viewSelectors(i, 1))
+        Set sitsRow = ResolveSITSRowById(localIndex, tbl, rowId)
+        If Not sitsRow Is Nothing Then
+            sitsRow.Range.Cells(1, colSelector).Value = selected
+        End If
+NextViewRow:
+    Next i
+End Sub
+
+Private Function ValidateTasksAvailableForWP(ByVal rowIds As Object, _
+                                             ByVal tbl As ListObject, _
+                                             ByVal rowIndex As Object, _
+                                             ByRef conflictOrn As String, _
+                                             ByRef failReason As String) As Boolean
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim colOrn As Long
+    Dim existingOrn As String
+
+    conflictOrn = ""
+    failReason = ""
+
+    colOrn = GetTableColumnIndex(tbl, HDR_ORN_INWORK)
+    If colOrn = 0 Then
+        failReason = "SITS table is missing the In Work ORN column."
+        Exit Function
+    End If
+
+    For Each rowId In rowIds.Keys
+        Set sitsRow = ResolveSITSRowById(rowIndex, tbl, CStr(rowId))
+        If sitsRow Is Nothing Then
+            failReason = "Selected task row was not found in SITS: " & CStr(rowId)
+            Exit Function
+        End If
+
+        existingOrn = Trim$(CStr(sitsRow.Range.Cells(1, colOrn).Value))
+        If Len(existingOrn) > 0 Then
+            conflictOrn = existingOrn
+            failReason = "Task " & GetSITSTaskCode(sitsRow, tbl) & _
+                         " is already in open work package " & existingOrn & "."
+            Exit Function
+        End If
+    Next rowId
+
+    ValidateTasksAvailableForWP = True
+End Function
+
+Private Sub WriteWorkPackageHeader(ByVal orn As String)
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colOrn As Long
+    Dim colStatus As Long
+    Dim colCreatedAt As Long
+    Dim colCreatedBy As Long
+    Dim colCompletedAt As Long
+    Dim existing As ListRow
+
+    Set tbl = GetWorkPackagesTable(True)
+    colOrn = GetTableColumnIndex(tbl, HDR_WP_ORN)
+    colStatus = GetTableColumnIndex(tbl, HDR_WP_STATUS)
+    colCreatedAt = GetTableColumnIndex(tbl, HDR_WP_CREATED_AT)
+    colCreatedBy = GetTableColumnIndex(tbl, HDR_WP_CREATED_BY)
+    colCompletedAt = GetTableColumnIndex(tbl, HDR_WP_COMPLETED_AT)
+
+    Set existing = FindWorkPackageRow(orn)
+    If existing Is Nothing Then
+        Set row = tbl.ListRows.Add
+    Else
+        Set row = existing
+    End If
+
+    row.Range.Cells(1, colOrn).Value = orn
+    row.Range.Cells(1, colOrn).NumberFormat = FORMAT_TEXT
+    row.Range.Cells(1, colStatus).Value = WP_STATUS_OPEN
+    row.Range.Cells(1, colCreatedAt).Value = Now
+    row.Range.Cells(1, colCreatedAt).NumberFormat = FORMAT_DATETIME
+    row.Range.Cells(1, colCreatedBy).Value = CurrentUserName()
+    If colCompletedAt > 0 Then row.Range.Cells(1, colCompletedAt).ClearContents
+End Sub
+
+Private Sub WriteWorkPackageTasks(ByVal orn As String, ByVal rowIds As Object)
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim rowId As Variant
+    Dim colOrn As Long
+    Dim colRowId As Long
+    Dim colCompleted As Long
+
+    Set tbl = GetWPTasksTable(True)
+    colOrn = GetTableColumnIndex(tbl, HDR_WP_TASK_ORN)
+    colRowId = GetTableColumnIndex(tbl, HDR_WP_TASK_ROW_ID)
+    colCompleted = GetTableColumnIndex(tbl, HDR_WP_TASK_COMPLETED)
+
+    For Each rowId In rowIds.Keys
+        Set row = tbl.ListRows.Add
+        row.Range.Cells(1, colOrn).Value = orn
+        row.Range.Cells(1, colOrn).NumberFormat = FORMAT_TEXT
+        row.Range.Cells(1, colRowId).Value = CStr(rowId)
+        row.Range.Cells(1, colRowId).NumberFormat = FORMAT_TEXT
+        row.Range.Cells(1, colCompleted).Value = False
+    Next rowId
+End Sub
+
+Private Sub AssignORNToSITSTasks(ByVal orn As String, _
+                                 ByVal rowIds As Object, _
+                                 ByVal tbl As ListObject, _
+                                 Optional ByVal rowIndex As Object = Nothing)
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim colOrn As Long
+    Dim colSelector As Long
+    Dim localIndex As Object
+
+    colOrn = GetTableColumnIndex(tbl, HDR_ORN_INWORK)
+    colSelector = GetTableColumnIndex(tbl, HDR_SELECTOR)
+
+    If rowIndex Is Nothing Then
+        Set localIndex = BuildSITSRowIdIndex(tbl)
+    Else
+        Set localIndex = rowIndex
+    End If
+
+    For Each rowId In rowIds.Keys
+        Set sitsRow = ResolveSITSRowById(localIndex, tbl, CStr(rowId))
+        If sitsRow Is Nothing Then GoTo NextAssign
+        sitsRow.Range.Cells(1, colOrn).Value = orn
+        sitsRow.Range.Cells(1, colOrn).NumberFormat = FORMAT_TEXT
+        If colSelector > 0 Then sitsRow.Range.Cells(1, colSelector).Value = False
+NextAssign:
+    Next rowId
+End Sub
+
+Private Sub ClearSelectedSITSSelectors(ByVal rowIds As Object, _
+                                       ByVal tbl As ListObject, _
+                                       Optional ByVal rowIndex As Object = Nothing)
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim colSelector As Long
+    Dim localIndex As Object
+
+    colSelector = GetTableColumnIndex(tbl, HDR_SELECTOR)
+    If colSelector = 0 Then Exit Sub
+
+    If rowIndex Is Nothing Then
+        Set localIndex = BuildSITSRowIdIndex(tbl)
+    Else
+        Set localIndex = rowIndex
+    End If
+
+    For Each rowId In rowIds.Keys
+        Set sitsRow = ResolveSITSRowById(localIndex, tbl, CStr(rowId))
+        If Not sitsRow Is Nothing Then
+            sitsRow.Range.Cells(1, colSelector).Value = False
+        End If
+    Next rowId
+End Sub
+
+Private Sub ClearSITSSelectors(ByVal tbl As ListObject)
+    Dim row As ListRow
+    Dim colSelector As Long
+
+    colSelector = GetTableColumnIndex(tbl, HDR_SELECTOR)
+    If colSelector = 0 Or tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    For Each row In tbl.ListRows
+        row.Range.Cells(1, colSelector).Value = False
+    Next row
+End Sub
+
+' ------------------------------------------------------------------------
+' Delete / close helpers
+' ------------------------------------------------------------------------
+
+Private Function CollectWPTaskRowIds(ByVal orn As String) As Collection
+    Dim result As New Collection
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colOrn As Long
+    Dim colRowId As Long
+    Dim rowId As String
+
+    Set CollectWPTaskRowIds = result
+    Set tbl = GetWPTasksTable(False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    colOrn = GetTableColumnIndex(tbl, HDR_WP_TASK_ORN)
+    colRowId = GetTableColumnIndex(tbl, HDR_WP_TASK_ROW_ID)
+    If colOrn = 0 Or colRowId = 0 Then Exit Function
+
+    orn = UCase$(Trim$(orn))
+    For Each row In tbl.ListRows
+        If StrComp(UCase$(Trim$(CStr(row.Range.Cells(1, colOrn).Value))), orn, vbTextCompare) = 0 Then
+            rowId = Trim$(CStr(row.Range.Cells(1, colRowId).Value))
+            If Len(rowId) > 0 Then result.Add rowId
+        End If
+    Next row
+End Function
+
+Private Sub ClearORNFromSITSTasks(ByVal orn As String, _
+                                  ByVal taskIds As Collection, _
+                                  ByVal tbl As ListObject)
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim colOrn As Long
+    Dim colSelector As Long
+    Dim currentOrn As String
+    Dim rowIndex As Object
+
+    colOrn = GetTableColumnIndex(tbl, HDR_ORN_INWORK)
+    colSelector = GetTableColumnIndex(tbl, HDR_SELECTOR)
+    orn = UCase$(Trim$(orn))
+    Set rowIndex = BuildSITSRowIdIndex(tbl)
+
+    For Each rowId In taskIds
+        Set sitsRow = ResolveSITSRowById(rowIndex, tbl, CStr(rowId))
+        If sitsRow Is Nothing Then GoTo NextClear
+        currentOrn = UCase$(Trim$(CStr(sitsRow.Range.Cells(1, colOrn).Value)))
+        If StrComp(currentOrn, orn, vbTextCompare) = 0 Then
+            sitsRow.Range.Cells(1, colOrn).ClearContents
+        End If
+        If colSelector > 0 Then sitsRow.Range.Cells(1, colSelector).Value = False
+NextClear:
+    Next rowId
+End Sub
+
+Private Sub RemoveWPTaskRows(ByVal orn As String)
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colOrn As Long
+    Dim i As Long
+
+    Set tbl = GetWPTasksTable(False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    colOrn = GetTableColumnIndex(tbl, HDR_WP_TASK_ORN)
+    If colOrn = 0 Then Exit Sub
+
+    orn = UCase$(Trim$(orn))
+    For i = tbl.ListRows.Count To 1 Step -1
+        Set row = tbl.ListRows(i)
+        If StrComp(UCase$(Trim$(CStr(row.Range.Cells(1, colOrn).Value))), orn, vbTextCompare) = 0 Then
+            row.Delete
+        End If
+    Next i
+End Sub
+
+Private Sub MarkWorkPackageStatus(ByVal orn As String, _
+                                  ByVal statusValue As String, _
+                                  ByVal setCompletedAt As Boolean)
+    Dim row As ListRow
+    Dim colStatus As Long
+    Dim colCompletedAt As Long
+
+    Set row = FindWorkPackageRow(orn)
+    If row Is Nothing Then Exit Sub
+
+    colStatus = GetTableColumnIndex(row.Parent, HDR_WP_STATUS)
+    colCompletedAt = GetTableColumnIndex(row.Parent, HDR_WP_COMPLETED_AT)
+
+    If colStatus > 0 Then row.Range.Cells(1, colStatus).Value = statusValue
+    If setCompletedAt And colCompletedAt > 0 Then
+        row.Range.Cells(1, colCompletedAt).Value = Now
+        row.Range.Cells(1, colCompletedAt).NumberFormat = FORMAT_DATETIME
+    End If
+End Sub
+
+Private Sub MarkWPTasksCompleted(ByVal orn As String)
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colOrn As Long
+    Dim colCompleted As Long
+
+    Set tbl = GetWPTasksTable(False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    colOrn = GetTableColumnIndex(tbl, HDR_WP_TASK_ORN)
+    colCompleted = GetTableColumnIndex(tbl, HDR_WP_TASK_COMPLETED)
+    If colOrn = 0 Or colCompleted = 0 Then Exit Sub
+
+    orn = UCase$(Trim$(orn))
+    For Each row In tbl.ListRows
+        If StrComp(UCase$(Trim$(CStr(row.Range.Cells(1, colOrn).Value))), orn, vbTextCompare) = 0 Then
+            row.Range.Cells(1, colCompleted).Value = True
+        End If
+    Next row
+End Sub
+
+Private Sub ApplyTaskCompletionComment(ByVal sitsRow As ListRow, _
+                                       ByVal tbl As ListObject, _
+                                       ByVal commentText As String)
+    Dim colDesc As Long
+    Dim target As Range
+    Dim existing As String
+    Dim combined As String
+
+    colDesc = GetTableColumnIndex(tbl, HDR_TASK_DESCRIPTION)
+    If colDesc = 0 Then Exit Sub
+
+    Set target = sitsRow.Range.Cells(1, colDesc)
+    existing = GetCellCommentText(target)
+    If Len(existing) > 0 Then
+        combined = existing & vbCrLf & vbCrLf & commentText
+    Else
+        combined = commentText
+    End If
+    SetCellCommentText target, combined
+End Sub
+
+Private Sub MarkTaskCompletedMetadata(ByVal sitsRow As ListRow, _
+                                      ByVal tbl As ListObject, _
+                                      ByVal orn As String, _
+                                      ByVal closeDate As Date)
+    Dim colCompletedOrn As Long
+    Dim colDateComplete As Long
+    Dim colHoursComplete As Long
+    Dim colNumberComplete As Long
+    Dim colExtension As Long
+    Dim colExtSnow As Long
+    Dim intervalCode As String
+    Dim currentUsage As Variant
+
+    colCompletedOrn = GetTableColumnIndex(tbl, HDR_ORN_COMPLETED)
+    colDateComplete = GetTableColumnIndex(tbl, HDR_DATE_WHEN_COMPLETE)
+    colHoursComplete = GetTableColumnIndex(tbl, HDR_HOURS_WHEN_COMPLETE)
+    colNumberComplete = GetTableColumnIndex(tbl, HDR_NUMBER_WHEN_COMPLETE)
+    colExtension = GetTableColumnIndex(tbl, HDR_EXTENSION)
+    colExtSnow = GetTableColumnIndex(tbl, HDR_EXTENSION_SNOW)
+
+    If colCompletedOrn > 0 Then
+        sitsRow.Range.Cells(1, colCompletedOrn).Value = orn
+        sitsRow.Range.Cells(1, colCompletedOrn).NumberFormat = FORMAT_TEXT
+    End If
+
+    If colDateComplete > 0 Then
+        sitsRow.Range.Cells(1, colDateComplete).Value = closeDate
+        sitsRow.Range.Cells(1, colDateComplete).NumberFormat = FORMAT_DATE
+    End If
+
+    intervalCode = GetSITSIntervalCode(sitsRow, tbl)
+    currentUsage = LookupCurrentUsageForInterval(intervalCode)
+
+    If IsHourBasedIntervalType(intervalCode) And intervalCode <> TYPE_DD Then
+        If colHoursComplete > 0 And Not IsEmpty(currentUsage) Then
+            WriteFormattedUsageValue sitsRow.Range.Cells(1, colHoursComplete), _
+                currentUsage, FORMAT_TYPE_HOURS
+        End If
+        If colNumberComplete > 0 Then sitsRow.Range.Cells(1, colNumberComplete).ClearContents
+    ElseIf intervalCode <> TYPE_DD Then
+        If colNumberComplete > 0 And Not IsEmpty(currentUsage) Then
+            sitsRow.Range.Cells(1, colNumberComplete).Value = CDbl(NzNumber(currentUsage))
+            sitsRow.Range.Cells(1, colNumberComplete).NumberFormat = FORMAT_DECIMAL
+        End If
+        If colHoursComplete > 0 Then sitsRow.Range.Cells(1, colHoursComplete).ClearContents
+    End If
+
+    If colExtension > 0 Then
+        If IsHourBasedIntervalType(intervalCode) And intervalCode <> TYPE_DD Then
+            WriteFormattedUsageValue sitsRow.Range.Cells(1, colExtension), 0#, FORMAT_TYPE_HOURS
+        Else
+            sitsRow.Range.Cells(1, colExtension).Value = 0
+            sitsRow.Range.Cells(1, colExtension).NumberFormat = FORMAT_DECIMAL
+        End If
+    End If
+    If colExtSnow > 0 Then sitsRow.Range.Cells(1, colExtSnow).ClearContents
+End Sub
+
+Private Function IsZeroIntervalTask(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As Boolean
+    Dim colInterval As Long
+    Dim value As Variant
+
+    colInterval = GetTableColumnIndex(tbl, HDR_ACTUAL_INTERVAL)
+    If colInterval = 0 Then Exit Function
+
+    value = sitsRow.Range.Cells(1, colInterval).Value
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+
+    If IsNumeric(value) Then
+        IsZeroIntervalTask = (CDbl(value) = 0#)
+    End If
+End Function
+
+Private Sub FlagManualUpdateTask(ByVal sitsRow As ListRow, _
+                                 ByVal tbl As ListObject, _
+                                 ByVal needsUpdate As Boolean)
+    Dim colFlag As Long
+    colFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
+    If colFlag = 0 Then Exit Sub
+    sitsRow.Range.Cells(1, colFlag).Value = needsUpdate
+End Sub
+
+Private Sub ReforecastCompletedTask(ByVal sitsRow As ListRow, _
+                                    ByVal tbl As ListObject, _
+                                    ByVal closeDate As Date)
+    Dim intervalCode As String
+    Dim actualInterval As Variant
+    Dim currentUsage As Variant
+    Dim colLRHours As Long
+    Dim colLRNumber As Long
+    Dim colDaysDue As Long
+    Dim colBaseHours As Long
+    Dim colBaseNumber As Long
+    Dim colBaseDue As Long
+    Dim colCurHours As Long
+    Dim colCurNumber As Long
+    Dim newLife As Double
+    Dim dueDate As Date
+
+    intervalCode = GetSITSIntervalCode(sitsRow, tbl)
+    actualInterval = GetSITSActualInterval(sitsRow, tbl)
+    If IsEmpty(actualInterval) Then Exit Sub
+
+    colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+    colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+    colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
+    colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
+    colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
+    colCurHours = GetTableColumnIndex(tbl, HDR_CURRENT_USAGE_HOURS)
+    colCurNumber = GetTableColumnIndex(tbl, HDR_CURRENT_USAGE_NUMBER)
+
+    If intervalCode = TYPE_DD Then
+        dueDate = DateAdd("d", CLng(CDbl(actualInterval)), closeDate)
+        If colDaysDue > 0 Then
+            sitsRow.Range.Cells(1, colDaysDue).Value = dueDate
+            sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
+        End If
+        If colBaseDue > 0 Then
+            sitsRow.Range.Cells(1, colBaseDue).Value = dueDate
+            sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
+        End If
+        If colLRHours > 0 Then sitsRow.Range.Cells(1, colLRHours).ClearContents
+        If colLRNumber > 0 Then sitsRow.Range.Cells(1, colLRNumber).ClearContents
+        If colCurHours > 0 Then sitsRow.Range.Cells(1, colCurHours).ClearContents
+        If colCurNumber > 0 Then sitsRow.Range.Cells(1, colCurNumber).ClearContents
+        Exit Sub
+    End If
+
+    currentUsage = LookupCurrentUsageForInterval(intervalCode)
+
+    If IsHourBasedIntervalType(intervalCode) Or IsHourUsageInterval(intervalCode) Then
+        ' Actual interval and usage are day-fractions for hour counters.
+        newLife = CDbl(actualInterval)
+        If colLRHours > 0 Then
+            WriteFormattedUsageValue sitsRow.Range.Cells(1, colLRHours), newLife, FORMAT_TYPE_HOURS
+        End If
+        If colBaseHours > 0 Then
+            WriteFormattedUsageValue sitsRow.Range.Cells(1, colBaseHours), newLife, FORMAT_TYPE_HOURS
+        End If
+        If colLRNumber > 0 Then sitsRow.Range.Cells(1, colLRNumber).ClearContents
+        If colBaseNumber > 0 Then sitsRow.Range.Cells(1, colBaseNumber).ClearContents
+        If colDaysDue > 0 Then sitsRow.Range.Cells(1, colDaysDue).ClearContents
+        If colBaseDue > 0 Then sitsRow.Range.Cells(1, colBaseDue).ClearContents
+        If colCurHours > 0 And Not IsEmpty(currentUsage) Then
+            WriteFormattedUsageValue sitsRow.Range.Cells(1, colCurHours), currentUsage, FORMAT_TYPE_HOURS
+        End If
+        If colCurNumber > 0 Then sitsRow.Range.Cells(1, colCurNumber).ClearContents
+    Else
+        newLife = CDbl(actualInterval)
+        If colLRNumber > 0 Then
+            sitsRow.Range.Cells(1, colLRNumber).Value = newLife
+            sitsRow.Range.Cells(1, colLRNumber).NumberFormat = FORMAT_DECIMAL
+        End If
+        If colBaseNumber > 0 Then
+            sitsRow.Range.Cells(1, colBaseNumber).Value = newLife
+            sitsRow.Range.Cells(1, colBaseNumber).NumberFormat = FORMAT_DECIMAL
+        End If
+        If colLRHours > 0 Then sitsRow.Range.Cells(1, colLRHours).ClearContents
+        If colBaseHours > 0 Then sitsRow.Range.Cells(1, colBaseHours).ClearContents
+        If colDaysDue > 0 Then sitsRow.Range.Cells(1, colDaysDue).ClearContents
+        If colBaseDue > 0 Then sitsRow.Range.Cells(1, colBaseDue).ClearContents
+        If colCurNumber > 0 And Not IsEmpty(currentUsage) Then
+            sitsRow.Range.Cells(1, colCurNumber).Value = CDbl(NzNumber(currentUsage))
+            sitsRow.Range.Cells(1, colCurNumber).NumberFormat = FORMAT_DECIMAL
+        End If
+        If colCurHours > 0 Then sitsRow.Range.Cells(1, colCurHours).ClearContents
+    End If
+
+    ' Snapshot current usage as the new baseline reference point for this task
+    ' by aligning baseline life remaining to the full interval (done above).
+    ' RecalculateSITS will then subtract usage delta from the import snapshot;
+    ' to keep closed-task life stable until next SITS import, also refresh the
+    ' per-task baseline against current usage by updating snapshot is global —
+    ' so we store baseline LR = actual interval and rely on usage delta from
+    ' the import snapshot. After close, life remaining should equal the full
+    ' interval minus any usage accrued after close. Until the next sortie,
+    ' that means life remaining = actual interval only if we also update the
+    ' usage snapshot for this interval — which would affect other open tasks.
+    ' Instead: set baseline LR = actual interval + (current - snapshot) so that
+    ' RecalculateSITS yields actual interval immediately after close.
+    AdjustBaselineForPostCloseStability sitsRow, tbl, intervalCode, newLife
+End Sub
+
+Private Sub AdjustBaselineForPostCloseStability(ByVal sitsRow As ListRow, _
+                                                ByVal tbl As ListObject, _
+                                                ByVal intervalCode As String, _
+                                                ByVal targetLife As Double)
+    Dim currentUsage As Variant
+    Dim snapshotUsage As Variant
+    Dim formatType As String
+    Dim usageDelta As Double
+    Dim colBaseHours As Long
+    Dim colBaseNumber As Long
+    Dim adjusted As Double
+
+    If intervalCode = TYPE_DD Then Exit Sub
+
+    If IsHourBasedIntervalType(intervalCode) Or IsHourUsageInterval(intervalCode) Then
+        formatType = FORMAT_TYPE_HOURS
+    Else
+        formatType = ResolveUsageFormatType(intervalCode, GetSITSTaskCode(sitsRow, tbl))
+    End If
+
+    currentUsage = LookupCurrentUsageForInterval(intervalCode)
+    snapshotUsage = LookupSnapshotUsageForInterval(intervalCode)
+    If IsEmpty(currentUsage) Or IsEmpty(snapshotUsage) Then Exit Sub
+
+    If formatType = FORMAT_TYPE_HOURS Then
+        usageDelta = UsageValueAsDayFraction(currentUsage, formatType) - _
+                     UsageValueAsDayFraction(snapshotUsage, formatType)
+        adjusted = targetLife + usageDelta
+        colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
+        If colBaseHours > 0 Then
+            WriteFormattedUsageValue sitsRow.Range.Cells(1, colBaseHours), adjusted, FORMAT_TYPE_HOURS
+        End If
+    Else
+        usageDelta = CDbl(NzNumber(currentUsage)) - CDbl(NzNumber(snapshotUsage))
+        adjusted = targetLife + usageDelta
+        colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
+        If colBaseNumber > 0 Then
+            sitsRow.Range.Cells(1, colBaseNumber).Value = adjusted
+            sitsRow.Range.Cells(1, colBaseNumber).NumberFormat = FORMAT_DECIMAL
+        End If
+    End If
+End Sub
+
+Private Sub ClearTaskOpenORN(ByVal sitsRow As ListRow, ByVal tbl As ListObject)
+    Dim colOrn As Long
+    colOrn = GetTableColumnIndex(tbl, HDR_ORN_INWORK)
+    If colOrn > 0 Then sitsRow.Range.Cells(1, colOrn).ClearContents
+End Sub
+
+Private Sub ClearTaskSelector(ByVal sitsRow As ListRow, ByVal tbl As ListObject)
+    Dim colSelector As Long
+    colSelector = GetTableColumnIndex(tbl, HDR_SELECTOR)
+    If colSelector > 0 Then sitsRow.Range.Cells(1, colSelector).Value = False
+End Sub
+
+' ------------------------------------------------------------------------
+' Lookups / table accessors
+' ------------------------------------------------------------------------
+
+Private Function OpenWorkPackageExists(ByVal orn As String) As Boolean
+    Dim row As ListRow
+    Dim colStatus As Long
+
+    Set row = FindWorkPackageRow(orn)
+    If row Is Nothing Then Exit Function
+
+    colStatus = GetTableColumnIndex(row.Parent, HDR_WP_STATUS)
+    If colStatus = 0 Then Exit Function
+
+    OpenWorkPackageExists = (StrComp(CStr(row.Range.Cells(1, colStatus).Value), _
+                                     WP_STATUS_OPEN, vbTextCompare) = 0)
+End Function
+
+Private Function FindWorkPackageRow(ByVal orn As String) As ListRow
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colOrn As Long
+
+    Set tbl = GetWorkPackagesTable(False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    colOrn = GetTableColumnIndex(tbl, HDR_WP_ORN)
+    If colOrn = 0 Then Exit Function
+
+    orn = UCase$(Trim$(orn))
+    For Each row In tbl.ListRows
+        If StrComp(UCase$(Trim$(CStr(row.Range.Cells(1, colOrn).Value))), orn, vbTextCompare) = 0 Then
+            Set FindWorkPackageRow = row
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Function GetSITSTable(Optional ByVal showError As Boolean = True) As ListObject
+    Dim ws As Worksheet
+    Set ws = GetWorksheet(SHEET_DATA_SITS, showError:=showError)
+    If ws Is Nothing Then Exit Function
+    Set GetSITSTable = GetTable(ws, TBL_SITS, showError:=showError)
+End Function
+
+Private Function GetWorkPackagesTable(Optional ByVal showError As Boolean = True) As ListObject
+    Dim ws As Worksheet
+    Set ws = GetWorksheet(SHEET_DATA_WP, showError:=showError)
+    If ws Is Nothing Then Exit Function
+    Set GetWorkPackagesTable = GetTable(ws, TBL_WORK_PACKAGES, showError:=showError)
+End Function
+
+Private Function GetWPTasksTable(Optional ByVal showError As Boolean = True) As ListObject
+    Dim ws As Worksheet
+    Set ws = GetWorksheet(SHEET_DATA_WP_TASKS, showError:=showError)
+    If ws Is Nothing Then Exit Function
+    Set GetWPTasksTable = GetTable(ws, TBL_WP_TASKS, showError:=showError)
+End Function
+
+Private Function GetSITSTaskCode(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As String
+    Dim col As Long
+    col = GetTableColumnIndex(tbl, HDR_TASK_CODE)
+    If col > 0 Then GetSITSTaskCode = Trim$(CStr(sitsRow.Range.Cells(1, col).Value))
+End Function
+
+Private Function GetSITSIntervalCode(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As String
+    Dim col As Long
+    col = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)
+    If col > 0 Then GetSITSIntervalCode = UCase$(Trim$(CStr(sitsRow.Range.Cells(1, col).Value)))
+End Function
+
+Private Function GetSITSActualInterval(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As Variant
+    Dim col As Long
+    Dim value As Variant
+
+    col = GetTableColumnIndex(tbl, HDR_ACTUAL_INTERVAL)
+    If col = 0 Then Exit Function
+
+    value = sitsRow.Range.Cells(1, col).Value
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+    If IsNumeric(value) Then
+        GetSITSActualInterval = CDbl(value)
+    End If
+End Function
+
+Private Function LookupCurrentUsageForInterval(ByVal intervalCode As String) As Variant
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_CURRENT, showError:=False)
+    If ws Is Nothing Then Exit Function
+    Set tbl = GetTable(ws, TBL_USAGE_CURRENT, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), intervalCode, vbTextCompare) = 0 Then
+            LookupCurrentUsageForInterval = row.Range.Cells(1, 3).Value
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Function LookupSnapshotUsageForInterval(ByVal intervalCode As String) As Variant
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+
+    Set ws = GetWorksheet(SHEET_CONFIG, showError:=False)
+    If ws Is Nothing Then Exit Function
+    Set tbl = GetTable(ws, TBL_USAGE_SNAPSHOT, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), intervalCode, vbTextCompare) = 0 Then
+            LookupSnapshotUsageForInterval = row.Range.Cells(1, 2).Value
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Function NzNumber(ByVal value As Variant) As Double
+    If IsError(value) Or IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
+        NzNumber = 0#
+    ElseIf IsNumeric(value) Then
+        NzNumber = CDbl(value)
+    End If
+End Function
+
+Private Sub EnsureTableColumnExists(ByVal tbl As ListObject, ByVal columnName As String)
+    If GetTableColumnIndex(tbl, columnName) = 0 Then
+        tbl.ListColumns.Add.Name = columnName
+    End If
+End Sub

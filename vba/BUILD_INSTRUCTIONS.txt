@@ -1,4 +1,4 @@
-Offline Aircraft SITS v2 — Build Instructions (Phase 3)
+Offline Aircraft SITS v2 — Build Instructions (Phase 4)
 =========================================================
 
 You build the .xlsm workbook locally from the .txt VBA sources in this folder.
@@ -16,7 +16,7 @@ Overview — master template workflow
 2. Save as `Wildcat_SITS_Master.xlsm` (or similar).
 3. For each aircraft: **File > Save As** a copy (e.g. `ZZ383_SITS_v2.xlsm`).
 4. On the aircraft copy, run **Setup Wizard** to declare the tail and import data.
-5. Use **Dashboard buttons** for day-to-day actions (log sorties, re-import SITS, etc.).
+5. Use **Dashboard / SITS buttons** for day-to-day actions (log sorties, work packages, etc.).
 
 Step 1 — Create a new workbook
 ------------------------------
@@ -49,6 +49,8 @@ Runtime modules:
   vba/modules/modSetupWizard.txt        modSetupWizard
   vba/modules/modUsageLog.txt           modUsageLog
   vba/modules/modSITS.txt               modSITS
+  vba/modules/modAssociatedTasks.txt    modAssociatedTasks
+  vba/modules/modWorkPackage.txt        modWorkPackage
 
 Setup modules (one-time use):
 
@@ -68,20 +70,24 @@ ThisWorkbook code:
 
   vba/modules/ThisWorkbook.txt        -> Paste into ThisWorkbook object (not a module)
 
-Step 3 — Create the Log Sortie UserForm (Phase 2)
--------------------------------------------------
-1. In the VBA editor: Insert > UserForm
-2. Set the form Name property to: frmLogSortie
-3. Add controls per vba/forms/LOG_SORTIE_FORM_LAYOUT.txt (names must match)
-4. Paste the code from vba/forms/frmLogSortie.txt into the form's code module
-   (omit any VERSION/Begin block if the IDE already generated form metadata)
+Step 3 — Create UserForms
+-------------------------
+Log Sortie (Phase 2):
+1. Insert > UserForm, Name = frmLogSortie
+2. Add controls per vba/forms/LOG_SORTIE_FORM_LAYOUT.txt
+3. Paste vba/forms/frmLogSortie.txt into the form code module
+
+Work Packages (Phase 4):
+1. Insert > UserForm, Name = frmWorkPackage
+2. Add controls per vba/forms/WORK_PACKAGE_FORM_LAYOUT.txt
+3. Paste vba/forms/frmWorkPackage.txt into the form code module
 
 Step 4 — Run Phase 0 setup (master template — once)
 ---------------------------------------------------
 Required before running setup (compile-time dependencies):
   CONFIG, modUtility, modValidation
 
-Import modAuditTrail before normal use (Workbook_Open / setup wizard logging).
+Import modAuditTrail / modWorkPackage / modAssociatedTasks before normal use.
 
 1. Run **Setup_RunAll** (Dashboard dev button or macro in modSetupRunAll).
 2. Do **not** enter a tail number — the master template is aircraft-neutral.
@@ -120,54 +126,76 @@ Step 7 — SITS view and refresh (Phase 3)
    - HH/E1/E2 tasks: shown only if life remaining is within the hour threshold
    - DD tasks: shown only if due within the day threshold
    - Other interval types: always shown
-3. Assign macro **RunRefreshSITS** to a button on the SITS sheet (Insert > Button).
+3. Use **Refresh View** / **Create Work Package** / **Manage Work Packages** buttons
+   on the SITS sheet (recreated automatically by RefreshSITS).
 4. Use the **AutoFilter** dropdowns on the header row (row 7) to show/hide interval
    types (e.g. hide AU, OP) or other columns — standard Excel filtering.
 5. Life remaining warnings highlight rows in pink when below config thresholds
    (default 10:00 hours / 7 days).
+6. Zero-interval tasks awaiting manual update after WP close highlight in amber.
 
 SITS recalculation runs automatically after:
   - SITS import (Import SITS / Setup Wizard)
   - Sortie logging
+  - Work package create / delete / close
   - Manual RunRefreshSITS
 
-Dashboard buttons (created by Setup_RunAll / Rebuild Dashboard)
----------------------------------------------------------------
-User Actions:
-  Setup Wizard, Log Sortie, Import SITS, Refresh Usage, View Audit Log
+Step 8 — Work packages (Phase 4)
+--------------------------------
+Create:
+1. On the SITS view, tick one or more Selector checkboxes.
+2. Click **Create Work Package**.
+3. If associated `/1` tasks exist on the **same Serial**, confirm the claim message.
+   Same task code on a different Serial (e.g. the other engine) is not claimed.
+4. Enter ORN in format `####TAILDDMMYY` (e.g. `7034ZZ383081125`):
+   - First 4 digits: any number
+   - Middle: must match the aircraft tail number
+   - Last 6: valid calendar date DDMMYY
+5. Selected + associated tasks are assigned the ORN; selectors are cleared.
+
+Manage:
+1. Click **Manage Work Packages** on the SITS sheet (or Dashboard **Work Packages**).
+2. Read-only open count + dropdown of open ORNs.
+3. Selecting an ORN lists Task Code + Task Description.
+4. **Delete** — undoes the WP only (clears In Work ORN; no SITS reforecast).
+5. **Close** — completes all tasks in one go:
+   - Reforecasts by Actual Interval (HH/E1/E2 hours, DD date, counters by number)
+   - Auto-includes associated tasks already in the WP
+   - Deletes PT2/PT3 deferred fault rows from SITS
+   - Resets Extension to 0 / 0:00
+   - Writes a Task Description cell comment: ORN, close date, user
+   - Zero-interval tasks: skip auto-reforecast, flag Needs Manual Update (amber + Dashboard count)
+6. Form stays open and refreshes after Delete/Close.
+
+Dashboard (Phase 4):
+  Open work packages count
+  Tasks needing manual update count
+  User Actions include Work Packages
 
 Developer Tools:
   Repair Formats, Repair Visibility, Validate Structure, Rebuild Dashboard, Phase 0 Setup
 
-Step 8 — Save
+Step 9 — Save
 -------------
 Save the workbook.
 
-What Phase 3 includes
+What Phase 4 includes
 ---------------------
-- modSITS — baseline + usage-delta life remaining recalculation
-- tblUsageSnapshot — usage per interval code at last SITS import/setup
-- Baseline columns on tblSITS (hidden from view, used for delta maths)
-- SITS sheet view linked to tblSITS with forecast filter
-- Warning highlighting (default 10:00 hours / 7 days)
-- PT2/PT3 import: extension reset to 0 / 0:00; life remaining from GOLDesp
-- DD tasks: days-when-due with calendar elapsed time since import
-- Auto-refresh after SITS import, setup, and sortie logging
-
-SITS view sort order
---------------------
-Tasks are grouped and sorted ascending (most urgent first) within each group:
-
-1. E1 — by Life Remaining (Hours)
-2. E2 — by Life Remaining (Hours)
-3. HH — by Life Remaining (Hours)
-4. DD — by Days When Due (date or days count)
-5. All other interval types — by Life Remaining (Number), then Hours, then Task Code
+- modWorkPackage — create / delete / close lifecycle
+- modAssociatedTasks — `/1` LinkKey auto-claim into WP
+  (LinkKey = BaseTaskCode|TaskSequence|Serial — same code on different
+  serials, e.g. each engine's WC/PMP/7200005, do not claim each other)
+- frmWorkPackage — manage open WPs (count, dropdown, task list, delete, close)
+- SITS buttons: Create Work Package, Manage Work Packages
+- ORN validation ####TAILDDMMYY with real-date check
+- Task Description cell comments on close (copied to SITS view on refresh)
+- Zero-interval manual-update flag + amber highlight + Dashboard count
+- Dashboard open WP count (Active WP / Extension SNOW placeholders removed)
 
 What is NOT included yet
 ------------------------
-- Work packages, extensions, deferrals (Phases 4–5)
-- Selector editing (display-only until work packages)
+- Extensions / deferrals UI (Phase 5)
+- Protected-sheet manual life-remaining edit form for zero-interval tasks
 - Sortie correction / reversal UI (CorrectedFrom column reserved)
 - Forecast settings UserForm (values editable on SITS sheet B3/B4 for now)
 
@@ -182,6 +210,9 @@ life remaining is updated by **usage delta since the import snapshot**:
 Current usage is looked up from tblUsageCurrent by **interval type code only**.
 DD calendar tasks count down elapsed days since the SITS snapshot date when
 GOLDesp provides a days count; absolute due dates are shown as imported.
+
+On WP close, baseline life remaining is adjusted so RecalculateSITS yields the
+full Actual Interval immediately after close (until further usage accrues).
 
 Import rules (strict — abort if any required column missing)
 ------------------------------------------------------------
@@ -200,21 +231,28 @@ Sample files in repo root:
   ZZ383 Item Usage.xlsx               — Airframe usage sample
   ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)
 
-Upgrading an existing Phase 0–2 workbook to Phase 3
+Upgrading an existing Phase 0–3 workbook to Phase 4
 -----------------------------------------------------
-1. Import the new modSITS module and update all changed .txt modules.
-2. Re-run **Setup_CreateTables** (or Phase 0 Setup) to add baseline columns and
-   tblUsageSnapshot — this clears data tables; prefer running on a fresh copy.
-3. Re-run Setup Wizard or re-import SITS to establish baselines and snapshots.
+1. Import new modules: modAssociatedTasks, modWorkPackage, and updated modules.
+2. Create frmWorkPackage from the layout + code files.
+3. Re-run **Setup_CreateNamedRanges** and **Rebuild Dashboard** (or Phase 0 Setup
+   on a fresh copy) so Open_WP_Count / Manual_Update_Count exist.
+4. Re-run **Setup_CreateTables** only on a fresh copy if you need the new
+   Needs Manual Update column created by setup — runtime Ensure* helpers also
+   add the column when missing.
+5. Refresh the SITS view to recreate Create/Manage Work Package buttons.
 
 Troubleshooting
 ---------------
 "Expected variable or procedure, not module"
   -> Setup module Name must be modSetupRunAll etc., not Setup_RunAll.
 
-"Variable not defined: frmLogSortie"
-  -> Create the UserForm in the IDE (Step 3). The form object must exist even
-     though the code is stored as a .txt file in the repo.
+"Variable not defined: frmLogSortie" / "frmWorkPackage"
+  -> Create the UserForm in the IDE. The form object must exist even though
+     the code is stored as a .txt file in the repo.
+
+"Missing named range: Open_WP_Count"
+  -> Run Setup_CreateNamedRanges or Rebuild Dashboard after pasting Phase 4 VBA.
 
 VBA name shadowing ("expects an array" on a function call)
   -> Do not name parameters the same as functions (VBA is case-insensitive).
@@ -240,4 +278,7 @@ SITS life remaining does not change after sorties
 Dashboard buttons missing after updating VBA
   -> Click Rebuild Dashboard on the Dashboard (Developer Tools section).
 
-Build marker: Master-template-v1
+ORN rejected on create
+  -> Must be ####TAILDDMMYY with this aircraft's tail and a real DDMMYY date.
+
+Build marker: Phase-4-work-packages-v1

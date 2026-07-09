@@ -74,11 +74,11 @@ Private Sub ValidateRequiredTables(ByRef issues As Collection)
 End Sub
 
 Private Sub ValidateRequiredNamedRanges(ByRef issues As Collection)
-    If Not NamedRangeExists(NAMED_ACTIVE_WP) Then
-        issues.Add "Missing named range: " & NAMED_ACTIVE_WP
+    If Not NamedRangeExists(NAMED_OPEN_WP_COUNT) Then
+        issues.Add "Missing named range: " & NAMED_OPEN_WP_COUNT
     End If
-    If Not NamedRangeExists(NAMED_EXTENSION_SNOW) Then
-        issues.Add "Missing named range: " & NAMED_EXTENSION_SNOW
+    If Not NamedRangeExists(NAMED_MANUAL_UPDATE_COUNT) Then
+        issues.Add "Missing named range: " & NAMED_MANUAL_UPDATE_COUNT
     End If
 End Sub
 
