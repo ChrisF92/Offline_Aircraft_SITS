@@ -22,6 +22,9 @@ txtAuthoriser     TextBox        Required name
 cmdApply          CommandButton  Apply deferral   (Default = True)
 cmdCancel         CommandButton  Cancel
 
+Note: form code reads TextBox.Text (not only .Value) so Enter on the
+Default Apply button still picks up the SNOW/authoriser just typed.
+
 Suggested positions (approximate):
   Row 1: lblTask [12,12]
   Row 2: lblInterval [12,36]

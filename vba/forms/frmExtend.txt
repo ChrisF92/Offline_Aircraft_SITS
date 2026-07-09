@@ -63,8 +63,9 @@ Private Sub txtAmount_Change()
 End Sub
 
 Private Sub cmdApply_Click()
-    If ApplyExtensionsToSelection(mSelectedIds, txtAmount.Value, txtSNOW.Value, _
-                                  txtAuthoriser.Value, True) Then
+    ' Use ControlText — Default/Enter can fire before TextBox.Value is committed.
+    If ApplyExtensionsToSelection(mSelectedIds, ControlText(txtAmount), ControlText(txtSNOW), _
+                                  ControlText(txtAuthoriser), True) Then
         Unload Me
     End If
 End Sub
@@ -73,19 +74,40 @@ Private Sub cmdCancel_Click()
     Unload Me
 End Sub
 
+' Prefer .Text while the control still has focus (Value may be stale on Enter).
+Private Function ControlText(ByVal ctl As Object) As String
+    Dim liveText As String
+    Dim committed As String
+
+    On Error Resume Next
+    liveText = CStr(ctl.Text)
+    If Err.Number <> 0 Then liveText = ""
+    Err.Clear
+    committed = CStr(ctl.Value)
+    On Error GoTo 0
+
+    If Len(Trim$(liveText)) > 0 Then
+        ControlText = Trim$(liveText)
+    Else
+        ControlText = Trim$(committed)
+    End If
+End Function
+
 Private Sub UpdateLivePercent()
     Dim incrementValue As Variant
     Dim totalPct As Double
+    Dim amountText As String
 
-    If Len(Trim$(txtAmount.Value)) = 0 Then
+    amountText = ControlText(txtAmount)
+    If Len(amountText) = 0 Then
         lblLivePct.Caption = "Total extension %: —"
         Exit Sub
     End If
 
     If mFormatType = FORMAT_TYPE_HOURS Then
-        incrementValue = ParseTimeUsageValue(txtAmount.Value, txtAmount.Value)
-    ElseIf IsNumeric(txtAmount.Value) Then
-        incrementValue = CDbl(txtAmount.Value)
+        incrementValue = ParseTimeUsageValue(amountText, amountText)
+    ElseIf IsNumeric(amountText) Then
+        incrementValue = CDbl(amountText)
     End If
 
     If IsEmpty(incrementValue) Or CDbl(incrementValue) <= 0# Then
