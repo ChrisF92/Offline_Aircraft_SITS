@@ -12,8 +12,73 @@ Option Explicit
 ' serials.
 ' ========================================================================
 
+Public Function BuildSITSRowIdIndex(ByVal tbl As ListObject) As Object
+    Dim index As Object
+    Dim row As ListRow
+    Dim colRowId As Long
+    Dim rowId As String
+
+    Set index = CreateObject("Scripting.Dictionary")
+    index.CompareMode = 1 ' TextCompare
+    Set BuildSITSRowIdIndex = index
+
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    colRowId = GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)
+    If colRowId = 0 Then Exit Function
+
+    For Each row In tbl.ListRows
+        rowId = Trim$(CStr(row.Range.Cells(1, colRowId).Value))
+        If Len(rowId) > 0 Then
+            If Not index.Exists(rowId) Then index.Add rowId, row
+        End If
+    Next row
+End Function
+
+Public Function BuildAssociatedLinkIndex(ByVal tbl As ListObject) As Object
+    Dim index As Object
+    Dim row As ListRow
+    Dim colTaskCode As Long
+    Dim colSequence As Long
+    Dim colSerial As Long
+    Dim linkKey As String
+    Dim bucket As Collection
+
+    Set index = CreateObject("Scripting.Dictionary")
+    index.CompareMode = 1 ' TextCompare
+    Set BuildAssociatedLinkIndex = index
+
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
+    colSequence = GetTableColumnIndex(tbl, HDR_TASK_SEQUENCE)
+    colSerial = GetTableColumnIndex(tbl, HDR_SERIAL)
+    If colTaskCode = 0 Or colSequence = 0 Or colSerial = 0 Then Exit Function
+
+    For Each row In tbl.ListRows
+        If Len(Trim$(CStr(row.Range.Cells(1, colSerial).Value))) = 0 Then GoTo NextIndexRow
+
+        linkKey = BuildAssociatedLinkKey( _
+            CStr(row.Range.Cells(1, colTaskCode).Value), _
+            CStr(row.Range.Cells(1, colSequence).Value), _
+            CStr(row.Range.Cells(1, colSerial).Value))
+
+        If Len(linkKey) <= 2 Then GoTo NextIndexRow
+
+        If index.Exists(linkKey) Then
+            Set bucket = index(linkKey)
+        Else
+            Set bucket = New Collection
+            index.Add linkKey, bucket
+        End If
+        bucket.Add row
+NextIndexRow:
+    Next row
+End Function
+
 Public Function GetAssociatedTaskRows(ByVal sourceRow As ListRow, _
-                                      ByVal tbl As ListObject) As Collection
+                                      ByVal tbl As ListObject, _
+                                      Optional ByVal linkIndex As Object = Nothing) As Collection
     Dim result As New Collection
     Dim row As ListRow
     Dim sourceKey As String
@@ -24,6 +89,8 @@ Public Function GetAssociatedTaskRows(ByVal sourceRow As ListRow, _
     Dim colRowId As Long
     Dim linkKey As String
     Dim rowId As String
+    Dim bucket As Collection
+    Dim item As Variant
 
     Set GetAssociatedTaskRows = result
 
@@ -45,6 +112,20 @@ Public Function GetAssociatedTaskRows(ByVal sourceRow As ListRow, _
     If Len(Trim$(CStr(sourceRow.Range.Cells(1, colSerial).Value))) = 0 Then Exit Function
     If Len(sourceKey) <= 2 Then Exit Function
 
+    If Not linkIndex Is Nothing Then
+        If linkIndex.Exists(sourceKey) Then
+            Set bucket = linkIndex(sourceKey)
+            For Each item In bucket
+                Set row = item
+                rowId = Trim$(CStr(row.Range.Cells(1, colRowId).Value))
+                If StrComp(rowId, sourceRowId, vbTextCompare) <> 0 Then
+                    result.Add row
+                End If
+            Next item
+        End If
+        Exit Function
+    End If
+
     For Each row In tbl.ListRows
         rowId = Trim$(CStr(row.Range.Cells(1, colRowId).Value))
         If StrComp(rowId, sourceRowId, vbTextCompare) = 0 Then GoTo NextAssocRow
@@ -63,7 +144,9 @@ End Function
 
 Public Function ExpandSelectionWithAssociatedTasks(ByVal selectedRowIds As Object, _
                                                    ByVal tbl As ListObject, _
-                                                   ByRef autoClaimed As Collection) As Object
+                                                   ByRef autoClaimed As Collection, _
+                                                   Optional ByVal rowIndex As Object = Nothing, _
+                                                   Optional ByVal linkIndex As Object = Nothing) As Object
     Dim expanded As Object
     Dim rowId As Variant
     Dim row As ListRow
@@ -76,8 +159,11 @@ Public Function ExpandSelectionWithAssociatedTasks(ByVal selectedRowIds As Objec
     Dim sourceCode As String
     Dim sourceSerial As String
     Dim assocCode As String
+    Dim localRowIndex As Object
+    Dim localLinkIndex As Object
 
     Set expanded = CreateObject("Scripting.Dictionary")
+    expanded.CompareMode = 1
     Set autoClaimed = New Collection
     Set ExpandSelectionWithAssociatedTasks = expanded
 
@@ -88,17 +174,29 @@ Public Function ExpandSelectionWithAssociatedTasks(ByVal selectedRowIds As Objec
     colSerial = GetTableColumnIndex(tbl, HDR_SERIAL)
     If colRowId = 0 Or colTaskCode = 0 Or colSerial = 0 Then Exit Function
 
+    If rowIndex Is Nothing Then
+        Set localRowIndex = BuildSITSRowIdIndex(tbl)
+    Else
+        Set localRowIndex = rowIndex
+    End If
+
+    If linkIndex Is Nothing Then
+        Set localLinkIndex = BuildAssociatedLinkIndex(tbl)
+    Else
+        Set localLinkIndex = linkIndex
+    End If
+
     For Each rowId In selectedRowIds.Keys
         expanded(CStr(rowId)) = True
     Next rowId
 
     For Each rowId In selectedRowIds.Keys
-        Set row = FindSITSRowById(tbl, CStr(rowId))
+        Set row = ResolveSITSRowById(localRowIndex, tbl, CStr(rowId))
         If row Is Nothing Then GoTo NextSelected
 
         sourceCode = Trim$(CStr(row.Range.Cells(1, colTaskCode).Value))
         sourceSerial = Trim$(CStr(row.Range.Cells(1, colSerial).Value))
-        Set assocRows = GetAssociatedTaskRows(row, tbl)
+        Set assocRows = GetAssociatedTaskRows(row, tbl, localLinkIndex)
 
         For Each assocRow In assocRows
             assocId = Trim$(CStr(assocRow.Range.Cells(1, colRowId).Value))
@@ -115,20 +213,26 @@ NextSelected:
 End Function
 
 Public Function FindSITSRowById(ByVal tbl As ListObject, ByVal sitsRowId As String) As ListRow
-    Dim row As ListRow
-    Dim colRowId As Long
+    Dim index As Object
+    Set index = BuildSITSRowIdIndex(tbl)
+    Set FindSITSRowById = ResolveSITSRowById(index, tbl, sitsRowId)
+End Function
 
-    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
-    colRowId = GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)
-    If colRowId = 0 Then Exit Function
-
+Public Function ResolveSITSRowById(ByVal rowIndex As Object, _
+                                   ByVal tbl As ListObject, _
+                                   ByVal sitsRowId As String) As ListRow
     sitsRowId = Trim$(sitsRowId)
-    For Each row In tbl.ListRows
-        If StrComp(Trim$(CStr(row.Range.Cells(1, colRowId).Value)), sitsRowId, vbTextCompare) = 0 Then
-            Set FindSITSRowById = row
+    If Len(sitsRowId) = 0 Then Exit Function
+
+    If Not rowIndex Is Nothing Then
+        If rowIndex.Exists(sitsRowId) Then
+            Set ResolveSITSRowById = rowIndex(sitsRowId)
             Exit Function
         End If
-    Next row
+        Exit Function
+    End If
+
+    Set ResolveSITSRowById = FindSITSRowById(tbl, sitsRowId)
 End Function
 
 Public Function DescribeAssociatedClaims(ByVal autoClaimed As Collection) As String
