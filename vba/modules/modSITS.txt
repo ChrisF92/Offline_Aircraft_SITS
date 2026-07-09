@@ -729,7 +729,7 @@ Private Sub ApplySITSViewColumnLayout(ByVal ws As Worksheet, _
     End With
 
     SetColumnWidthPixels ws.Columns(1), 60
-    SetColumnWidthPixels ws.Columns(2), 88
+    SetColumnWidthPixels ws.Columns(2), 125
     SetColumnWidthPixels ws.Columns(3), 114
     SetColumnWidthPixels ws.Columns(4), 116
     SetColumnWidthPixels ws.Columns(5), 84
@@ -737,6 +737,7 @@ Private Sub ApplySITSViewColumnLayout(ByVal ws As Worksheet, _
     SetColumnWidthPixels ws.Columns(7), 115
     SetColumnWidthPixels ws.Columns(8), 687
     SetColumnWidthPixels ws.Columns(9), 109
+    SetColumnWidthPixels ws.Columns(10), 145
 
     layoutLastRow = lastDataRow
     If layoutLastRow < SITS_VIEW_HEADER_ROW Then layoutLastRow = SITS_VIEW_HEADER_ROW
@@ -749,6 +750,7 @@ Private Sub ApplySITSViewColumnLayout(ByVal ws As Worksheet, _
     ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 7), ws.Cells(layoutLastRow, 7)), xlRight
     ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 8), ws.Cells(layoutLastRow, 8)), xlLeft
     ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 9), ws.Cells(layoutLastRow, 9)), xlLeft
+    ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 10), ws.Cells(layoutLastRow, 10)), xlCenter
 
     For col = 1 To SITS_VISIBLE_COLUMN_COUNT
         ws.Columns(col).Hidden = False
