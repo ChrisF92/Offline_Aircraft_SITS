@@ -149,6 +149,8 @@ Step 7 — SITS view and refresh (Phase 3)
    - Amber when due soon (within warn thresholds: default 10:00 hours / 7 days)
    - Pink/red when overdue (life remaining / days remaining below zero)
 6. Zero-interval tasks awaiting manual update after WP close highlight in light blue.
+7. Ticking a Selector checkbox highlights that row light blue; unticking restores the
+   previous warning colour (or clears the fill).
 
 SITS recalculation runs automatically after:
   - SITS import (Import SITS / Setup Wizard)
