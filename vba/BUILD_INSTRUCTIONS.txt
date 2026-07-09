@@ -269,8 +269,10 @@ life remaining is updated by **usage delta since the import snapshot**:
   Life Remaining = Baseline Life Remaining − (Current Usage − Snapshot Usage)
 
 Current usage is looked up from tblUsageCurrent by **interval type code only**.
-DD calendar tasks count down elapsed days since the SITS snapshot date when
-GOLDesp provides a days count; absolute due dates are shown as imported.
+DD calendar tasks prefer Projected Due Date (absolute) when present — Life
+Remaining is due date − today (can be negative when overdue). If only a day
+count was imported, that count is reduced by elapsed days since the SITS
+snapshot date.
 
 On WP close, baseline life remaining is adjusted so RecalculateSITS yields the
 full Actual Interval immediately after close (until further usage accrues).

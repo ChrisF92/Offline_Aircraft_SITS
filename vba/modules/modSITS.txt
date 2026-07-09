@@ -249,7 +249,7 @@ Public Sub RecalculateSITS()
         taskCode = Trim$(CStr(row.Range.Cells(1, colTaskCode).Value))
 
         If intervalCode = TYPE_DD Then
-            ApplyDDTaskRecalc row, colCurHours, colCurNumber, colLRHours, colLRNumber, _
+            ApplyDDTaskRecalc row, tbl, colCurHours, colCurNumber, colLRHours, colLRNumber, _
                 colDaysDue, colBaseDue
         ElseIf IsHourUsageInterval(intervalCode) Or _
                (IsHourBasedIntervalType(intervalCode) And Not IsSecondsCountInterval(intervalCode)) Then
@@ -532,6 +532,19 @@ Public Sub CaptureTaskBaselineFromImport(ByVal tbl As ListObject, ByVal newRow A
     colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
 
     If intervalCode = TYPE_DD Then
+        Dim colProjected As Long
+        Dim projectedDue As Variant
+
+        colProjected = GetTableColumnIndex(tbl, HDR_PROJECTED_DUE_DATE)
+        If colProjected > 0 Then
+            projectedDue = newRow.Range.Cells(1, colProjected).Value
+            If LooksLikeAbsoluteDueDate(projectedDue) Then
+                newRow.Range.Cells(1, colBaseDue).Value = CDate(projectedDue)
+                newRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
+                Exit Sub
+            End If
+        End If
+
         dueValue = newRow.Range.Cells(1, colDaysDue).Value
         If LooksLikeAbsoluteDueDate(dueValue) Then
             newRow.Range.Cells(1, colBaseDue).Value = CDate(dueValue)
@@ -558,6 +571,7 @@ Public Sub CaptureTaskBaselineFromImport(ByVal tbl As ListObject, ByVal newRow A
 End Sub
 
 Private Sub ApplyDDTaskRecalc(ByVal row As ListRow, _
+                              ByVal tbl As ListObject, _
                               ByVal colCurHours As Long, _
                               ByVal colCurNumber As Long, _
                               ByVal colLRHours As Long, _
@@ -565,41 +579,71 @@ Private Sub ApplyDDTaskRecalc(ByVal row As ListRow, _
                               ByVal colDaysDue As Long, _
                               ByVal colBaseDue As Long)
     Dim baselineDue As Variant
+    Dim projectedDue As Variant
     Dim snapshotDate As Variant
     Dim elapsedDays As Long
     Dim daysRemaining As Double
+    Dim absoluteDue As Date
+    Dim colProjected As Long
+    Dim haveAbsoluteDue As Boolean
 
     row.Range.Cells(1, colCurHours).ClearContents
     row.Range.Cells(1, colCurNumber).ClearContents
     row.Range.Cells(1, colLRHours).ClearContents
     row.Range.Cells(1, colLRNumber).ClearContents
 
+    haveAbsoluteDue = False
+    colProjected = GetTableColumnIndex(tbl, HDR_PROJECTED_DUE_DATE)
+    If colProjected > 0 Then
+        projectedDue = row.Range.Cells(1, colProjected).Value
+        If LooksLikeAbsoluteDueDate(projectedDue) Then
+            absoluteDue = CDate(projectedDue)
+            haveAbsoluteDue = True
+        End If
+    End If
+
     baselineDue = row.Range.Cells(1, colBaseDue).Value
+    If Not haveAbsoluteDue Then
+        If LooksLikeAbsoluteDueDate(baselineDue) Then
+            absoluteDue = CDate(baselineDue)
+            haveAbsoluteDue = True
+        ElseIf IsEmptyBaselineValue(baselineDue) Then
+            baselineDue = row.Range.Cells(1, colDaysDue).Value
+            If LooksLikeAbsoluteDueDate(baselineDue) Then
+                absoluteDue = CDate(baselineDue)
+                haveAbsoluteDue = True
+            End If
+        End If
+    End If
+
+    If haveAbsoluteDue Then
+        ' Prefer absolute due date (Projected Due Date / baseline date).
+        ' Day-count baselines freeze at 0 once due and never go negative.
+        If colBaseDue > 0 Then
+            row.Range.Cells(1, colBaseDue).Value = absoluteDue
+            row.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
+        End If
+        daysRemaining = CDbl(DateDiff("d", Date, absoluteDue))
+        row.Range.Cells(1, colDaysDue).Value = daysRemaining
+        row.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
+        Exit Sub
+    End If
+
+    ' Fallback: imported day-count baseline minus elapsed days since snapshot.
     If IsEmptyBaselineValue(baselineDue) Then
         baselineDue = row.Range.Cells(1, colDaysDue).Value
-        If LooksLikeAbsoluteDueDate(baselineDue) Then
-            row.Range.Cells(1, colBaseDue).Value = CDate(baselineDue)
-            row.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
-        ElseIf IsNumeric(baselineDue) Then
+        If IsNumeric(baselineDue) And Len(Trim$(CStr(baselineDue))) > 0 Then
             row.Range.Cells(1, colBaseDue).Value = CDbl(baselineDue)
             row.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DECIMAL
         End If
-    Else
-        baselineDue = row.Range.Cells(1, colBaseDue).Value
     End If
 
-    If LooksLikeAbsoluteDueDate(baselineDue) Then
-        ' Absolute due date stored in baseline — Life Remaining is days from today.
-        ' Negatives mean overdue (highlighted red on the SITS view).
-        daysRemaining = CDbl(DateDiff("d", Date, CDate(baselineDue)))
-        row.Range.Cells(1, colDaysDue).Value = daysRemaining
-        row.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
-    ElseIf IsNumeric(baselineDue) Then
+    If IsNumeric(baselineDue) And Len(Trim$(CStr(baselineDue))) > 0 Then
         snapshotDate = GetConfigValue(CFG_SITS_SNAPSHOT_DATE, "")
         daysRemaining = CDbl(baselineDue)
         If IsDate(snapshotDate) Then
             elapsedDays = DateDiff("d", CDate(snapshotDate), Date)
-            If elapsedDays > 0 Then daysRemaining = daysRemaining - elapsedDays
+            daysRemaining = daysRemaining - CDbl(elapsedDays)
         End If
         row.Range.Cells(1, colDaysDue).Value = daysRemaining
         row.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
