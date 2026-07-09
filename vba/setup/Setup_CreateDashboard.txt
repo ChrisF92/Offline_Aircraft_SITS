@@ -55,6 +55,7 @@ Public Sub RefreshDashboardLayout()
     ws.Range("C9").Value = CountManualUpdateTasks()
     ws.Range("C9").NumberFormat = FORMAT_INTEGER
     ws.Range("C9").Interior.Color = COLOR_MANUAL_AMBER
+    SetCellCommentText ws.Range("C9"), BuildManualUpdateDashboardComment()
 
     WriteSectionHeader ws, "B11", "User Actions"
     PrepareButtonRows ws
@@ -90,6 +91,8 @@ End Sub
 
 Public Sub RefreshDashboardStatusCounts()
     Dim ws As Worksheet
+    Dim manualCount As Long
+    Dim commentText As String
 
     Set ws = GetWorksheet(SHEET_DASHBOARD, showError:=False)
     If ws Is Nothing Then Exit Sub
@@ -97,8 +100,13 @@ Public Sub RefreshDashboardStatusCounts()
     On Error Resume Next
     ws.Range("C8").Value = CountOpenWorkPackages()
     ws.Range("C8").NumberFormat = FORMAT_INTEGER
-    ws.Range("C9").Value = CountManualUpdateTasks()
+
+    manualCount = CountManualUpdateTasks()
+    ws.Range("C9").Value = manualCount
     ws.Range("C9").NumberFormat = FORMAT_INTEGER
+
+    commentText = BuildManualUpdateDashboardComment()
+    SetCellCommentText ws.Range("C9"), commentText
     On Error GoTo 0
 End Sub
 

@@ -70,6 +70,64 @@ Public Function CountManualUpdateTasks() As Long
     CountManualUpdateTasks = count
 End Function
 
+Public Function BuildManualUpdateDashboardComment() As String
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colFlag As Long
+    Dim colTaskCode As Long
+    Dim colCompletedOrn As Long
+    Dim colDateComplete As Long
+    Dim lines As String
+    Dim count As Long
+    Dim taskCode As String
+    Dim ornValue As String
+    Dim completedDate As String
+    Dim maxLines As Long
+
+    Set tbl = GetSITSTable(False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    EnsureWorkPackageSITSColumns tbl
+    colFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
+    colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
+    colCompletedOrn = GetTableColumnIndex(tbl, HDR_ORN_COMPLETED)
+    colDateComplete = GetTableColumnIndex(tbl, HDR_DATE_WHEN_COMPLETE)
+    If colFlag = 0 Or colTaskCode = 0 Then Exit Function
+
+    maxLines = 20
+    For Each row In tbl.ListRows
+        If Not ConvertToBoolean(row.Range.Cells(1, colFlag).Value) Then GoTo NextManualDash
+
+        count = count + 1
+        If count > maxLines Then GoTo NextManualDash
+
+        taskCode = Trim$(CStr(row.Range.Cells(1, colTaskCode).Value))
+        ornValue = ""
+        completedDate = ""
+        If colCompletedOrn > 0 Then ornValue = Trim$(CStr(row.Range.Cells(1, colCompletedOrn).Value))
+        If colDateComplete > 0 Then
+            If IsDate(row.Range.Cells(1, colDateComplete).Value) Then
+                completedDate = Format$(CDate(row.Range.Cells(1, colDateComplete).Value), FORMAT_DATE)
+            End If
+        End If
+
+        lines = lines & "• " & taskCode
+        If Len(ornValue) > 0 Then lines = lines & "  ORN " & ornValue
+        If Len(completedDate) > 0 Then lines = lines & "  completed " & completedDate
+        lines = lines & vbCrLf
+NextManualDash:
+    Next row
+
+    If count = 0 Then Exit Function
+
+    BuildManualUpdateDashboardComment = _
+        "Tasks needing manual life remaining update (" & count & "):" & vbCrLf & lines
+    If count > maxLines Then
+        BuildManualUpdateDashboardComment = BuildManualUpdateDashboardComment & _
+            "• … and " & (count - maxLines) & " more" & vbCrLf
+    End If
+End Function
+
 Public Function GetOpenWorkPackageORNs() As Collection
     Dim result As New Collection
     Dim tbl As ListObject
@@ -360,6 +418,8 @@ Public Function CloseWorkPackage(ByVal orn As String, _
                   vbQuestion + vbYesNo, APP_NAME) <> vbYes Then Exit Function
     End If
 
+    If Not PromptForCompletionDate(closeDate) Then Exit Function
+
     Set tblSITS = GetSITSTable(True)
     If tblSITS Is Nothing Then Exit Function
     EnsureWorkPackageSITSColumns tblSITS
@@ -497,6 +557,35 @@ Private Function PromptForORN(ByRef failReason As String) As String
     End If
 
     PromptForORN = clean
+End Function
+
+Private Function PromptForCompletionDate(ByRef closeDate As Date) As Boolean
+    Dim entered As String
+    Dim parsed As Date
+
+    entered = InputBox( _
+        "Enter the completion date for this work package (dd/mm/yyyy)." & vbCrLf & vbCrLf & _
+        "This date is written to task comments and Last Completed (Date).", _
+        APP_NAME, Format$(Date, FORMAT_DATE))
+
+    If Len(Trim$(entered)) = 0 Then
+        MsgBox "Close cancelled — a completion date is required.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If Not IsDate(entered) Then
+        MsgBox "Enter a valid completion date (dd/mm/yyyy).", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    parsed = DateValue(CDate(entered))
+    If parsed > Date Then
+        If MsgBox("Completion date is in the future. Continue anyway?", _
+                  vbQuestion + vbYesNo, APP_NAME) <> vbYes Then Exit Function
+    End If
+
+    closeDate = parsed
+    PromptForCompletionDate = True
 End Function
 
 Private Function CollectSelectedFromSITSView(ByVal tbl As ListObject, _

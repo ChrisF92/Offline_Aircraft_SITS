@@ -179,8 +179,9 @@ NextClosedView:
             DeleteSITSViewCheckboxOnRow wsView, removeRow
             wsView.Rows(removeRow).Delete
         Next i
-        ' Row deletes invalidate LinkedCell addresses — rebind remaining selectors.
-        RebindSITSViewSelectorCheckboxes wsView
+        ' Row deletes shift shapes (xlMove) but leave LinkedCell stale —
+        ' remap existing checkboxes instead of recreating every control.
+        RemapSITSViewSelectorLinkedCells wsView
     End If
 End Sub
 
@@ -934,7 +935,90 @@ Private Function BuildSITSViewRowIdMap(ByVal wsView As Worksheet) As Object
     Next i
 End Function
 
+Private Sub RemapSITSViewSelectorLinkedCells(ByVal ws As Worksheet)
+    Dim lastRow As Long
+    Dim rowIndex As Long
+    Dim cb As CheckBox
+    Dim i As Long
+    Dim colRowIdView As Long
+    Dim headerCell As Range
+    Dim linkCell As Range
+    Dim cellText As String
+    Dim firstTop As Double
+    Dim rowHeightPx As Double
+    Dim estimatedRow As Long
+
+    colRowIdView = 0
+    For Each headerCell In ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 1), _
+                                    ws.Cells(SITS_VIEW_HEADER_ROW, 40))
+        If StrComp(Trim$(CStr(headerCell.Value)), HDR_SITS_ROW_ID, vbTextCompare) = 0 Then
+            colRowIdView = headerCell.Column
+            Exit For
+        End If
+    Next headerCell
+
+    If colRowIdView > 0 Then
+        lastRow = ws.Cells(ws.Rows.Count, colRowIdView).End(xlUp).Row
+    Else
+        lastRow = ws.Cells(ws.Rows.Count, SITS_SELECTOR_COL).End(xlUp).Row
+    End If
+    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+
+    firstTop = ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL).Top
+    rowHeightPx = ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL).Height
+    If rowHeightPx <= 0# Then rowHeightPx = 15#
+
+    ' xlMove keeps checkbox Top aligned with its row after deletes.
+    ' Remap LinkedCell/Name only — do not recreate hundreds of controls.
+    On Error Resume Next
+    For i = ws.CheckBoxes.Count To 1 Step -1
+        Set cb = ws.CheckBoxes(i)
+
+        estimatedRow = SITS_VIEW_DATA_START_ROW + CLng((cb.Top - firstTop) / rowHeightPx)
+        If estimatedRow < SITS_VIEW_DATA_START_ROW Then estimatedRow = SITS_VIEW_DATA_START_ROW
+        If estimatedRow > lastRow Then estimatedRow = lastRow
+
+        ' Nudge one row either side if Top is between rows.
+        rowIndex = estimatedRow
+        If Abs(cb.Top - ws.Cells(estimatedRow, SITS_SELECTOR_COL).Top) > (rowHeightPx / 2#) Then
+            If estimatedRow < lastRow Then
+                If Abs(cb.Top - ws.Cells(estimatedRow + 1, SITS_SELECTOR_COL).Top) < _
+                   Abs(cb.Top - ws.Cells(estimatedRow, SITS_SELECTOR_COL).Top) Then
+                    rowIndex = estimatedRow + 1
+                End If
+            End If
+            If estimatedRow > SITS_VIEW_DATA_START_ROW Then
+                If Abs(cb.Top - ws.Cells(estimatedRow - 1, SITS_SELECTOR_COL).Top) < _
+                   Abs(cb.Top - ws.Cells(rowIndex, SITS_SELECTOR_COL).Top) Then
+                    rowIndex = estimatedRow - 1
+                End If
+            End If
+        End If
+
+        Set linkCell = ws.Cells(rowIndex, SITS_SELECTOR_COL)
+        cellText = UCase$(Trim$(CStr(linkCell.Value)))
+        If StrComp(cellText, SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then
+            cb.Delete
+            linkCell.NumberFormat = FORMAT_GENERAL
+            linkCell.HorizontalAlignment = xlCenter
+            linkCell.Font.Bold = True
+            linkCell.Font.Color = RGB(192, 0, 0)
+        Else
+            cb.Name = SITSCheckboxName(rowIndex)
+            cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
+            If Not (VarType(linkCell.Value) = vbBoolean Or IsNumeric(linkCell.Value)) Then
+                linkCell.Value = False
+            End If
+            linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
+            linkCell.Font.Bold = False
+            linkCell.Font.Color = vbBlack
+        End If
+    Next i
+    On Error GoTo 0
+End Sub
+
 Private Sub RebindSITSViewSelectorCheckboxes(ByVal ws As Worksheet)
+    ' Kept as a full rebuild fallback (manual repair / rare paths).
     Dim lastRow As Long
     Dim rowIndex As Long
     Dim linkCell As Range
@@ -958,7 +1042,6 @@ Private Sub RebindSITSViewSelectorCheckboxes(ByVal ws As Worksheet)
         lastRow = ws.Cells(ws.Rows.Count, SITS_SELECTOR_COL).End(xlUp).Row
     End If
 
-    ' CheckBoxes collection is separate from action Buttons — safe to clear all.
     On Error Resume Next
     For i = ws.CheckBoxes.Count To 1 Step -1
         ws.CheckBoxes(i).Delete
@@ -1060,23 +1143,34 @@ End Sub
 Private Sub SortLongCollectionDescending(ByRef values As Collection)
     Dim i As Long
     Dim j As Long
-    Dim a As Long
-    Dim b As Long
+    Dim arr() As Long
+    Dim tmp As Long
+    Dim n As Long
 
     If values Is Nothing Then Exit Sub
-    If values.Count < 2 Then Exit Sub
+    n = values.Count
+    If n < 2 Then Exit Sub
 
-    For i = 1 To values.Count - 1
-        For j = i + 1 To values.Count
-            a = CLng(values(i))
-            b = CLng(values(j))
-            If b > a Then
-                values.Add b, before:=i
-                values.Remove j + 1
-                values.Add a, before:=j + 1
-                values.Remove j + 1
+    ReDim arr(1 To n)
+    For i = 1 To n
+        arr(i) = CLng(values(i))
+    Next i
+
+    For i = 1 To n - 1
+        For j = i + 1 To n
+            If arr(j) > arr(i) Then
+                tmp = arr(i)
+                arr(i) = arr(j)
+                arr(j) = tmp
             End If
         Next j
+    Next i
+
+    Do While values.Count > 0
+        values.Remove 1
+    Loop
+    For i = 1 To n
+        values.Add arr(i)
     Next i
 End Sub
 
