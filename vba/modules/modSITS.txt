@@ -13,6 +13,8 @@ Private Const SITS_VIEW_DATA_START_ROW As Long = 8
 Private Const SITS_FORECAST_HOURS_CELL As String = "B3"
 Private Const SITS_FORECAST_DAYS_CELL As String = "B4"
 Private Const SITS_SELECTOR_COL As Long = 1
+Private Const SITS_VISIBLE_COLUMN_COUNT As Long = 9
+Private Const SITS_HEADER_ROW_HEIGHT_PX As Double = 40
 Private Const SITS_BTN_WIDTH As Double = 110
 Private Const SITS_BTN_HEIGHT As Double = 22
 Private Const SITS_SORT_KEY_MISSING As Double = 9.9E+307
@@ -173,7 +175,6 @@ Public Sub RefreshSITSView()
     Dim warnHoursFraction As Double
     Dim warnDays As Long
     Dim lastDataRow As Long
-    Dim hiddenCol As Long
 
     Set wsView = GetWorksheet(SHEET_SITS, showError:=False)
     Set wsData = GetWorksheet(SHEET_DATA_SITS, showError:=False)
@@ -278,19 +279,15 @@ NextCollectRow:
                           wsView.Cells(lastDataRow, viewColumns.Count))
             .WrapText = False
         End With
+    End If
+
+    ApplySITSViewColumnLayout wsView, lastDataRow, viewColumns.Count
+
+    If lastDataRow >= SITS_VIEW_DATA_START_ROW Then
         AddSITSViewSelectorCheckboxes wsView, SITS_VIEW_DATA_START_ROW, lastDataRow
     End If
 
-    outputCol = 1
-    For Each columnName In viewColumns
-        If IsSITSViewHiddenColumn(CStr(columnName)) Then
-            wsView.Columns(outputCol).Hidden = True
-        End If
-        outputCol = outputCol + 1
-    Next columnName
-
-    wsView.Columns.AutoFit
-    ApplySITSViewAutoFilter wsView, lastDataRow, viewColumns.Count
+    ApplySITSViewAutoFilter wsView, lastDataRow, SITS_VISIBLE_COLUMN_COUNT
     ApplySITSViewFreezePanes wsView
     SetExcelState "enable"
 End Sub
@@ -656,8 +653,6 @@ Private Sub AddSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
     Dim cb As CheckBox
     Dim linkCell As Range
 
-    ws.Columns(SITS_SELECTOR_COL).ColumnWidth = 4
-
     For rowIndex = firstDataRow To lastDataRow
         Set linkCell = ws.Cells(rowIndex, SITS_SELECTOR_COL)
         linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
@@ -705,13 +700,75 @@ Private Function IsSITSViewHiddenColumn(ByVal columnName As String) As Boolean
     Select Case columnName
         Case HDR_SELECTOR, HDR_INTERVAL_TYPE_CODE, HDR_ACTUAL_INTERVAL, _
              HDR_VIEW_LIFE_REMAINING, HDR_EXTENSION, HDR_TASK_CODE, _
-             HDR_TASK_SEQUENCE, HDR_TASK_DESCRIPTION, HDR_SERIAL, _
-             HDR_PROJECTED_DUE_DATE
+             HDR_TASK_SEQUENCE, HDR_TASK_DESCRIPTION, HDR_SERIAL
             IsSITSViewHiddenColumn = False
         Case Else
             IsSITSViewHiddenColumn = True
     End Select
 End Function
+
+Private Function PixelsToColumnWidth(ByVal pixels As Double) As Double
+    PixelsToColumnWidth = (pixels - 5#) / 7#
+End Function
+
+Private Function PixelsToRowHeight(ByVal pixels As Double) As Double
+    PixelsToRowHeight = pixels * 72# / 96#
+End Function
+
+Private Sub SetColumnWidthPixels(ByVal targetColumn As Range, ByVal pixels As Double)
+    targetColumn.ColumnWidth = PixelsToColumnWidth(pixels)
+End Sub
+
+Private Sub ApplyColumnTextAlign(ByVal targetRange As Range, ByVal alignment As Long)
+    If targetRange Is Nothing Then Exit Sub
+    targetRange.HorizontalAlignment = alignment
+    targetRange.VerticalAlignment = xlTop
+    targetRange.WrapText = False
+End Sub
+
+Private Sub ApplySITSViewColumnLayout(ByVal ws As Worksheet, _
+                                      ByVal lastDataRow As Long, _
+                                      ByVal totalColumnCount As Long)
+    Dim col As Long
+    Dim layoutLastRow As Long
+
+    ws.Rows(SITS_VIEW_HEADER_ROW).RowHeight = PixelsToRowHeight(SITS_HEADER_ROW_HEIGHT_PX)
+    With ws.Rows(SITS_VIEW_HEADER_ROW)
+        .VerticalAlignment = xlTop
+        .HorizontalAlignment = xlLeft
+        .WrapText = False
+    End With
+
+    SetColumnWidthPixels ws.Columns(1), 60
+    SetColumnWidthPixels ws.Columns(2), 88
+    SetColumnWidthPixels ws.Columns(3), 114
+    SetColumnWidthPixels ws.Columns(4), 116
+    SetColumnWidthPixels ws.Columns(5), 84
+    SetColumnWidthPixels ws.Columns(6), 189
+    SetColumnWidthPixels ws.Columns(7), 115
+    SetColumnWidthPixels ws.Columns(8), 687
+    SetColumnWidthPixels ws.Columns(9), 109
+
+    layoutLastRow = lastDataRow
+    If layoutLastRow < SITS_VIEW_HEADER_ROW Then layoutLastRow = SITS_VIEW_HEADER_ROW
+
+    ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 2), ws.Cells(layoutLastRow, 2)), xlCenter
+    ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 3), ws.Cells(layoutLastRow, 3)), xlCenter
+    ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 4), ws.Cells(layoutLastRow, 4)), xlCenter
+    ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 5), ws.Cells(layoutLastRow, 5)), xlCenter
+    ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 6), ws.Cells(layoutLastRow, 6)), xlLeft
+    ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 7), ws.Cells(layoutLastRow, 7)), xlRight
+    ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 8), ws.Cells(layoutLastRow, 8)), xlLeft
+    ApplyColumnTextAlign ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 9), ws.Cells(layoutLastRow, 9)), xlLeft
+
+    For col = 1 To SITS_VISIBLE_COLUMN_COUNT
+        ws.Columns(col).Hidden = False
+    Next col
+
+    For col = SITS_VISIBLE_COLUMN_COUNT + 1 To totalColumnCount
+        ws.Columns(col).Hidden = True
+    Next col
+End Sub
 
 Private Function SITSViewUsesHourFormat(ByVal intervalCode As String) As Boolean
     Select Case UCase$(Trim$(intervalCode))
