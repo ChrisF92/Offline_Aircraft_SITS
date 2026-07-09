@@ -1142,7 +1142,7 @@ Private Function ExtGetEffectiveDueDate(ByVal sitsRow As ListRow, _
 
     If colBaseDue > 0 Then
         value = sitsRow.Range.Cells(1, colBaseDue).Value
-        If IsDate(value) Then
+        If LooksLikeAbsoluteDueDateValue(value) Then
             ExtGetEffectiveDueDate = CDate(value)
             Exit Function
         ElseIf IsNumeric(value) Then
@@ -1153,7 +1153,7 @@ Private Function ExtGetEffectiveDueDate(ByVal sitsRow As ListRow, _
 
     If colDaysDue > 0 Then
         value = sitsRow.Range.Cells(1, colDaysDue).Value
-        If IsDate(value) Then
+        If LooksLikeAbsoluteDueDateValue(value) Then
             ExtGetEffectiveDueDate = CDate(value)
             Exit Function
         ElseIf IsNumeric(value) Then
