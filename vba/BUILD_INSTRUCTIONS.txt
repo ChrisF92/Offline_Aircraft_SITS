@@ -276,7 +276,9 @@ full Actual Interval immediately after close (until further usage accrues).
 
 On Extend, baseline life remaining is increased by the extension increment so
 RecalculateSITS reflects the added life. On Defer (PT2/PT3), baseline is set so
-life remaining matches the entered due HH / date.
+life remaining matches the entered due HH / date. For DD tasks, Projected Due
+Date is updated whenever an extension, deferral, or WP close reforecast changes
+the due date. Absolute DD due dates are shown as dd/mm/yyyy (not Excel serials).
 
 Import rules (strict — abort if any required column missing)
 ------------------------------------------------------------

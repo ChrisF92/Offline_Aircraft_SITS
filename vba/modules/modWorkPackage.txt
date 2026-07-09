@@ -1326,6 +1326,7 @@ Private Sub ReforecastCompletedTask(ByVal sitsRow As ListRow, _
             sitsRow.Range.Cells(1, colBaseDue).Value = dueDate
             sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
         End If
+        SyncProjectedDueDate sitsRow, tbl, dueDate
         If colLRHours > 0 Then sitsRow.Range.Cells(1, colLRHours).ClearContents
         If colLRNumber > 0 Then sitsRow.Range.Cells(1, colLRNumber).ClearContents
         If colCurHours > 0 Then sitsRow.Range.Cells(1, colCurHours).ClearContents

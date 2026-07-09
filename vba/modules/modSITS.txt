@@ -533,7 +533,7 @@ Public Sub CaptureTaskBaselineFromImport(ByVal tbl As ListObject, ByVal newRow A
 
     If intervalCode = TYPE_DD Then
         dueValue = newRow.Range.Cells(1, colDaysDue).Value
-        If IsDate(dueValue) Then
+        If LooksLikeAbsoluteDueDate(dueValue) Then
             newRow.Range.Cells(1, colBaseDue).Value = CDate(dueValue)
             newRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
         ElseIf IsNumeric(dueValue) Then
@@ -577,7 +577,7 @@ Private Sub ApplyDDTaskRecalc(ByVal row As ListRow, _
     baselineDue = row.Range.Cells(1, colBaseDue).Value
     If IsEmptyBaselineValue(baselineDue) Then
         baselineDue = row.Range.Cells(1, colDaysDue).Value
-        If IsDate(baselineDue) Then
+        If LooksLikeAbsoluteDueDate(baselineDue) Then
             row.Range.Cells(1, colBaseDue).Value = CDate(baselineDue)
             row.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
         ElseIf IsNumeric(baselineDue) Then
@@ -588,7 +588,7 @@ Private Sub ApplyDDTaskRecalc(ByVal row As ListRow, _
         baselineDue = row.Range.Cells(1, colBaseDue).Value
     End If
 
-    If IsDate(baselineDue) Then
+    If LooksLikeAbsoluteDueDate(baselineDue) Then
         row.Range.Cells(1, colDaysDue).Value = CDate(baselineDue)
         row.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
     ElseIf IsNumeric(baselineDue) Then
@@ -639,7 +639,7 @@ Private Function SITSTaskSortKey(ByVal row As ListRow, _
         Case TYPE_DD
             colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
             dueValue = row.Range.Cells(1, colDaysDue).Value
-            If IsDate(dueValue) Then
+            If LooksLikeAbsoluteDueDate(dueValue) Then
                 SITSTaskSortKey = CDbl(CDate(dueValue))
                 Exit Function
             ElseIf IsNumeric(dueValue) Then
@@ -735,7 +735,7 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
         Case TYPE_DD
             colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
             dueValue = row.Range.Cells(1, colDaysDue).Value
-            If IsDate(dueValue) Then
+            If LooksLikeAbsoluteDueDate(dueValue) Then
                 daysUntilDue = CLng(DateDiff("d", Date, CDate(dueValue)))
             ElseIf IsNumeric(dueValue) Then
                 daysUntilDue = CLng(CDbl(dueValue))
@@ -1436,7 +1436,11 @@ Private Sub WriteSITSViewLifeRemaining(ByVal sourceRow As ListRow, _
         If colIndex = 0 Then Exit Sub
         Set sourceCell = sourceRow.Range.Cells(1, colIndex)
         value = sourceCell.Value
-        If IsDate(value) Then
+        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
+            target.ClearContents
+        ElseIf LooksLikeAbsoluteDueDate(value) Then
+            ' Absolute due date (not a small day-count). IsDate(30)=True in VBA,
+            ' so do not use IsDate alone.
             target.Value = CDate(value)
             target.NumberFormat = FORMAT_DATE
         ElseIf IsNumeric(value) Then
@@ -1738,6 +1742,32 @@ Private Function LookupDictSnapshot(ByVal lookup As Object, _
     If Not lookup.Exists(intervalCode) Then Exit Function
     LookupDictSnapshot = lookup(intervalCode)
 End Function
+
+' Day-count remaining values are small; Excel date serials for modern dates are large.
+' VBA IsDate(30) is True, so thresholding is required.
+Private Function LooksLikeAbsoluteDueDate(ByVal value As Variant) As Boolean
+    Const MIN_DATE_SERIAL As Double = 20000#  ' ~24/10/1954
+
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+    If VarType(value) = vbDate Then
+        LooksLikeAbsoluteDueDate = True
+    ElseIf IsNumeric(value) Then
+        LooksLikeAbsoluteDueDate = (CDbl(value) >= MIN_DATE_SERIAL)
+    End If
+End Function
+
+Public Sub SyncProjectedDueDate(ByVal sitsRow As ListRow, _
+                                ByVal tbl As ListObject, _
+                                ByVal dueDate As Date)
+    Dim colProjected As Long
+
+    If sitsRow Is Nothing Or tbl Is Nothing Then Exit Sub
+    colProjected = GetTableColumnIndex(tbl, HDR_PROJECTED_DUE_DATE)
+    If colProjected = 0 Then Exit Sub
+
+    sitsRow.Range.Cells(1, colProjected).Value = dueDate
+    sitsRow.Range.Cells(1, colProjected).NumberFormat = FORMAT_DATE
+End Sub
 
 Private Sub WriteCurrentUsageHours(ByVal target As Range, _
                                    ByVal value As Variant, _

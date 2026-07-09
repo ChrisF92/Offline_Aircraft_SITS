@@ -832,7 +832,7 @@ Private Sub BumpBaselineLifeRemaining(ByVal sitsRow As ListRow, _
             dueValue = sitsRow.Range.Cells(1, colDaysDue).Value
         End If
 
-        If IsDate(dueValue) Then
+        If LooksLikeAbsoluteDueDateValue(dueValue) Then
             dueValue = DateAdd("d", CLng(incrementValue), CDate(dueValue))
             If colDaysDue > 0 Then
                 sitsRow.Range.Cells(1, colDaysDue).Value = CDate(dueValue)
@@ -842,7 +842,9 @@ Private Sub BumpBaselineLifeRemaining(ByVal sitsRow As ListRow, _
                 sitsRow.Range.Cells(1, colBaseDue).Value = CDate(dueValue)
                 sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
             End If
+            SyncProjectedDueDate sitsRow, tbl, CDate(dueValue)
         ElseIf IsNumeric(dueValue) Then
+            ' Day-count remaining — keep as days, and advance Projected Due Date if present.
             dueValue = CDbl(dueValue) + incrementValue
             If colDaysDue > 0 Then
                 sitsRow.Range.Cells(1, colDaysDue).Value = CDbl(dueValue)
@@ -852,16 +854,19 @@ Private Sub BumpBaselineLifeRemaining(ByVal sitsRow As ListRow, _
                 sitsRow.Range.Cells(1, colBaseDue).Value = CDbl(dueValue)
                 sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DECIMAL
             End If
+            BumpProjectedDueDateByDays sitsRow, tbl, CLng(incrementValue)
         Else
             ' No existing due — treat increment as days remaining from today.
+            dueValue = DateAdd("d", CLng(incrementValue), Date)
             If colDaysDue > 0 Then
-                sitsRow.Range.Cells(1, colDaysDue).Value = DateAdd("d", CLng(incrementValue), Date)
+                sitsRow.Range.Cells(1, colDaysDue).Value = CDate(dueValue)
                 sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
             End If
             If colBaseDue > 0 Then
-                sitsRow.Range.Cells(1, colBaseDue).Value = DateAdd("d", CLng(incrementValue), Date)
+                sitsRow.Range.Cells(1, colBaseDue).Value = CDate(dueValue)
                 sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
             End If
+            SyncProjectedDueDate sitsRow, tbl, CDate(dueValue)
         End If
         Exit Sub
     End If
@@ -973,6 +978,7 @@ Private Sub SetDaysDueTarget(ByVal sitsRow As ListRow, _
         sitsRow.Range.Cells(1, colBaseDue).Value = dueDate
         sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
     End If
+    SyncProjectedDueDate sitsRow, tbl, dueDate
     If colLRHours > 0 Then sitsRow.Range.Cells(1, colLRHours).ClearContents
     If colBaseHours > 0 Then sitsRow.Range.Cells(1, colBaseHours).ClearContents
     If colLRNumber > 0 Then sitsRow.Range.Cells(1, colLRNumber).ClearContents
@@ -1000,6 +1006,34 @@ Private Function TryParseDeferDueDate(ByVal rawText As String, _
     dueDate = CDate(parsed)
     TryParseDeferDueDate = True
 End Function
+
+Private Function LooksLikeAbsoluteDueDateValue(ByVal value As Variant) As Boolean
+    Const MIN_DATE_SERIAL As Double = 20000#
+
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+    If VarType(value) = vbDate Then
+        LooksLikeAbsoluteDueDateValue = True
+    ElseIf IsNumeric(value) Then
+        LooksLikeAbsoluteDueDateValue = (CDbl(value) >= MIN_DATE_SERIAL)
+    End If
+End Function
+
+Private Sub BumpProjectedDueDateByDays(ByVal sitsRow As ListRow, _
+                                       ByVal tbl As ListObject, _
+                                       ByVal dayIncrement As Long)
+    Dim colProjected As Long
+    Dim currentDue As Variant
+
+    colProjected = GetTableColumnIndex(tbl, HDR_PROJECTED_DUE_DATE)
+    If colProjected = 0 Then Exit Sub
+
+    currentDue = sitsRow.Range.Cells(1, colProjected).Value
+    If LooksLikeAbsoluteDueDateValue(currentDue) Then
+        SyncProjectedDueDate sitsRow, tbl, DateAdd("d", dayIncrement, CDate(currentDue))
+    Else
+        SyncProjectedDueDate sitsRow, tbl, DateAdd("d", dayIncrement, Date)
+    End If
+End Sub
 
 Private Function ExtensionFormatTypeForInterval(ByVal intervalCode As String) As String
     Select Case UCase$(Trim$(intervalCode))

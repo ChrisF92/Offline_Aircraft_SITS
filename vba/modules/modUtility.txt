@@ -1003,9 +1003,10 @@ Public Sub ApplySITSTableFormats()
     ApplyColumnFormat tbl, HDR_PROJECTED_DUE_DATE, FORMAT_DATE
     ApplyColumnFormat tbl, HDR_BASELINE_LR_HOURS, FORMAT_TIME_HOURS
     ApplyColumnFormat tbl, HDR_BASELINE_LR_NUMBER, FORMAT_DECIMAL
+    ' DD due values may be absolute dates or day counts — do not force decimal.
     ApplyColumnFormat tbl, HDR_BASELINE_DAYS_DUE, FORMAT_GENERAL
     ApplyColumnFormat tbl, HDR_NUMBER_LIFE_REMAINING, FORMAT_DECIMAL
-    ApplyColumnFormat tbl, HDR_DAYS_WHEN_DUE, FORMAT_DECIMAL
+    ApplyColumnFormat tbl, HDR_DAYS_WHEN_DUE, FORMAT_GENERAL
 End Sub
 
 Public Sub FormatAllUsageDataTables()
