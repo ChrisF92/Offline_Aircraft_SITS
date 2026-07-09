@@ -3,6 +3,9 @@ Option Explicit
 ' ========================================================================
 ' AUDIT TRAIL MODULE — Offline Aircraft SITS v2
 ' ========================================================================
+' Column widths are owned by the Master workbook. LogAction preserves them
+' around each append so Excel table auto-expand does not resize columns.
+' ========================================================================
 
 Private Const AUDIT_ACTION_COL As Long = 1
 Private Const AUDIT_USER_COL As Long = 2
@@ -10,6 +13,7 @@ Private Const AUDIT_TYPE_COL As Long = 3
 Private Const AUDIT_ORN_COL As Long = 4
 Private Const AUDIT_DETAILS_COL As Long = 5
 Private Const AUDIT_VERSION_COL As Long = 6
+Private Const AUDIT_COL_COUNT As Long = 6
 
 Public Sub LogAction(ByVal actionType As String, _
                      Optional ByVal ornValue As String = "", _
@@ -18,6 +22,9 @@ Public Sub LogAction(ByVal actionType As String, _
     Dim tbl As ListObject
     Dim row As ListRow
     Dim userName As String
+    Dim savedWidths(1 To AUDIT_COL_COUNT) As Double
+    Dim col As Long
+    Dim widthsCaptured As Boolean
 
     Set wsAudit = GetWorksheet(SHEET_AUDIT, showError:=False)
     If wsAudit Is Nothing Then Exit Sub
@@ -28,6 +35,16 @@ Public Sub LogAction(ByVal actionType As String, _
     userName = Environ$("USERNAME")
     If Len(userName) = 0 Then userName = "Unknown"
 
+    ' Capture widths before ListRows.Add (Excel may auto-expand columns).
+    widthsCaptured = False
+    On Error Resume Next
+    For col = 1 To AUDIT_COL_COUNT
+        savedWidths(col) = wsAudit.Columns(col).ColumnWidth
+    Next col
+    If Err.Number = 0 Then widthsCaptured = True
+    Err.Clear
+    On Error GoTo 0
+
     Set row = tbl.ListRows.Add
     With row.Range
         .Cells(1, AUDIT_ACTION_COL).Value = Now
@@ -37,6 +54,14 @@ Public Sub LogAction(ByVal actionType As String, _
         .Cells(1, AUDIT_DETAILS_COL).Value = details
         .Cells(1, AUDIT_VERSION_COL).Value = APP_VERSION
     End With
+
+    If widthsCaptured Then
+        On Error Resume Next
+        For col = 1 To AUDIT_COL_COUNT
+            wsAudit.Columns(col).ColumnWidth = savedWidths(col)
+        Next col
+        On Error GoTo 0
+    End If
 End Sub
 
 Public Sub LogSetupComplete(ByVal tailNumber As String, _

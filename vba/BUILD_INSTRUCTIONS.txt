@@ -14,10 +14,22 @@ Overview — master template workflow
 -------------------------------------
 1. Build the **master template once** (Phase 0 setup — no aircraft tail).
 2. Save as `Wildcat_SITS_Master.xlsm` (or similar).
-3. For each aircraft: **File > Save As** a copy (e.g. `ZZ383_SITS_v2.xlsm`).
-4. On the aircraft copy, run **Setup Wizard** to declare the tail and import data.
-5. Use **Dashboard / SITS buttons** for day-to-day actions (log sorties, work packages,
+3. **Polish layout on the Master in Excel** (column widths, button positions on
+   Dashboard / SITS / Usage / Audit Log). Day-to-day refresh does **not** reset
+   these — only explicit Rebuild macros do.
+4. For each aircraft: **File > Save As** a copy (e.g. `ZZ383_SITS_v2.xlsm`).
+5. On the aircraft copy, run **Setup Wizard** to declare the tail and import data.
+6. Use **Dashboard / SITS buttons** for day-to-day actions (log sorties, work packages,
    extensions, deferrals, etc.).
+
+Layout ownership
+----------------
+- **Setup / Rebuild** (once): default column widths, shell labels, and buttons.
+- **Refresh** (day-to-day): data and status only — preserves widths and button
+  placement; adds any *missing* action buttons at default anchors.
+- **Rebuild Dashboard** / **Rebuild SITS Layout**: explicit full/default layout
+  reset when you intentionally want scaffolding again.
+- **Ensure Missing Buttons**: adds new Dashboard buttons without moving existing ones.
 
 Step 1 — Create a new workbook
 ------------------------------
@@ -197,7 +209,8 @@ Dashboard (Phase 4/5):
   User Actions include Work Packages, Extend, Defer
 
 Developer Tools:
-  Repair Formats, Repair Visibility, Validate Structure, Rebuild Dashboard, Phase 0 Setup
+  Repair Formats, Repair Visibility, Validate Structure, Rebuild Dashboard,
+  Ensure Missing Buttons, Phase 0 Setup, Rebuild SITS Layout
 
 Step 9 — Extensions and deferrals (Phase 5)
 -------------------------------------------
@@ -314,8 +327,9 @@ Upgrading an existing Phase 0–4 workbook to Phase 5
    CONFIG, Setup_CreateDashboard, Setup_RunAll).
 2. Create frmExtend and frmDefer from the layout + code files.
 3. Update frmWorkPackage controls to include cmdRemoveTask (or recreate the form).
-4. Re-run **Rebuild Dashboard** so Extend / Defer buttons appear.
-5. Refresh the SITS view to recreate Extend / Defer buttons.
+4. Prefer **Ensure Missing Buttons** (and Refresh SITS) so new Extend / Defer
+   buttons appear without wiping your Master layout. Use **Rebuild Dashboard**
+   only if you want a full layout reset.
 
 Troubleshooting
 ---------------
@@ -351,7 +365,16 @@ SITS life remaining does not change after sorties
   -> Run RunRefreshSITS on the SITS sheet.
 
 Dashboard buttons missing after updating VBA
-  -> Click Rebuild Dashboard on the Dashboard (Developer Tools section).
+  -> Click Ensure Missing Buttons (adds only what is missing).
+  -> Use Rebuild Dashboard only if you want to reset column widths / placement.
+
+Column widths / buttons reset after Refresh
+  -> Refresh is data-only. If widths still reset, re-import updated modSITS /
+     modUsageLog / Setup_CreateDashboard and avoid Rebuild Dashboard unless intended.
+
+Audit Log columns resize after each log entry
+  -> Re-import updated modAuditTrail (preserves widths around each append).
+  -> Set preferred widths on the Master once; they carry to aircraft copies.
 
 ORN rejected on create
   -> Must be ####TAILDDMMYY with this aircraft's tail and a real DDMMYY date.

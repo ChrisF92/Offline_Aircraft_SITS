@@ -204,6 +204,7 @@ End Sub
 Private Sub FormatViewSheets()
     FormatSITSView
     FormatUsageView
+    FormatAuditView
     FormatDashboardShell
 End Sub
 
@@ -229,6 +230,11 @@ Private Sub FormatSITSView()
     ws.Range("A5").Value = "Forecast number (other):"
     ws.Range("B5").Value = 500
     ws.Range("A6").Value = "Use filter dropdowns on row 7 to hide interval types. Check tasks to select for future work packages."
+
+    ' Default widths for master scaffolding only — later tweaks survive refresh.
+    On Error Resume Next
+    RebuildSITSViewLayout
+    On Error GoTo 0
 End Sub
 
 Private Sub FormatUsageView()
@@ -244,7 +250,29 @@ Private Sub FormatUsageView()
         .Font.Color = COLOR_HEADER_BLUE
     End With
 
+    ws.Range("A2").Value = "Tail:"
+    ws.Range("B2").Value = "(set during setup)"
     ws.Range("A3").Value = "Run RefreshUsageView after setup, or log a sortie to refresh this sheet."
+
+    ' Sensible starter widths for master setup; AutoFit is not used on refresh.
+    ws.Columns("A").ColumnWidth = 14
+    ws.Columns("B").ColumnWidth = 18
+    ws.Columns("C").ColumnWidth = 12
+End Sub
+
+Private Sub FormatAuditView()
+    Dim ws As Worksheet
+
+    Set ws = GetWorksheet(SHEET_AUDIT, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    ' Starter widths for master setup — LogAction preserves these thereafter.
+    ws.Columns("A").ColumnWidth = 18
+    ws.Columns("B").ColumnWidth = 14
+    ws.Columns("C").ColumnWidth = 18
+    ws.Columns("D").ColumnWidth = 18
+    ws.Columns("E").ColumnWidth = 50
+    ws.Columns("F").ColumnWidth = 12
 End Sub
 
 Private Sub FormatDashboardShell()

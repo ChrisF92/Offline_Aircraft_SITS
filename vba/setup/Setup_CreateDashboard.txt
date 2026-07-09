@@ -3,6 +3,10 @@ Option Explicit
 ' ========================================================================
 ' ONE-TIME SETUP — Dashboard layout and action buttons
 ' ========================================================================
+' RefreshDashboardLayout fully rebuilds the sheet (master setup / explicit
+' Rebuild). EnsureDashboardActionButtons only adds missing buttons so
+' developer placement and column widths survive day-to-day use.
+' ========================================================================
 
 Private Const BTN_WIDTH As Double = 150
 Private Const BTN_HEIGHT As Double = 24
@@ -18,6 +22,7 @@ Public Sub Setup_CreateDashboard(Optional ByVal silent As Boolean = False)
     If Not silent Then MsgBox "Dashboard formatted.", vbInformation, "Setup — Dashboard"
 End Sub
 
+' Full rebuild — master setup and explicit "Rebuild Dashboard" only.
 Public Sub RefreshDashboardLayout()
     Dim ws As Worksheet
 
@@ -69,7 +74,7 @@ Public Sub RefreshDashboardLayout()
     AddDashboardButton ws, "C15", "Defer", "RunDeferFromSelection"
 
     WriteSectionHeader ws, "B17", "Developer Tools"
-    ws.Range("B18").Value = "Rebuild macros after pasting updated VBA modules."
+    ws.Range("B18").Value = "Rebuild macros after pasting updated VBA modules. Rebuild Dashboard resets layout; Ensure Missing Buttons only adds new ones."
     ws.Range("B18").Font.Italic = True
     ws.Range("B18").Font.Size = 9
     ws.Range("B18").Font.Color = RGB(89, 89, 89)
@@ -78,20 +83,24 @@ Public Sub RefreshDashboardLayout()
     AddDashboardButton ws, "C19", "Repair Visibility", "RepairSetupSheetVisibility"
     AddDashboardButton ws, "B20", "Validate Structure", "RunValidateWorkbookStructure"
     AddDashboardButton ws, "C20", "Rebuild Dashboard", "RefreshDashboardLayout"
-    AddDashboardButton ws, "B21", "Phase 0 Setup", "Setup_RunAll"
+    AddDashboardButton ws, "B21", "Ensure Missing Buttons", "EnsureDashboardActionButtons"
+    AddDashboardButton ws, "C21", "Phase 0 Setup", "Setup_RunAll"
+    AddDashboardButton ws, "B22", "Rebuild SITS Layout", "RebuildSITSViewLayout"
 
-    WriteSectionHeader ws, "B23", "Import Requirements"
-    ws.Range("B24").Value = "SITS Long Forecast: 9 required columns (strict — abort if any missing)."
-    ws.Range("B25").Value = "Usage exports: Interval Type, Task Code, Life Used, Top Serial."
-    ws.Range("B26").Value = "Engine usage must include SM and SN (WC/STARTS/ECU)."
-    ws.Range("B27").Value = "ORN format: ####TAILDDMMYY (e.g. 7034ZZ383081125)."
-    ws.Range("B28").Value = "Extend: same Interval Type + Actual Interval. Defer: one PT2/PT3 at a time."
+    WriteSectionHeader ws, "B24", "Import Requirements"
+    ws.Range("B25").Value = "SITS Long Forecast: 9 required columns (strict — abort if any missing)."
+    ws.Range("B26").Value = "Usage exports: Interval Type, Task Code, Life Used, Top Serial."
+    ws.Range("B27").Value = "Engine usage must include SM and SN (WC/STARTS/ECU)."
+    ws.Range("B28").Value = "ORN format: ####TAILDDMMYY (e.g. 7034ZZ383081125)."
+    ws.Range("B29").Value = "Extend: same Interval Type + Actual Interval. Defer: one PT2/PT3 at a time."
+    ws.Range("B30").Value = "Layout tip: tweak column widths / button positions on the Master; refresh does not reset them."
 
     ws.Activate
     ws.Range("B2").Select
     SetExcelState "enable"
 End Sub
 
+' Day-to-day / post-setup: update status cells only — never clear or resize.
 Public Sub RefreshDashboardStatusCounts()
     Dim ws As Worksheet
     Dim manualCount As Long
@@ -110,7 +119,34 @@ Public Sub RefreshDashboardStatusCounts()
 
     commentText = BuildManualUpdateDashboardComment()
     SetCellCommentText ws.Range("C9"), commentText
+    WriteWorkbookStatusLine ws
     On Error GoTo 0
+End Sub
+
+' Add any missing Dashboard buttons at default anchors; never move existing ones.
+Public Sub EnsureDashboardActionButtons()
+    Dim ws As Worksheet
+
+    Set ws = GetWorksheet(SHEET_DASHBOARD, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    SetExcelState "disable"
+    EnsureDashboardButton ws, "B12", "Setup Wizard", "RunSetupWizard"
+    EnsureDashboardButton ws, "C12", "Log Sortie", "RunLogSortie"
+    EnsureDashboardButton ws, "B13", "Import SITS", "RunImportSITSFromFile"
+    EnsureDashboardButton ws, "C13", "Refresh Usage", "RefreshUsageView"
+    EnsureDashboardButton ws, "B14", "Work Packages", "RunManageWorkPackages"
+    EnsureDashboardButton ws, "C14", "View Audit Log", "ViewAuditLog"
+    EnsureDashboardButton ws, "B15", "Extend", "RunExtendFromSelection"
+    EnsureDashboardButton ws, "C15", "Defer", "RunDeferFromSelection"
+    EnsureDashboardButton ws, "B19", "Repair Formats", "RepairWorkbookFormats"
+    EnsureDashboardButton ws, "C19", "Repair Visibility", "RepairSetupSheetVisibility"
+    EnsureDashboardButton ws, "B20", "Validate Structure", "RunValidateWorkbookStructure"
+    EnsureDashboardButton ws, "C20", "Rebuild Dashboard", "RefreshDashboardLayout"
+    EnsureDashboardButton ws, "B21", "Ensure Missing Buttons", "EnsureDashboardActionButtons"
+    EnsureDashboardButton ws, "C21", "Phase 0 Setup", "Setup_RunAll"
+    EnsureDashboardButton ws, "B22", "Rebuild SITS Layout", "RebuildSITSViewLayout"
+    SetExcelState "enable"
 End Sub
 
 Private Sub WriteWorkbookStatusLine(ByVal ws As Worksheet)
@@ -142,9 +178,34 @@ Private Sub AddDashboardButton(ByVal ws As Worksheet, ByVal anchorCell As String
     btn.Placement = xlFreeFloating
 End Sub
 
+Private Sub EnsureDashboardButton(ByVal ws As Worksheet, ByVal anchorCell As String, _
+                                  ByVal caption As String, ByVal macroName As String)
+    If DashboardHasButtonForMacro(ws, macroName) Then Exit Sub
+    AddDashboardButton ws, anchorCell, caption, macroName
+End Sub
+
+Private Function DashboardHasButtonForMacro(ByVal ws As Worksheet, ByVal macroName As String) As Boolean
+    Dim btn As Button
+    Dim actionName As String
+    Dim bangPos As Long
+
+    DashboardHasButtonForMacro = False
+    On Error Resume Next
+    For Each btn In ws.Buttons
+        actionName = Trim$(CStr(btn.OnAction))
+        bangPos = InStrRev(actionName, "!")
+        If bangPos > 0 Then actionName = Mid$(actionName, bangPos + 1)
+        If StrComp(actionName, macroName, vbTextCompare) = 0 Then
+            DashboardHasButtonForMacro = True
+            Exit Function
+        End If
+    Next btn
+    On Error GoTo 0
+End Function
+
 Private Sub PrepareButtonRows(ByVal ws As Worksheet)
     ws.Rows("12:15").RowHeight = 22
-    ws.Rows("19:21").RowHeight = 22
+    ws.Rows("19:22").RowHeight = 22
 End Sub
 
 Private Sub RemoveDashboardButtons(ByVal ws As Worksheet)

@@ -139,9 +139,9 @@ Public Sub RefreshUsageView()
     Dim tblBaseline As ListObject
     Dim row As ListRow
     Dim outputRow As Long
+    Dim lastRow As Long
     Dim intervalCode As String
     Dim taskCode As String
-    Dim description As String
     Dim currentValue As Variant
     Dim formatType As String
 
@@ -153,19 +153,19 @@ Public Sub RefreshUsageView()
     If tblBaseline Is Nothing Then Exit Sub
 
     SetExcelState "disable"
-    ws.Cells.Clear
-    ws.Range("A:C").NumberFormat = FORMAT_GENERAL
 
-    With ws.Range("A1")
-        .Value = "Usage — Current Totals"
-        .Font.Size = 14
-        .Font.Bold = True
-        .Font.Color = COLOR_HEADER_BLUE
-    End With
-
-    ws.Range("A2").Value = "Tail:"
+    ' Preserve column widths / shell chrome — clear data area only.
+    EnsureUsageViewShellExists ws
     ws.Range("B2").Value = GetTailNumber()
-    ws.Range("A3").Value = "Log sorties with RunLogSortie."
+
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    If lastRow < USAGE_VIEW_START_ROW Then lastRow = USAGE_VIEW_START_ROW
+    On Error Resume Next
+    If ws.UsedRange.Rows.Count + ws.UsedRange.Row - 1 > lastRow Then
+        lastRow = ws.UsedRange.Rows.Count + ws.UsedRange.Row - 1
+    End If
+    On Error GoTo 0
+    ws.Range(ws.Cells(USAGE_VIEW_START_ROW, 1), ws.Cells(lastRow, 3)).Clear
 
     ws.Range("A" & USAGE_VIEW_START_ROW).Value = HDR_BASE_INTERVAL_CODE
     ws.Range("B" & USAGE_VIEW_START_ROW).Value = HDR_CUR_CURRENT_VALUE
@@ -195,8 +195,23 @@ Public Sub RefreshUsageView()
         Next row
     End If
 
-    ws.Columns("A:C").AutoFit
+    ' Do not AutoFit — Master / developer column widths must survive refresh.
     SetExcelState "enable"
+End Sub
+
+Private Sub EnsureUsageViewShellExists(ByVal ws As Worksheet)
+    If Len(Trim$(CStr(ws.Range("A1").Value))) > 0 Then Exit Sub
+
+    With ws.Range("A1")
+        .Value = "Usage — Current Totals"
+        .Font.Size = 14
+        .Font.Bold = True
+        .Font.Color = COLOR_HEADER_BLUE
+    End With
+
+    ws.Range("A2").Value = "Tail:"
+    ws.Range("B2").Value = GetTailNumber()
+    ws.Range("A3").Value = "Log sorties with RunLogSortie."
 End Sub
 
 Public Function ParseUsageIncrement(ByVal rawIncrement As Variant, _
