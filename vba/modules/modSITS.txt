@@ -356,7 +356,7 @@ Public Sub RefreshSITSView()
 
     ' Clear only used area — faster than wiping the whole sheet.
     wsView.UsedRange.Clear
-    WriteSITSViewShell wsView
+    WriteSITSViewShell wsView, forecastHours, forecastDays
     AddSITSViewActionButtons wsView
 
     outputCol = 1
@@ -755,7 +755,9 @@ Private Sub ApplySITSViewAutoFilter(ByVal ws As Worksheet, _
     ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 1), ws.Cells(lastDataRow, colCount)).AutoFilter
 End Sub
 
-Private Sub WriteSITSViewShell(ByVal ws As Worksheet)
+Private Sub WriteSITSViewShell(ByVal ws As Worksheet, _
+                               Optional ByVal forecastHours As Double = -1#, _
+                               Optional ByVal forecastDays As Long = -1)
     With ws.Range("A1")
         .Value = "SITS — Task View"
         .Font.Size = 14
@@ -766,12 +768,15 @@ Private Sub WriteSITSViewShell(ByVal ws As Worksheet)
     ws.Range("A2").Value = "Tail:"
     ws.Range("B2").Value = GetTailNumber()
 
+    If forecastHours < 0# Then forecastHours = GetForecastHoursSetting()
+    If forecastDays < 0 Then forecastDays = GetForecastDaysSetting()
+
     ws.Range("A3").Value = "Forecast hours (HH/E1/E2):"
-    ws.Range("B3").Value = GetForecastHoursSetting()
+    ws.Range("B3").Value = forecastHours
     ws.Range("B3").NumberFormat = FORMAT_GENERAL
 
     ws.Range("A4").Value = "Forecast days (DD):"
-    ws.Range("B4").Value = GetForecastDaysSetting()
+    ws.Range("B4").Value = forecastDays
     ws.Range("B4").NumberFormat = FORMAT_GENERAL
 
     ws.Range("A5").Value = "Tick tasks, then Create Work Package. Use Manage Work Packages to delete or close open ORNs. Filter dropdowns on row 7 hide interval types."
@@ -1435,13 +1440,15 @@ Private Sub SaveForecastSettingsFromView()
     Set ws = GetWorksheet(SHEET_SITS, showError:=False)
     If ws Is Nothing Then Exit Sub
 
+    ' Empty cells are IsNumeric in VBA and coerce to 0 — ignore blanks so a
+    ' mid-refresh clear cannot overwrite the real config with zeros.
     hoursValue = ws.Range(SITS_FORECAST_HOURS_CELL).Value
-    If IsNumeric(hoursValue) Then
+    If IsPresentNumericSetting(hoursValue) Then
         SetConfigValue CFG_FORECAST_HOURS, CDbl(hoursValue)
     End If
 
     daysValue = ws.Range(SITS_FORECAST_DAYS_CELL).Value
-    If IsNumeric(daysValue) Then
+    If IsPresentNumericSetting(daysValue) Then
         SetConfigValue CFG_FORECAST_DAYS, CLng(daysValue)
     End If
 End Sub
@@ -1453,14 +1460,14 @@ Private Function GetForecastHoursSetting() As Double
     Set ws = GetWorksheet(SHEET_SITS, showError:=False)
     If Not ws Is Nothing Then
         value = ws.Range(SITS_FORECAST_HOURS_CELL).Value
-        If IsNumeric(value) Then
+        If IsPresentNumericSetting(value) Then
             GetForecastHoursSetting = CDbl(value)
             Exit Function
         End If
     End If
 
     value = GetConfigValue(CFG_FORECAST_HOURS, 50)
-    If IsNumeric(value) Then
+    If IsPresentNumericSetting(value) Then
         GetForecastHoursSetting = CDbl(value)
     Else
         GetForecastHoursSetting = 50#
@@ -1474,18 +1481,30 @@ Private Function GetForecastDaysSetting() As Long
     Set ws = GetWorksheet(SHEET_SITS, showError:=False)
     If Not ws Is Nothing Then
         value = ws.Range(SITS_FORECAST_DAYS_CELL).Value
-        If IsNumeric(value) Then
+        If IsPresentNumericSetting(value) Then
             GetForecastDaysSetting = CLng(value)
             Exit Function
         End If
     End If
 
     value = GetConfigValue(CFG_FORECAST_DAYS, 90)
-    If IsNumeric(value) Then
+    If IsPresentNumericSetting(value) Then
         GetForecastDaysSetting = CLng(value)
     Else
         GetForecastDaysSetting = 90
     End If
+End Function
+
+' True only for a real entered number — Empty/blank must not count (VBA
+' IsNumeric(Empty) is True and CDbl(Empty)=0, which corrupted B3/B4).
+Private Function IsPresentNumericSetting(ByVal value As Variant) As Boolean
+    If IsError(value) Then Exit Function
+    If IsEmpty(value) Then Exit Function
+    If IsNull(value) Then Exit Function
+    If VarType(value) = vbString Then
+        If Len(Trim$(CStr(value))) = 0 Then Exit Function
+    End If
+    IsPresentNumericSetting = IsNumeric(value)
 End Function
 
 Private Function ParseWarnHoursSetting() As Double
