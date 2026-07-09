@@ -1647,7 +1647,7 @@ Private Sub ApplySITSViewRowWarnings(ByVal ws As Worksheet, _
     ' Manual-update flag takes priority over due-soon / overdue colours.
     If colManualFlag > 0 Then
         If ConvertToBoolean(sourceRow.Range.Cells(1, colManualFlag).Value) Then
-            warnColor = COLOR_MANUAL_AMBER
+            warnColor = COLOR_MANUAL_BLUE
         End If
     End If
 

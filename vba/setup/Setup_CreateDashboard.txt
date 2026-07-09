@@ -54,7 +54,7 @@ Public Sub RefreshDashboardLayout()
     WriteLabel ws, "B9", "Tasks needing manual update:"
     ws.Range("C9").Value = CountManualUpdateTasks()
     ws.Range("C9").NumberFormat = FORMAT_INTEGER
-    ws.Range("C9").Interior.Color = COLOR_MANUAL_AMBER
+    ws.Range("C9").Interior.Color = COLOR_MANUAL_BLUE
     SetCellCommentText ws.Range("C9"), BuildManualUpdateDashboardComment()
 
     WriteSectionHeader ws, "B11", "User Actions"

@@ -148,7 +148,7 @@ Step 7 — SITS view and refresh (Phase 3)
 5. Life remaining highlighting:
    - Amber when due soon (within warn thresholds: default 10:00 hours / 7 days)
    - Pink/red when overdue (life remaining / days remaining below zero)
-6. Zero-interval tasks awaiting manual update after WP close highlight in strong amber.
+6. Zero-interval tasks awaiting manual update after WP close highlight in light blue.
 
 SITS recalculation runs automatically after:
   - SITS import (Import SITS / Setup Wizard)
@@ -183,7 +183,7 @@ Manage:
    - Deletes PT2/PT3 deferred fault rows from SITS
    - Resets Extension to 0 / 0:00
    - Writes a Task Description cell comment: ORN, close date, user
-   - Zero-interval tasks: skip auto-reforecast, flag Needs Manual Update (amber + Dashboard count)
+   - Zero-interval tasks: skip auto-reforecast, flag Needs Manual Update (light blue + Dashboard count)
 7. Form stays open and refreshes after Delete/Remove/Close.
 
 Dashboard (Phase 4/5):

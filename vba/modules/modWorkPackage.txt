@@ -611,7 +611,7 @@ NextCloseTask:
             msg = msg & vbCrLf & vbCrLf & _
                   "Tasks requiring manual life remaining update (" & manualCount & "):" & vbCrLf & _
                   manualList & vbCrLf & _
-                  "These are highlighted amber on the SITS view and counted on the Dashboard."
+                  "These are highlighted light blue on the SITS view and counted on the Dashboard."
         End If
         MsgBox msg, vbInformation, APP_NAME
     End If
