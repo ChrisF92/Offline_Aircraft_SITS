@@ -1,0 +1,110 @@
+Option Explicit
+
+' ========================================================================
+' WORK PACKAGE USERFORM — Offline Aircraft SITS v2 (Phase 4)
+' ========================================================================
+' Create this UserForm manually in the VBA IDE and paste this code.
+' See vba/forms/WORK_PACKAGE_FORM_LAYOUT.txt for control names and layout.
+' ========================================================================
+
+Private Sub UserForm_Initialize()
+    RefreshForm
+End Sub
+
+Private Sub cboORN_Change()
+    PopulateTaskList
+    UpdateActionButtons
+End Sub
+
+Private Sub cmdDelete_Click()
+    Dim orn As String
+
+    orn = SelectedORN()
+    If Len(orn) = 0 Then Exit Sub
+
+    If DeleteWorkPackage(orn, True) Then
+        RefreshForm
+    End If
+End Sub
+
+Private Sub cmdCloseWP_Click()
+    Dim orn As String
+
+    orn = SelectedORN()
+    If Len(orn) = 0 Then Exit Sub
+
+    If CloseWorkPackage(orn, True) Then
+        RefreshForm
+    End If
+End Sub
+
+Private Sub cmdCloseForm_Click()
+    Unload Me
+End Sub
+
+Private Sub RefreshForm()
+    Dim orns As Collection
+    Dim i As Long
+    Dim previous As String
+
+    previous = SelectedORN()
+    txtOpenCount.Value = CStr(CountOpenWorkPackages())
+    txtOpenCount.Locked = True
+    txtOpenCount.Enabled = True
+
+    cboORN.Clear
+    Set orns = GetOpenWorkPackageORNs()
+    For i = 1 To orns.Count
+        cboORN.AddItem CStr(orns(i))
+    Next i
+
+    If Len(previous) > 0 Then
+        For i = 0 To cboORN.ListCount - 1
+            If StrComp(CStr(cboORN.List(i)), previous, vbTextCompare) = 0 Then
+                cboORN.ListIndex = i
+                Exit For
+            End If
+        Next i
+    End If
+
+    If cboORN.ListIndex < 0 And cboORN.ListCount > 0 Then
+        cboORN.ListIndex = 0
+    End If
+
+    PopulateTaskList
+    UpdateActionButtons
+End Sub
+
+Private Sub PopulateTaskList()
+    Dim orn As String
+    Dim tasks As Collection
+    Dim i As Long
+    Dim rowData As Variant
+
+    lstTasks.Clear
+    lstTasks.ColumnCount = 2
+    lstTasks.ColumnWidths = "160 pt;320 pt"
+
+    orn = SelectedORN()
+    If Len(orn) = 0 Then Exit Sub
+
+    Set tasks = GetWorkPackageTaskDisplayRows(orn)
+    For i = 1 To tasks.Count
+        rowData = tasks(i)
+        lstTasks.AddItem CStr(rowData(0))
+        lstTasks.List(lstTasks.ListCount - 1, 1) = CStr(rowData(1))
+    Next i
+End Sub
+
+Private Sub UpdateActionButtons()
+    Dim hasSelection As Boolean
+
+    hasSelection = (Len(SelectedORN()) > 0)
+    cmdDelete.Enabled = hasSelection
+    cmdCloseWP.Enabled = hasSelection
+End Sub
+
+Private Function SelectedORN() As String
+    If cboORN.ListIndex < 0 Then Exit Function
+    SelectedORN = Trim$(CStr(cboORN.Value))
+End Function

@@ -98,27 +98,124 @@ Public Function NormaliseTailText(ByVal tail As String) As String
 End Function
 
 Public Function IsValidORN(ByVal orn As String) As Boolean
-    Dim pattern As String
+    Dim failReason As String
+    IsValidORN = ValidateORNForAircraft(orn, GetTailNumber(), failReason)
+End Function
+
+' ORN format: ####TAILDDMMYY  e.g. 7034ZZ383081125
+' First 4 digits any number; middle segment must match aircraft tail; last 6 must be a real date.
+Public Function ValidateORNForAircraft(ByVal orn As String, _
+                                       ByVal tailNumber As String, _
+                                       ByRef failReason As String) As Boolean
+    Dim cleanOrn As String
+    Dim cleanTail As String
+    Dim expectedLen As Long
+    Dim prefix As String
+    Dim midTail As String
+    Dim datePart As String
+    Dim dayPart As Long
+    Dim monthPart As Long
+    Dim yearPart As Long
+    Dim parsedDate As Date
     Dim i As Long
     Dim ch As String
 
-    orn = Trim$(orn)
-    If Len(orn) = 0 Then Exit Function
+    failReason = ""
+    cleanOrn = UCase$(Trim$(orn))
+    cleanTail = NormaliseTailText(tailNumber)
 
-    pattern = CStr(GetConfigValue(CFG_ORN_PATTERN, ORN_FORMAT_PATTERN))
-    If Len(orn) <> Len(pattern) Then Exit Function
+    If Len(cleanOrn) = 0 Then
+        failReason = "Enter an ORN."
+        Exit Function
+    End If
 
-    For i = 1 To Len(pattern)
-        ch = Mid$(orn, i, 1)
-        Select Case Mid$(pattern, i, 1)
-            Case "#"
-                If Not ch Like "#" Then Exit Function
-            Case Else
-                If ch <> Mid$(pattern, i, 1) Then Exit Function
-        End Select
+    If Len(cleanTail) = 0 Then
+        failReason = "Aircraft tail number is not configured."
+        Exit Function
+    End If
+
+    expectedLen = ORN_PREFIX_DIGITS + Len(cleanTail) + ORN_DATE_DIGITS
+    If Len(cleanOrn) <> expectedLen Then
+        failReason = "ORN must be " & expectedLen & " characters: ####" & cleanTail & "DDMMYY"
+        Exit Function
+    End If
+
+    prefix = Left$(cleanOrn, ORN_PREFIX_DIGITS)
+    midTail = Mid$(cleanOrn, ORN_PREFIX_DIGITS + 1, Len(cleanTail))
+    datePart = Right$(cleanOrn, ORN_DATE_DIGITS)
+
+    For i = 1 To Len(prefix)
+        ch = Mid$(prefix, i, 1)
+        If Not ch Like "#" Then
+            failReason = "ORN must start with 4 digits."
+            Exit Function
+        End If
     Next i
 
-    IsValidORN = True
+    If StrComp(midTail, cleanTail, vbTextCompare) <> 0 Then
+        failReason = "ORN must include aircraft tail " & cleanTail & " after the first 4 digits."
+        Exit Function
+    End If
+
+    For i = 1 To Len(datePart)
+        ch = Mid$(datePart, i, 1)
+        If Not ch Like "#" Then
+            failReason = "ORN date segment (DDMMYY) must be 6 digits."
+            Exit Function
+        End If
+    Next i
+
+    dayPart = CLng(Left$(datePart, 2))
+    monthPart = CLng(Mid$(datePart, 3, 2))
+    yearPart = 2000 + CLng(Right$(datePart, 2))
+
+    On Error Resume Next
+    parsedDate = DateSerial(yearPart, monthPart, dayPart)
+    If Err.Number <> 0 Then
+        Err.Clear
+        On Error GoTo 0
+        failReason = "ORN date segment is not a valid calendar date (DDMMYY)."
+        Exit Function
+    End If
+    On Error GoTo 0
+
+    If Day(parsedDate) <> dayPart Or Month(parsedDate) <> monthPart Or Year(parsedDate) <> yearPart Then
+        failReason = "ORN date segment is not a valid calendar date (DDMMYY)."
+        Exit Function
+    End If
+
+    ValidateORNForAircraft = True
+End Function
+
+Public Function CurrentUserName() As String
+    Dim userName As String
+    userName = Environ$("USERNAME")
+    If Len(userName) = 0 Then userName = "Unknown"
+    CurrentUserName = userName
+End Function
+
+Public Sub SetCellCommentText(ByVal target As Range, ByVal commentText As String)
+    On Error Resume Next
+    If Not target.Comment Is Nothing Then target.Comment.Delete
+    On Error GoTo 0
+
+    If Len(Trim$(commentText)) = 0 Then Exit Sub
+
+    On Error Resume Next
+    target.AddComment Text:=commentText
+    If Not target.Comment Is Nothing Then
+        target.Comment.Visible = False
+        target.Comment.Shape.TextFrame.AutoSize = True
+    End If
+    On Error GoTo 0
+End Sub
+
+Public Function GetCellCommentText(ByVal source As Range) As String
+    On Error Resume Next
+    If Not source.Comment Is Nothing Then
+        GetCellCommentText = source.Comment.Text
+    End If
+    On Error GoTo 0
 End Function
 
 Public Function ConvertToBoolean(ByVal value As Variant) As Boolean

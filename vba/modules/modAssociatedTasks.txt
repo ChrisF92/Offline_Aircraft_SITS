@@ -1,0 +1,141 @@
+Option Explicit
+
+' ========================================================================
+' ASSOCIATED TASKS MODULE — Offline Aircraft SITS v2 (Phase 4)
+' ========================================================================
+' Links HH/DD (and similar) tasks that share a base Task Code + Sequence,
+' typically with a trailing "/1" on the calendar side. Completing one claims
+' and reforecasts the other.
+' ========================================================================
+
+Public Function GetAssociatedTaskRows(ByVal sourceRow As ListRow, _
+                                      ByVal tbl As ListObject) As Collection
+    Dim result As New Collection
+    Dim row As ListRow
+    Dim sourceKey As String
+    Dim sourceRowId As String
+    Dim colTaskCode As Long
+    Dim colSequence As Long
+    Dim colRowId As Long
+    Dim linkKey As String
+    Dim rowId As String
+
+    Set GetAssociatedTaskRows = result
+
+    If sourceRow Is Nothing Or tbl Is Nothing Then Exit Function
+    If tbl.DataBodyRange Is Nothing Then Exit Function
+
+    colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
+    colSequence = GetTableColumnIndex(tbl, HDR_TASK_SEQUENCE)
+    colRowId = GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)
+    If colTaskCode = 0 Or colSequence = 0 Or colRowId = 0 Then Exit Function
+
+    sourceRowId = Trim$(CStr(sourceRow.Range.Cells(1, colRowId).Value))
+    sourceKey = BuildAssociatedLinkKey( _
+        CStr(sourceRow.Range.Cells(1, colTaskCode).Value), _
+        CStr(sourceRow.Range.Cells(1, colSequence).Value))
+
+    If Len(sourceKey) <= 1 Then Exit Function
+
+    For Each row In tbl.ListRows
+        rowId = Trim$(CStr(row.Range.Cells(1, colRowId).Value))
+        If StrComp(rowId, sourceRowId, vbTextCompare) = 0 Then GoTo NextAssocRow
+
+        linkKey = BuildAssociatedLinkKey( _
+            CStr(row.Range.Cells(1, colTaskCode).Value), _
+            CStr(row.Range.Cells(1, colSequence).Value))
+
+        If StrComp(linkKey, sourceKey, vbTextCompare) = 0 Then
+            result.Add row
+        End If
+NextAssocRow:
+    Next row
+End Function
+
+Public Function ExpandSelectionWithAssociatedTasks(ByVal selectedRowIds As Object, _
+                                                   ByVal tbl As ListObject, _
+                                                   ByRef autoClaimed As Collection) As Object
+    Dim expanded As Object
+    Dim rowId As Variant
+    Dim row As ListRow
+    Dim assocRows As Collection
+    Dim assocRow As Variant
+    Dim assocId As String
+    Dim colRowId As Long
+    Dim colTaskCode As Long
+    Dim sourceCode As String
+    Dim assocCode As String
+
+    Set expanded = CreateObject("Scripting.Dictionary")
+    Set autoClaimed = New Collection
+    Set ExpandSelectionWithAssociatedTasks = expanded
+
+    If selectedRowIds Is Nothing Or tbl Is Nothing Then Exit Function
+
+    colRowId = GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)
+    colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
+    If colRowId = 0 Or colTaskCode = 0 Then Exit Function
+
+    For Each rowId In selectedRowIds.Keys
+        expanded(CStr(rowId)) = True
+    Next rowId
+
+    For Each rowId In selectedRowIds.Keys
+        Set row = FindSITSRowById(tbl, CStr(rowId))
+        If row Is Nothing Then GoTo NextSelected
+
+        sourceCode = Trim$(CStr(row.Range.Cells(1, colTaskCode).Value))
+        Set assocRows = GetAssociatedTaskRows(row, tbl)
+
+        For Each assocRow In assocRows
+            assocId = Trim$(CStr(assocRow.Range.Cells(1, colRowId).Value))
+            If Len(assocId) = 0 Then GoTo NextAssoc
+            If expanded.Exists(assocId) Then GoTo NextAssoc
+
+            expanded(assocId) = True
+            assocCode = Trim$(CStr(assocRow.Range.Cells(1, colTaskCode).Value))
+            autoClaimed.Add sourceCode & " also claims " & assocCode
+NextAssoc:
+        Next assocRow
+NextSelected:
+    Next rowId
+End Function
+
+Public Function FindSITSRowById(ByVal tbl As ListObject, ByVal sitsRowId As String) As ListRow
+    Dim row As ListRow
+    Dim colRowId As Long
+
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+    colRowId = GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)
+    If colRowId = 0 Then Exit Function
+
+    sitsRowId = Trim$(sitsRowId)
+    For Each row In tbl.ListRows
+        If StrComp(Trim$(CStr(row.Range.Cells(1, colRowId).Value)), sitsRowId, vbTextCompare) = 0 Then
+            Set FindSITSRowById = row
+            Exit Function
+        End If
+    Next row
+End Function
+
+Public Function DescribeAssociatedClaims(ByVal autoClaimed As Collection) As String
+    Dim i As Long
+    Dim result As String
+    Dim maxLines As Long
+
+    If autoClaimed Is Nothing Or autoClaimed.Count = 0 Then Exit Function
+
+    maxLines = autoClaimed.Count
+    If maxLines > 12 Then maxLines = 12
+
+    result = "Associated tasks will also be claimed:" & vbCrLf
+    For i = 1 To maxLines
+        result = result & "• " & CStr(autoClaimed(i)) & vbCrLf
+    Next i
+
+    If autoClaimed.Count > maxLines Then
+        result = result & "• … and " & (autoClaimed.Count - maxLines) & " more" & vbCrLf
+    End If
+
+    DescribeAssociatedClaims = result
+End Function

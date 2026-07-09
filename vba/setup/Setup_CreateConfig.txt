@@ -80,5 +80,5 @@ Private Sub WriteConfigNotes()
     ws.Range("I2").Value = "Master template: run Setup_RunAll once, save, then copy per tail."
     ws.Range("I3").Value = "Run Setup Wizard on each aircraft copy to declare tail and import data."
     ws.Range("I4").Value = "SITS import: strict required columns; abort if any missing."
-    ws.Range("I5").Value = "ORN pattern: ####ZZ#########"
+    ws.Range("I5").Value = "ORN format: ####TAILDDMMYY (tail must match aircraft; DDMMYY must be a real date)."
 End Sub

@@ -15,7 +15,7 @@ Private Const SITS_FORECAST_DAYS_CELL As String = "B4"
 Private Const SITS_SELECTOR_COL As Long = 1
 Private Const SITS_VISIBLE_COLUMN_COUNT As Long = 10
 Private Const SITS_HEADER_ROW_HEIGHT_PX As Double = 40
-Private Const SITS_BTN_WIDTH As Double = 110
+Private Const SITS_BTN_WIDTH As Double = 130
 Private Const SITS_BTN_HEIGHT As Double = 22
 Private Const SITS_SORT_KEY_MISSING As Double = 9.9E+307
 Private Const SITS_CHECKBOX_HIDE_FORMAT As String = ";;;"
@@ -73,6 +73,7 @@ Public Sub RecalculateSITS()
     If tbl Is Nothing Then Exit Sub
 
     EnsureSITSBaselineColumns tbl
+    EnsureWorkPackageSITSColumns tbl
 
     colInterval = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)
     colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
@@ -201,7 +202,7 @@ Public Sub RefreshSITSView()
 
     wsView.Cells.Clear
     WriteSITSViewShell wsView
-    AddSITSRefreshButton wsView
+    AddSITSViewActionButtons wsView
 
     outputCol = 1
     For Each columnName In viewColumns
@@ -266,7 +267,7 @@ NextCollectRow:
 
                 ApplySITSViewRowWarnings wsView, outputRow, SITS_VISIBLE_COLUMN_COUNT, _
                     intervalCode, lifeHoursFraction, daysUntilDue, _
-                    warnHoursFraction, warnDays
+                    warnHoursFraction, warnDays, row, tbl
 
                 outputRow = outputRow + 1
             Next entryIndex
@@ -610,7 +611,7 @@ Private Sub WriteSITSViewShell(ByVal ws As Worksheet)
     ws.Range("B4").Value = GetForecastDaysSetting()
     ws.Range("B4").NumberFormat = FORMAT_GENERAL
 
-    ws.Range("A5").Value = "Use filter dropdowns on row 7 to hide interval types. Check a task to select it for future work packages."
+    ws.Range("A5").Value = "Tick tasks, then Create Work Package. Use Manage Work Packages to delete or close open ORNs. Filter dropdowns on row 7 hide interval types."
     ws.Range("A5").Font.Size = 9
     ws.Range("A5").Font.Italic = True
 End Sub
@@ -635,7 +636,7 @@ Private Sub ClearSITSViewControls(ByVal ws As Worksheet)
     On Error GoTo 0
 End Sub
 
-Private Sub AddSITSRefreshButton(ByVal ws As Worksheet)
+Private Sub AddSITSViewActionButtons(ByVal ws As Worksheet)
     Dim btn As Button
     Dim anchor As Range
 
@@ -643,6 +644,18 @@ Private Sub AddSITSRefreshButton(ByVal ws As Worksheet)
     Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, SITS_BTN_WIDTH, SITS_BTN_HEIGHT)
     btn.OnAction = "RunRefreshSITS"
     btn.Caption = "Refresh View"
+    btn.Placement = xlFreeFloating
+
+    Set anchor = ws.Range("F1")
+    Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, SITS_BTN_WIDTH + 20, SITS_BTN_HEIGHT)
+    btn.OnAction = "RunCreateWorkPackage"
+    btn.Caption = "Create Work Package"
+    btn.Placement = xlFreeFloating
+
+    Set anchor = ws.Range("H1")
+    Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, SITS_BTN_WIDTH + 30, SITS_BTN_HEIGHT)
+    btn.OnAction = "RunManageWorkPackages"
+    btn.Caption = "Manage Work Packages"
     btn.Placement = xlFreeFloating
 End Sub
 
@@ -840,8 +853,22 @@ Private Sub WriteSITSViewCell(ByVal sourceRow As ListRow, _
         Exit Sub
     End If
 
+    If StrComp(columnName, HDR_TASK_DESCRIPTION, vbTextCompare) = 0 Then
+        target.Value = sourceCell.Value
+        target.NumberFormat = FORMAT_GENERAL
+        CopySITSDescriptionComment sourceCell, target
+        Exit Sub
+    End If
+
     target.Value = sourceCell.Value
     target.NumberFormat = FORMAT_GENERAL
+End Sub
+
+Private Sub CopySITSDescriptionComment(ByVal sourceCell As Range, ByVal target As Range)
+    Dim commentText As String
+
+    commentText = GetCellCommentText(sourceCell)
+    SetCellCommentText target, commentText
 End Sub
 
 Private Sub WriteSITSViewLifeRemaining(ByVal sourceRow As ListRow, _
@@ -985,21 +1012,33 @@ Private Sub ApplySITSViewRowWarnings(ByVal ws As Worksheet, _
                                      ByVal lifeHoursFraction As Double, _
                                      ByVal daysUntilDue As Long, _
                                      ByVal warnHoursFraction As Double, _
-                                     ByVal warnDays As Long)
+                                     ByVal warnDays As Long, _
+                                     ByVal sourceRow As ListRow, _
+                                     ByVal tbl As ListObject)
     Dim warnColor As Long
+    Dim colFlag As Long
 
     warnColor = 0
 
-    Select Case intervalCode
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            If lifeHoursFraction >= 0# And lifeHoursFraction <= warnHoursFraction Then
-                warnColor = RGB(255, 199, 206)
-            End If
-        Case TYPE_DD
-            If daysUntilDue >= 0 And daysUntilDue <= warnDays Then
-                warnColor = RGB(255, 199, 206)
-            End If
-    End Select
+    colFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
+    If colFlag > 0 Then
+        If ConvertToBoolean(sourceRow.Range.Cells(1, colFlag).Value) Then
+            warnColor = COLOR_MANUAL_AMBER
+        End If
+    End If
+
+    If warnColor = 0 Then
+        Select Case intervalCode
+            Case TYPE_HH, TYPE_E1, TYPE_E2
+                If lifeHoursFraction >= 0# And lifeHoursFraction <= warnHoursFraction Then
+                    warnColor = COLOR_WARN_PINK
+                End If
+            Case TYPE_DD
+                If daysUntilDue >= 0 And daysUntilDue <= warnDays Then
+                    warnColor = COLOR_WARN_PINK
+                End If
+        End Select
+    End If
 
     If warnColor <> 0 Then
         ws.Range(ws.Cells(rowIndex, 1), ws.Cells(rowIndex, colCount)).Interior.Color = warnColor
@@ -1091,6 +1130,7 @@ Public Sub EnsureSITSBaselineColumns(ByVal tbl As ListObject)
     EnsureTableColumn tbl, HDR_BASELINE_LR_HOURS
     EnsureTableColumn tbl, HDR_BASELINE_LR_NUMBER
     EnsureTableColumn tbl, HDR_BASELINE_DAYS_DUE
+    EnsureTableColumn tbl, HDR_NEEDS_MANUAL_UPDATE
 End Sub
 
 Private Sub EnsureUsageSnapshotTable(ByVal ws As Worksheet)

@@ -9,7 +9,7 @@ Option Explicit
 
 ' --- Workbook identity ---
 Public Const APP_NAME As String = "Offline Aircraft SITS"
-Public Const APP_VERSION As String = "2.0.0"
+Public Const APP_VERSION As String = "2.1.0"
 Public Const AIRCRAFT_TYPE As String = "Wildcat"
 
 ' --- Visible sheets ---
@@ -105,6 +105,12 @@ Public Const HDR_WP_COMPLETED_AT As String = "CompletedAt"
 Public Const HDR_WP_TASK_ORN As String = "ORN"
 Public Const HDR_WP_TASK_ROW_ID As String = "SITS_RowID"
 Public Const HDR_WP_TASK_COMPLETED As String = "Completed"
+Public Const HDR_NEEDS_MANUAL_UPDATE As String = "Needs Manual Update"
+
+' --- Work package status values ---
+Public Const WP_STATUS_OPEN As String = "Open"
+Public Const WP_STATUS_CLOSED As String = "Closed"
+Public Const WP_STATUS_DELETED As String = "Deleted"
 
 ' --- Config keys (tblConfig Setting column) ---
 Public Const CFG_TAIL_NUMBER As String = "TailNumber"
@@ -136,6 +142,9 @@ Public Const FAULT_PT3_D As String = "PT3-D"
 Public Const FAULT_PT3_H As String = "PT3-H"
 
 ' --- Named ranges ---
+Public Const NAMED_OPEN_WP_COUNT As String = "Open_WP_Count"
+Public Const NAMED_MANUAL_UPDATE_COUNT As String = "Manual_Update_Count"
+' Legacy names retained for older workbooks during upgrade
 Public Const NAMED_ACTIVE_WP As String = "Active_WP"
 Public Const NAMED_EXTENSION_SNOW As String = "Extension_SNOW"
 
@@ -156,12 +165,16 @@ Public Const FORMAT_TYPE_NUMBER As String = "Number"
 Public Const COLOR_HEADER_BLUE As Long = 9851952      ' RGB(47, 84, 150)
 Public Const COLOR_HEADER_GREY As Long = 12632256     ' RGB(192, 192, 192)
 Public Const COLOR_INPUT_HIGHLIGHT As Long = 12774592 ' RGB(193, 240, 200)
+Public Const COLOR_WARN_PINK As Long = 13551615       ' RGB(255, 199, 206)
+Public Const COLOR_MANUAL_AMBER As Long = 49151        ' RGB(255, 191, 0)
 Public Const COLOR_TAB_VISIBLE As Long = 9851952
 Public Const COLOR_TAB_DATA As Long = 49407           ' RGB(255, 192, 0)
 Public Const COLOR_TAB_SYSTEM As Long = 12632256
 
 ' --- Validation ---
 Public Const ORN_FORMAT_PATTERN As String = "####ZZ#########"
+Public Const ORN_PREFIX_DIGITS As Long = 4
+Public Const ORN_DATE_DIGITS As Long = 6
 Public Const MAX_EXTENSION_STANDARD As Double = 0.1
 Public Const MAX_EXTENSION_EXTENDED As Double = 0.2
 Public Const ASSOCIATED_TASK_SUFFIX As String = "/1"
