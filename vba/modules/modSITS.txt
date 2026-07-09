@@ -810,7 +810,7 @@ Private Sub WriteSITSViewShell(ByVal ws As Worksheet, _
     ws.Range("B5").Value = forecastNumber
     ws.Range("B5").NumberFormat = FORMAT_GENERAL
 
-    ws.Range("A6").Value = "Tick tasks, then Create Work Package. Use Manage Work Packages to delete or close open ORNs. Filter dropdowns on row 7 hide interval types."
+    ws.Range("A6").Value = "Tick tasks, then Create Work Package or Remove Task. Use Add Task to enter a new row. Manage Work Packages deletes or closes open ORNs. Filter dropdowns on row 7 hide interval types."
     ws.Range("A6").Font.Size = 9
     ws.Range("A6").Font.Italic = True
 End Sub
@@ -854,6 +854,18 @@ Private Sub AddSITSViewActionButtons(ByVal ws As Worksheet)
     Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, SITS_BTN_WIDTH + 30, SITS_BTN_HEIGHT)
     btn.OnAction = "RunManageWorkPackages"
     btn.Caption = "Manage Work Packages"
+    btn.Placement = xlFreeFloating
+
+    Set anchor = ws.Range("H3")
+    Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, SITS_BTN_WIDTH, SITS_BTN_HEIGHT)
+    btn.OnAction = "RunAddSITSTask"
+    btn.Caption = "Add Task"
+    btn.Placement = xlFreeFloating
+
+    Set anchor = ws.Range("J3")
+    Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, SITS_BTN_WIDTH, SITS_BTN_HEIGHT)
+    btn.OnAction = "RunRemoveSITSTasks"
+    btn.Caption = "Remove Task"
     btn.Placement = xlFreeFloating
 End Sub
 

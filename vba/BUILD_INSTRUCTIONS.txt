@@ -49,6 +49,7 @@ Runtime modules:
   vba/modules/modSetupWizard.txt        modSetupWizard
   vba/modules/modUsageLog.txt           modUsageLog
   vba/modules/modSITS.txt               modSITS
+  vba/modules/modSITSEdit.txt           modSITSEdit
   vba/modules/modAssociatedTasks.txt    modAssociatedTasks
   vba/modules/modWorkPackage.txt        modWorkPackage
 
@@ -193,6 +194,24 @@ What Phase 4 includes
 - Zero-interval manual-update flag + amber highlight + Dashboard count
 - Dashboard open WP count (Active WP / Extension SNOW placeholders removed)
 
+Manual Add / Remove Task (SITS view)
+------------------------------------
+- modSITSEdit — Add Task / Remove Task entry points
+- SITS buttons (H3/J3): Add Task, Remove Task (recreated on Refresh View)
+- Add Task: sequential InputBox prompts for import-required fields
+  (Interval Type Code, Life Remaining, Task Code, Task Sequence,
+  Task Description, Serial, Actual Interval, Extension, End Item Serial).
+  End Item Serial defaults to the configured tail and must match it.
+  System-only columns (Selector, ORNs, completion fields, baselines,
+  SITS_RowID, Needs Manual Update, current usage, optional import extras)
+  are not prompted. Summary confirmation precedes insert; new rows appear
+  on the view only if they pass the current forecast filter.
+- Remove Task: uses existing Selector checkboxes. If none selected, prompts
+  to select first. Confirmation lists all selected tasks and warns the
+  delete is irreversible. IN WORK rows have no checkbox and cannot be
+  selected. Orphan tblWPTasks links for deleted RowIDs are cleaned up.
+- Audit: SITS_TASK_ADDED / SITS_TASKS_REMOVED
+
 What is NOT included yet
 ------------------------
 - Extensions / deferrals UI (Phase 5)
@@ -236,14 +255,15 @@ Sample files in repo root:
 
 Upgrading an existing Phase 0–3 workbook to Phase 4
 -----------------------------------------------------
-1. Import new modules: modAssociatedTasks, modWorkPackage, and updated modules.
+1. Import new modules: modAssociatedTasks, modWorkPackage, modSITSEdit, and updated modules.
 2. Create frmWorkPackage from the layout + code files.
 3. Re-run **Setup_CreateNamedRanges** and **Rebuild Dashboard** (or Phase 0 Setup
    on a fresh copy) so Open_WP_Count / Manual_Update_Count exist.
 4. Re-run **Setup_CreateTables** only on a fresh copy if you need the new
    Needs Manual Update column created by setup — runtime Ensure* helpers also
    add the column when missing.
-5. Refresh the SITS view to recreate Create/Manage Work Package buttons.
+5. Refresh the SITS view to recreate Create/Manage Work Package buttons
+   (and Add Task / Remove Task after importing modSITSEdit).
 
 Troubleshooting
 ---------------

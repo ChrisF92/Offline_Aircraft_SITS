@@ -1,0 +1,710 @@
+Option Explicit
+
+' ========================================================================
+' SITS EDIT MODULE — Offline Aircraft SITS v2
+' ========================================================================
+' Manual Add Task / Remove Task from the SITS view.
+' Add: sequential InputBox prompts for import-required fields, validate,
+'      confirm summary, insert into tblSITS, recalc + refresh (forecast
+'      filter decides visibility).
+' Remove: reuse Selector checkboxes; confirm irreversible delete of the
+'         whole selection (listed); delete from tblSITS (+ orphan WP links).
+' ========================================================================
+
+Private Type SITSManualTaskDraft
+    IntervalTypeCode As String
+    LifeRemainingText As String
+    TaskCode As String
+    TaskSequence As String
+    TaskDescription As String
+    Serial As String
+    ActualIntervalText As String
+    ExtensionText As String
+    EndItemSerial As String
+End Type
+
+Public Sub RunAddSITSTask()
+    AddSITSTaskManually
+End Sub
+
+Public Sub RunRemoveSITSTasks()
+    RemoveSelectedSITSTasks
+End Sub
+
+Public Function AddSITSTaskManually() As Boolean
+    Const PROC_NAME As String = "AddSITSTaskManually"
+
+    Dim draft As SITSManualTaskDraft
+    Dim failReason As String
+    Dim tbl As ListObject
+    Dim newRow As ListRow
+    Dim rowId As String
+    Dim tailNumber As String
+
+    AddSITSTaskManually = False
+
+    If Not ValidateSetupReady() Then Exit Function
+
+    Set tbl = GetSITSEditTable(True)
+    If tbl Is Nothing Then Exit Function
+    If Not ValidateSITSColumns(tbl) Then Exit Function
+
+    tailNumber = GetTailNumber()
+
+    If Not PromptManualSITSTaskFields(draft, tailNumber, failReason) Then
+        If Len(failReason) > 0 And StrComp(failReason, "Cancelled.", vbTextCompare) <> 0 Then
+            MsgBox failReason, vbExclamation, APP_NAME
+        End If
+        Exit Function
+    End If
+
+    If Not ConfirmManualSITSTask(draft) Then Exit Function
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+    Application.StatusBar = "Adding SITS task…"
+
+    rowId = GenerateNextSITSRowId(tbl)
+    Set newRow = tbl.ListRows.Add
+    WriteManualSITSTaskRow tbl, newRow, draft, rowId
+
+    ApplyWorkbookDataFormats
+    RecalculateSITS
+    RefreshSITSView
+    SetExcelState "enable"
+
+    LogAction "SITS_TASK_ADDED", "", _
+              "RowID=" & rowId & "; Code=" & draft.TaskCode & _
+              "; Seq=" & draft.TaskSequence & "; Interval=" & draft.IntervalTypeCode
+
+    AddSITSTaskManually = True
+    MsgBox "Task added (" & rowId & ")." & vbCrLf & vbCrLf & _
+           "It appears on the SITS view only if it is within the current forecast filter.", _
+           vbInformation, APP_NAME
+    Exit Function
+
+ErrorHandler:
+    SetExcelState "enable"
+    LogError PROC_NAME, Err.Number, Err.Description
+    MsgBox "Add task error: " & Err.Number & " - " & Err.Description, vbCritical, APP_NAME
+End Function
+
+Public Function RemoveSelectedSITSTasks() As Boolean
+    Const PROC_NAME As String = "RemoveSelectedSITSTasks"
+
+    Dim tbl As ListObject
+    Dim selectedIds As Object
+    Dim rowIndex As Object
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim rowsToDelete As Collection
+    Dim deleteRow As Variant
+    Dim confirmList As String
+    Dim deletedCount As Long
+    Dim detailParts As String
+    Dim colTaskCode As Long
+    Dim colSeq As Long
+    Dim colDesc As Long
+    Dim taskCode As String
+    Dim taskSeq As String
+    Dim taskDesc As String
+    Dim line As String
+    Dim maxLines As Long
+    Dim listed As Long
+
+    RemoveSelectedSITSTasks = False
+
+    If Not ValidateSetupReady() Then Exit Function
+
+    Set tbl = GetSITSEditTable(True)
+    If tbl Is Nothing Then Exit Function
+    If Not ValidateSITSColumns(tbl) Then Exit Function
+
+    Set rowIndex = BuildSITSRowIdIndex(tbl)
+    Set selectedIds = CollectSelectedFromSITSView(tbl, rowIndex)
+
+    If selectedIds Is Nothing Or selectedIds.Count = 0 Then
+        MsgBox "Tick one or more tasks on the SITS view, then click Remove Task.", _
+               vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
+    colSeq = GetTableColumnIndex(tbl, HDR_TASK_SEQUENCE)
+    colDesc = GetTableColumnIndex(tbl, HDR_TASK_DESCRIPTION)
+
+    maxLines = 25
+    listed = 0
+    confirmList = ""
+    detailParts = ""
+
+    For Each rowId In selectedIds.Keys
+        Set sitsRow = ResolveSITSRowById(rowIndex, tbl, CStr(rowId))
+        If sitsRow Is Nothing Then GoTo NextConfirmRow
+
+        taskCode = ""
+        taskSeq = ""
+        taskDesc = ""
+        If colTaskCode > 0 Then taskCode = Trim$(CStr(sitsRow.Range.Cells(1, colTaskCode).Value))
+        If colSeq > 0 Then taskSeq = Trim$(CStr(sitsRow.Range.Cells(1, colSeq).Value))
+        If colDesc > 0 Then taskDesc = Trim$(CStr(sitsRow.Range.Cells(1, colDesc).Value))
+
+        line = "• " & CStr(rowId)
+        If Len(taskCode) > 0 Then line = line & "  " & taskCode
+        If Len(taskSeq) > 0 Then line = line & " / " & taskSeq
+        If Len(taskDesc) > 0 Then line = line & " — " & Left$(taskDesc, 60)
+
+        listed = listed + 1
+        If listed <= maxLines Then
+            If Len(confirmList) > 0 Then confirmList = confirmList & vbCrLf
+            confirmList = confirmList & line
+        End If
+
+        If Len(detailParts) > 0 Then detailParts = detailParts & "; "
+        detailParts = detailParts & CStr(rowId)
+NextConfirmRow:
+    Next rowId
+
+    If listed = 0 Then
+        MsgBox "Tick one or more tasks on the SITS view, then click Remove Task.", _
+               vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If listed > maxLines Then
+        confirmList = confirmList & vbCrLf & "• … and " & (listed - maxLines) & " more"
+    End If
+
+    If MsgBox( _
+        "Delete " & listed & " selected task(s) from SITS?" & vbCrLf & vbCrLf & _
+        confirmList & vbCrLf & vbCrLf & _
+        "This cannot be undone.", _
+        vbQuestion + vbYesNo + vbDefaultButton2, _
+        APP_NAME) <> vbYes Then Exit Function
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+    Application.StatusBar = "Removing SITS task(s)…"
+
+    ' Delete highest ListRow.Index first so earlier indices stay valid.
+    Set rowIndex = BuildSITSRowIdIndex(tbl)
+    Set rowsToDelete = New Collection
+
+    For Each rowId In selectedIds.Keys
+        Set sitsRow = ResolveSITSRowById(rowIndex, tbl, CStr(rowId))
+        If Not sitsRow Is Nothing Then
+            InsertListRowDescending rowsToDelete, sitsRow
+        End If
+        RemoveWPTaskLinksForSITSRowId CStr(rowId)
+    Next rowId
+
+    For Each deleteRow In rowsToDelete
+        deleteRow.Delete
+        deletedCount = deletedCount + 1
+    Next deleteRow
+
+    RefreshSITSView
+    SetExcelState "enable"
+
+    LogAction "SITS_TASKS_REMOVED", "", _
+              "Count=" & deletedCount & "; " & Left$(detailParts, 180)
+
+    RemoveSelectedSITSTasks = True
+    MsgBox "Removed " & deletedCount & " task(s) from SITS.", vbInformation, APP_NAME
+    Exit Function
+
+ErrorHandler:
+    SetExcelState "enable"
+    LogError PROC_NAME, Err.Number, Err.Description
+    MsgBox "Remove task error: " & Err.Number & " - " & Err.Description, vbCritical, APP_NAME
+End Function
+
+' ------------------------------------------------------------------------
+' Add — prompts / validation / write
+' ------------------------------------------------------------------------
+
+Private Function PromptManualSITSTaskFields(ByRef draft As SITSManualTaskDraft, _
+                                            ByVal tailNumber As String, _
+                                            ByRef failReason As String) As Boolean
+    Dim entered As String
+    Dim normalisedTail As String
+    Dim fieldFail As String
+    Dim cancelled As Boolean
+
+    failReason = ""
+    normalisedTail = NormaliseTailText(tailNumber)
+
+    Do
+        entered = PromptFieldValue( _
+            "Interval Type Code", _
+            "Enter Interval Type Code (e.g. HH, DD, E1, E2, SM, SN).", _
+            draft.IntervalTypeCode, cancelled)
+        If cancelled Then failReason = "Cancelled.": Exit Function
+        If Len(Trim$(entered)) = 0 Then
+            MsgBox "Interval Type Code is required.", vbExclamation, APP_NAME
+            GoTo NextIntervalCode
+        End If
+        draft.IntervalTypeCode = UCase$(Trim$(entered))
+        fieldFail = ""
+        If ValidateIntervalTypeCode(draft.IntervalTypeCode, fieldFail) Then Exit Do
+        MsgBox fieldFail, vbExclamation, APP_NAME
+NextIntervalCode:
+    Loop
+
+    Do
+        entered = PromptFieldValue( _
+            "Life Remaining", _
+            LifeRemainingPromptHint(draft.IntervalTypeCode), _
+            draft.LifeRemainingText, cancelled)
+        If cancelled Then failReason = "Cancelled.": Exit Function
+        If Len(Trim$(entered)) = 0 Then
+            MsgBox "Life Remaining is required.", vbExclamation, APP_NAME
+            GoTo NextLifeRemaining
+        End If
+        draft.LifeRemainingText = Trim$(entered)
+        fieldFail = ""
+        If ValidateLifeRemainingText(draft.IntervalTypeCode, draft.LifeRemainingText, fieldFail) Then Exit Do
+        MsgBox fieldFail, vbExclamation, APP_NAME
+NextLifeRemaining:
+    Loop
+
+    Do
+        entered = PromptFieldValue("Task Code", "Enter Task Code.", draft.TaskCode, cancelled)
+        If cancelled Then failReason = "Cancelled.": Exit Function
+        If Len(Trim$(entered)) = 0 Then
+            MsgBox "Task Code is required.", vbExclamation, APP_NAME
+        Else
+            draft.TaskCode = Trim$(entered)
+            Exit Do
+        End If
+    Loop
+
+    Do
+        entered = PromptFieldValue("Task Sequence", "Enter Task Sequence.", draft.TaskSequence, cancelled)
+        If cancelled Then failReason = "Cancelled.": Exit Function
+        If Len(Trim$(entered)) = 0 Then
+            MsgBox "Task Sequence is required.", vbExclamation, APP_NAME
+        Else
+            draft.TaskSequence = Trim$(entered)
+            Exit Do
+        End If
+    Loop
+
+    Do
+        entered = PromptFieldValue("Task Description", "Enter Task Description.", _
+                                   draft.TaskDescription, cancelled)
+        If cancelled Then failReason = "Cancelled.": Exit Function
+        If Len(Trim$(entered)) = 0 Then
+            MsgBox "Task Description is required.", vbExclamation, APP_NAME
+        Else
+            draft.TaskDescription = Trim$(entered)
+            Exit Do
+        End If
+    Loop
+
+    Do
+        entered = PromptFieldValue( _
+            "Serial", _
+            "Enter Serial (component / end-item serial for this task).", _
+            draft.Serial, cancelled)
+        If cancelled Then failReason = "Cancelled.": Exit Function
+        If Len(Trim$(entered)) = 0 Then
+            MsgBox "Serial is required.", vbExclamation, APP_NAME
+        Else
+            draft.Serial = Trim$(entered)
+            Exit Do
+        End If
+    Loop
+
+    Do
+        entered = PromptFieldValue( _
+            "Actual Interval", _
+            ActualIntervalPromptHint(draft.IntervalTypeCode), _
+            draft.ActualIntervalText, cancelled)
+        If cancelled Then failReason = "Cancelled.": Exit Function
+        If Len(Trim$(entered)) = 0 Then
+            MsgBox "Actual Interval is required.", vbExclamation, APP_NAME
+            GoTo NextActualInterval
+        End If
+        draft.ActualIntervalText = Trim$(entered)
+        fieldFail = ""
+        If ValidateScalarIntervalText(draft.IntervalTypeCode, draft.ActualIntervalText, _
+                                      "Actual Interval", fieldFail) Then Exit Do
+        MsgBox fieldFail, vbExclamation, APP_NAME
+NextActualInterval:
+    Loop
+
+    Do
+        entered = PromptFieldValue( _
+            "Extension", _
+            ExtensionPromptHint(draft.IntervalTypeCode), _
+            IIf(Len(draft.ExtensionText) > 0, draft.ExtensionText, "0"), _
+            cancelled)
+        If cancelled Then failReason = "Cancelled.": Exit Function
+        If Len(Trim$(entered)) = 0 Then
+            MsgBox "Extension is required (use 0 if none).", vbExclamation, APP_NAME
+            GoTo NextExtension
+        End If
+        draft.ExtensionText = Trim$(entered)
+        fieldFail = ""
+        If ValidateScalarIntervalText(draft.IntervalTypeCode, draft.ExtensionText, _
+                                      "Extension", fieldFail) Then Exit Do
+        MsgBox fieldFail, vbExclamation, APP_NAME
+NextExtension:
+    Loop
+
+    Do
+        entered = PromptFieldValue( _
+            "End Item Serial", _
+            "Enter End Item Serial (must match configured tail " & tailNumber & ").", _
+            IIf(Len(draft.EndItemSerial) > 0, draft.EndItemSerial, normalisedTail), _
+            cancelled)
+        If cancelled Then failReason = "Cancelled.": Exit Function
+        If Len(Trim$(entered)) = 0 Then
+            MsgBox "End Item Serial is required.", vbExclamation, APP_NAME
+            GoTo NextEndItem
+        End If
+        draft.EndItemSerial = Trim$(entered)
+        If NormaliseTailText(draft.EndItemSerial) = normalisedTail Then Exit Do
+        MsgBox "End Item Serial must match the configured tail (" & tailNumber & ").", _
+               vbExclamation, APP_NAME
+NextEndItem:
+    Loop
+
+    PromptManualSITSTaskFields = True
+End Function
+
+Private Function PromptFieldValue(ByVal fieldName As String, _
+                                  ByVal promptText As String, _
+                                  ByVal defaultValue As String, _
+                                  ByRef cancelled As Boolean) As String
+    Dim entered As String
+
+    cancelled = False
+    entered = InputBox(promptText & vbCrLf & vbCrLf & "Field: " & fieldName, _
+                       APP_NAME, defaultValue)
+
+    If StrPtr(entered) = 0 Then
+        cancelled = True
+        Exit Function
+    End If
+
+    PromptFieldValue = entered
+End Function
+
+Private Function ConfirmManualSITSTask(ByRef draft As SITSManualTaskDraft) As Boolean
+    Dim summary As String
+
+    summary = "Add this task to SITS?" & vbCrLf & vbCrLf & _
+              "Interval Type Code: " & draft.IntervalTypeCode & vbCrLf & _
+              "Life Remaining: " & draft.LifeRemainingText & vbCrLf & _
+              "Task Code: " & draft.TaskCode & vbCrLf & _
+              "Task Sequence: " & draft.TaskSequence & vbCrLf & _
+              "Task Description: " & draft.TaskDescription & vbCrLf & _
+              "Serial: " & draft.Serial & vbCrLf & _
+              "Actual Interval: " & draft.ActualIntervalText & vbCrLf & _
+              "Extension: " & draft.ExtensionText & vbCrLf & _
+              "End Item Serial: " & draft.EndItemSerial & vbCrLf & vbCrLf & _
+              "Continue?"
+
+    ConfirmManualSITSTask = (MsgBox(summary, _
+                                    vbQuestion + vbYesNo + vbDefaultButton2, _
+                                    APP_NAME) = vbYes)
+End Function
+
+Private Function ValidateIntervalTypeCode(ByVal intervalCode As String, _
+                                          ByRef failReason As String) As Boolean
+    If Len(Trim$(intervalCode)) = 0 Then
+        failReason = "Interval Type Code is required."
+        Exit Function
+    End If
+
+    ' Accept known codes and other short alphanumeric interval codes used in exports.
+    If Not intervalCode Like "[A-Z0-9][A-Z0-9]*" Then
+        failReason = "Interval Type Code must be letters/digits (e.g. HH, DD, E1, SM)."
+        Exit Function
+    End If
+
+    If Len(intervalCode) > 8 Then
+        failReason = "Interval Type Code is too long."
+        Exit Function
+    End If
+
+    ValidateIntervalTypeCode = True
+End Function
+
+Private Function ValidateLifeRemainingText(ByVal intervalCode As String, _
+                                           ByVal textValue As String, _
+                                           ByRef failReason As String) As Boolean
+    Dim parsedDate As Variant
+
+    If UCase$(Trim$(intervalCode)) = TYPE_DD Then
+        If Len(Trim$(textValue)) = 0 Then
+            failReason = "Life Remaining is required."
+            Exit Function
+        End If
+        parsedDate = ParseDMYDateValue(textValue, textValue)
+        If IsDate(parsedDate) Then
+            ValidateLifeRemainingText = True
+            Exit Function
+        End If
+        If IsNumeric(textValue) Then
+            ValidateLifeRemainingText = True
+            Exit Function
+        End If
+        failReason = "Life Remaining must be a number of days or a date (dd/mm/yyyy)."
+        Exit Function
+    End If
+
+    ValidateLifeRemainingText = ValidateScalarIntervalText(intervalCode, textValue, _
+                                                           "Life Remaining", failReason)
+End Function
+
+Private Function ValidateScalarIntervalText(ByVal intervalCode As String, _
+                                            ByVal textValue As String, _
+                                            ByVal fieldName As String, _
+                                            ByRef failReason As String) As Boolean
+    Dim parsedTime As Variant
+
+    If Len(Trim$(textValue)) = 0 Then
+        failReason = fieldName & " is required."
+        Exit Function
+    End If
+
+    If UsesHourFormatForManualEntry(intervalCode) Then
+        If InStr(textValue, ":") > 0 Then
+            parsedTime = ParseTimeUsageValue(textValue, textValue)
+            If IsEmpty(parsedTime) Then
+                failReason = fieldName & " must be a valid time (h:mm) or number."
+                Exit Function
+            End If
+            ValidateScalarIntervalText = True
+            Exit Function
+        End If
+    End If
+
+    If Not IsNumeric(textValue) Then
+        failReason = fieldName & " must be numeric" & _
+                     IIf(UsesHourFormatForManualEntry(intervalCode), " or h:mm time", "") & "."
+        Exit Function
+    End If
+
+    ValidateScalarIntervalText = True
+End Function
+
+Private Function UsesHourFormatForManualEntry(ByVal intervalCode As String) As Boolean
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            UsesHourFormatForManualEntry = True
+    End Select
+End Function
+
+Private Function LifeRemainingPromptHint(ByVal intervalCode As String) As String
+    If UsesHourFormatForManualEntry(intervalCode) Then
+        LifeRemainingPromptHint = "Enter Life Remaining as hours (h:mm) or a decimal day-fraction number."
+    ElseIf UCase$(Trim$(intervalCode)) = TYPE_DD Then
+        LifeRemainingPromptHint = "Enter Life Remaining / days when due (number of days, or a due date as dd/mm/yyyy)."
+    Else
+        LifeRemainingPromptHint = "Enter Life Remaining as a number."
+    End If
+End Function
+
+Private Function ActualIntervalPromptHint(ByVal intervalCode As String) As String
+    If UsesHourFormatForManualEntry(intervalCode) Then
+        ActualIntervalPromptHint = "Enter Actual Interval as hours (h:mm) or a number."
+    Else
+        ActualIntervalPromptHint = "Enter Actual Interval as a number."
+    End If
+End Function
+
+Private Function ExtensionPromptHint(ByVal intervalCode As String) As String
+    If UsesHourFormatForManualEntry(intervalCode) Then
+        ExtensionPromptHint = "Enter Extension as hours (h:mm) or a number (use 0 if none)."
+    Else
+        ExtensionPromptHint = "Enter Extension as a number (use 0 if none)."
+    End If
+End Function
+
+Private Sub WriteManualSITSTaskRow(ByVal tbl As ListObject, _
+                                   ByVal newRow As ListRow, _
+                                   ByRef draft As SITSManualTaskDraft, _
+                                   ByVal rowId As String)
+    Dim intervalCode As String
+
+    intervalCode = draft.IntervalTypeCode
+
+    With newRow.Range
+        .Cells(1, GetTableColumnIndex(tbl, HDR_SELECTOR)).Value = False
+        .Cells(1, GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)).Value = intervalCode
+        .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_CODE)).Value = draft.TaskCode
+        .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_SEQUENCE)).Value = draft.TaskSequence
+        .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_DESCRIPTION)).Value = draft.TaskDescription
+
+        WriteSerialCell .Cells(1, GetTableColumnIndex(tbl, HDR_SERIAL)), draft.Serial, draft.Serial
+        WriteSerialCell .Cells(1, GetTableColumnIndex(tbl, HDR_END_ITEM_SERIAL)), _
+            draft.EndItemSerial, draft.EndItemSerial
+
+        ApplyManualTimeOrNumberCell .Cells(1, GetTableColumnIndex(tbl, HDR_EXTENSION)), _
+            draft.ExtensionText, intervalCode
+        ApplyManualTimeOrNumberCell .Cells(1, GetTableColumnIndex(tbl, HDR_ACTUAL_INTERVAL)), _
+            draft.ActualIntervalText, intervalCode
+
+        ApplyManualLifeRemainingValues tbl, newRow, intervalCode, draft.LifeRemainingText
+        CaptureTaskBaselineFromImport tbl, newRow, intervalCode
+
+        .Cells(1, GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)).Value = rowId
+    End With
+End Sub
+
+Private Sub ApplyManualTimeOrNumberCell(ByVal target As Range, _
+                                        ByVal textValue As String, _
+                                        ByVal intervalCode As String)
+    Dim parsedTime As Variant
+
+    If InStr(textValue, ":") > 0 Or UsesHourFormatForManualEntry(intervalCode) Then
+        parsedTime = ParseTimeUsageValue(textValue, textValue)
+        If Not IsEmpty(parsedTime) Then
+            WriteFormattedUsageValue target, parsedTime, FORMAT_TYPE_HOURS
+            Exit Sub
+        End If
+    End If
+
+    If IsNumeric(textValue) Then
+        target.Value = CDbl(textValue)
+    Else
+        target.Value = textValue
+    End If
+    target.NumberFormat = FORMAT_DECIMAL
+End Sub
+
+Private Sub ApplyManualLifeRemainingValues(ByVal tbl As ListObject, _
+                                           ByVal newRow As ListRow, _
+                                           ByVal intervalCode As String, _
+                                           ByVal textValue As String)
+    Dim colHours As Long
+    Dim colNumber As Long
+    Dim colDays As Long
+    Dim parsedTime As Variant
+    Dim parsedDate As Variant
+
+    colHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+    colNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    colDays = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+
+    If UsesHourFormatForManualEntry(intervalCode) Then
+        parsedTime = ParseTimeUsageValue(textValue, textValue)
+        If Not IsEmpty(parsedTime) Then
+            WriteFormattedUsageValue newRow.Range.Cells(1, colHours), parsedTime, FORMAT_TYPE_HOURS
+            Exit Sub
+        End If
+        If IsNumeric(textValue) Then
+            WriteFormattedUsageValue newRow.Range.Cells(1, colHours), CDbl(textValue), FORMAT_TYPE_HOURS
+            Exit Sub
+        End If
+    End If
+
+    If intervalCode = TYPE_DD Then
+        parsedDate = ParseDMYDateValue(textValue, textValue)
+        If IsDate(parsedDate) Then
+            newRow.Range.Cells(1, colDays).Value = CDate(parsedDate)
+            newRow.Range.Cells(1, colDays).NumberFormat = FORMAT_DATE
+            Exit Sub
+        End If
+        If IsNumeric(textValue) Then
+            newRow.Range.Cells(1, colNumber).Value = CDbl(textValue)
+            newRow.Range.Cells(1, colNumber).NumberFormat = FORMAT_DECIMAL
+            newRow.Range.Cells(1, colDays).Value = CDbl(textValue)
+            newRow.Range.Cells(1, colDays).NumberFormat = FORMAT_DECIMAL
+            Exit Sub
+        End If
+    End If
+
+    If IsNumeric(textValue) Then
+        newRow.Range.Cells(1, colNumber).Value = CDbl(textValue)
+    Else
+        newRow.Range.Cells(1, colNumber).Value = textValue
+    End If
+    newRow.Range.Cells(1, colNumber).NumberFormat = FORMAT_DECIMAL
+End Sub
+
+Private Function GenerateNextSITSRowId(ByVal tbl As ListObject) As String
+    Dim colRowId As Long
+    Dim row As ListRow
+    Dim rawId As String
+    Dim numPart As String
+    Dim maxNum As Long
+    Dim n As Long
+
+    maxNum = 0
+    colRowId = GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)
+    If colRowId > 0 And Not tbl.DataBodyRange Is Nothing Then
+        For Each row In tbl.ListRows
+            rawId = UCase$(Trim$(CStr(row.Range.Cells(1, colRowId).Value)))
+            If Left$(rawId, 5) = "SITS-" Then
+                numPart = Mid$(rawId, 6)
+                If IsNumeric(numPart) Then
+                    n = CLng(numPart)
+                    If n > maxNum Then maxNum = n
+                End If
+            End If
+        Next row
+    End If
+
+    GenerateNextSITSRowId = "SITS-" & Format$(maxNum + 1, "00000")
+End Function
+
+' ------------------------------------------------------------------------
+' Remove helpers
+' ------------------------------------------------------------------------
+
+Private Sub RemoveWPTaskLinksForSITSRowId(ByVal sitsRowId As String)
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim colRowId As Long
+    Dim row As ListRow
+    Dim i As Long
+
+    sitsRowId = Trim$(sitsRowId)
+    If Len(sitsRowId) = 0 Then Exit Sub
+
+    Set ws = GetWorksheet(SHEET_DATA_WP_TASKS, showError:=False)
+    If ws Is Nothing Then Exit Sub
+    Set tbl = GetTable(ws, TBL_WP_TASKS, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    colRowId = GetTableColumnIndex(tbl, HDR_WP_TASK_ROW_ID)
+    If colRowId = 0 Then Exit Sub
+
+    ' Walk backwards so deletes do not skip rows.
+    For i = tbl.ListRows.Count To 1 Step -1
+        Set row = tbl.ListRows(i)
+        If StrComp(Trim$(CStr(row.Range.Cells(1, colRowId).Value)), sitsRowId, vbTextCompare) = 0 Then
+            row.Delete
+        End If
+    Next i
+End Sub
+
+' Keep collection ordered by descending ListRow.Index for safe multi-delete.
+Private Sub InsertListRowDescending(ByVal rows As Collection, ByVal sitsRow As ListRow)
+    Dim i As Long
+    Dim existing As ListRow
+
+    If sitsRow Is Nothing Then Exit Sub
+
+    For i = 1 To rows.Count
+        Set existing = rows(i)
+        If sitsRow.Index > existing.Index Then
+            rows.Add sitsRow, Before:=i
+            Exit Sub
+        End If
+    Next i
+
+    rows.Add sitsRow
+End Sub
+
+Private Function GetSITSEditTable(Optional ByVal showError As Boolean = True) As ListObject
+    Dim ws As Worksheet
+    Set ws = GetWorksheet(SHEET_DATA_SITS, showError:=showError)
+    If ws Is Nothing Then Exit Function
+    Set GetSITSEditTable = GetTable(ws, TBL_SITS, showError:=showError)
+End Function

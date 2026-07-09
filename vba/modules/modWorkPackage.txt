@@ -588,8 +588,9 @@ Private Function PromptForCompletionDate(ByRef closeDate As Date) As Boolean
     PromptForCompletionDate = True
 End Function
 
-Private Function CollectSelectedFromSITSView(ByVal tbl As ListObject, _
-                                             Optional ByVal rowIndex As Object = Nothing) As Object
+' Public so Add/Remove Task (modSITSEdit) can reuse the same view selection.
+Public Function CollectSelectedFromSITSView(ByVal tbl As ListObject, _
+                                            Optional ByVal rowIndex As Object = Nothing) As Object
     Dim selected As Object
     Dim wsView As Worksheet
     Dim lastRow As Long
