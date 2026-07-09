@@ -467,11 +467,6 @@ Public Function DetectUsageFormat(ByVal sampleValue As Variant, _
         Exit Function
     End If
 
-    If IsMinutesUsageCounter(intervalCode, taskCode, description) Then
-        DetectUsageFormat = FORMAT_TYPE_MINUTES
-        Exit Function
-    End If
-
     If IsHourUsageInterval(intervalCode) Then
         DetectUsageFormat = FORMAT_TYPE_HOURS
         Exit Function
@@ -572,42 +567,127 @@ Public Sub WriteSerialCell(ByVal target As Range, _
     target.Value = serialText
 End Sub
 
-Public Function NormalizeUsageImportValue(ByVal rawVal As Variant, _
-                                          ByVal formatType As String, _
-                                          Optional ByVal displayText As String = "") As Variant
-    Dim parsedTime As Variant
+' Convert an imported Life Used value based on interval code (Hours vs Number).
+Public Function CoerceImportedUsageValue(ByVal value As Variant, _
+                                         ByVal displayText As String, _
+                                         ByVal intervalCode As String) As Double
+    Dim textValue As String
+    Dim parsed As Variant
+
+    If IsHourUsageInterval(intervalCode) Then
+        textValue = Trim$(displayText)
+        If Len(textValue) = 0 Or textValue = "#####" Then textValue = Trim$(CStr(value))
+        If Len(textValue) > 0 And InStr(textValue, ":") > 0 Then
+            parsed = ParseTimeUsageValue(value, textValue)
+            If Not IsEmpty(parsed) Then
+                CoerceImportedUsageValue = CDbl(parsed)
+                Exit Function
+            End If
+        End If
+        If IsNumeric(value) Then
+            CoerceImportedUsageValue = CDbl(value)
+        Else
+            CoerceImportedUsageValue = 0#
+        End If
+    ElseIf IsNumeric(value) Then
+        CoerceImportedUsageValue = CDbl(value)
+    Else
+        CoerceImportedUsageValue = 0#
+    End If
+End Function
+
+Public Function UsageFormatPatternForInterval(ByVal intervalCode As String, _
+                                              Optional ByVal storedValue As Variant) As String
+    If IsHourUsageInterval(intervalCode) Then
+        UsageFormatPatternForInterval = FORMAT_TIME_HOURS
+    ElseIf IsSecondsCountInterval(intervalCode) Then
+        UsageFormatPatternForInterval = FORMAT_DECIMAL
+    ElseIf IsNumeric(storedValue) And CDbl(storedValue) <> Fix(CDbl(storedValue)) Then
+        UsageFormatPatternForInterval = FORMAT_DECIMAL
+    Else
+        UsageFormatPatternForInterval = FORMAT_INTEGER
+    End If
+End Function
+
+Public Function StoredUsageFormatLabel(ByVal intervalCode As String) As String
+    If IsHourUsageInterval(intervalCode) Then
+        StoredUsageFormatLabel = FORMAT_TYPE_HOURS
+    Else
+        StoredUsageFormatLabel = FORMAT_TYPE_NUMBER
+    End If
+End Function
+
+' Convert a stored usage value for display/write when format label is already known.
+Public Function CoerceUsageStorageValue(ByVal value As Variant, _
+                                        ByVal formatType As String, _
+                                        Optional ByVal displayText As String = "") As Double
+    Dim parsed As Variant
+    Dim textValue As String
 
     Select Case UCase$(Trim$(formatType))
-        Case FORMAT_TYPE_HOURS
-            If Len(Trim$(displayText)) > 0 And InStr(displayText, ":") > 0 Then
-                parsedTime = ParseTimeUsageValue(rawVal, displayText)
-                If Not IsEmpty(parsedTime) Then
-                    NormalizeUsageImportValue = parsedTime
+        Case UCase$(FORMAT_TYPE_HOURS)
+            textValue = Trim$(displayText)
+            If Len(textValue) > 0 And InStr(textValue, ":") > 0 Then
+                parsed = ParseTimeUsageValue(value, textValue)
+                If Not IsEmpty(parsed) Then
+                    CoerceUsageStorageValue = CDbl(parsed)
                     Exit Function
                 End If
             End If
-            If IsNumeric(rawVal) Then
-                ' Numeric without a colon is already an Excel day fraction (same as SITS import).
-                NormalizeUsageImportValue = CDbl(rawVal)
-            Else
-                NormalizeUsageImportValue = rawVal
-            End If
-        Case FORMAT_TYPE_MINUTES
-            If InStr(displayText, ":") > 0 Then
-                parsedTime = ParseMinutesSecondsValue(rawVal, displayText)
-                If Not IsEmpty(parsedTime) Then
-                    NormalizeUsageImportValue = parsedTime
+            If VarType(value) = vbString And InStr(CStr(value), ":") > 0 Then
+                parsed = ParseTimeUsageValue(value, CStr(value))
+                If Not IsEmpty(parsed) Then
+                    CoerceUsageStorageValue = CDbl(parsed)
                     Exit Function
                 End If
             End If
-            If IsNumeric(rawVal) Then
-                NormalizeUsageImportValue = CDbl(rawVal) / 86400#
+            If IsNumeric(value) Then
+                CoerceUsageStorageValue = CDbl(value)
             Else
-                NormalizeUsageImportValue = rawVal
+                CoerceUsageStorageValue = 0#
             End If
         Case Else
-            NormalizeUsageImportValue = rawVal
+            If IsNumeric(value) Then
+                CoerceUsageStorageValue = CDbl(value)
+            Else
+                CoerceUsageStorageValue = 0#
+            End If
     End Select
+End Function
+
+Public Function UsageNumberFormatPattern(ByVal formatType As String, _
+                                         ByVal storedValue As Variant) As String
+    If StrComp(UCase$(Trim$(formatType)), UCase$(FORMAT_TYPE_HOURS), vbTextCompare) = 0 Then
+        UsageNumberFormatPattern = FORMAT_TIME_HOURS
+    ElseIf IsNumeric(storedValue) And CDbl(storedValue) <> Fix(CDbl(storedValue)) Then
+        UsageNumberFormatPattern = FORMAT_DECIMAL
+    Else
+        UsageNumberFormatPattern = FORMAT_INTEGER
+    End If
+End Function
+
+Public Sub WriteUsageCell(ByVal target As Range, _
+                          ByVal value As Variant, _
+                          ByVal formatType As String, _
+                          Optional ByVal displayText As String = "")
+    Dim storedValue As Double
+    Dim pattern As String
+
+    storedValue = CoerceUsageStorageValue(value, formatType, displayText)
+    pattern = UsageNumberFormatPattern(formatType, storedValue)
+    target.Value = storedValue
+    target.NumberFormat = pattern
+End Sub
+
+Public Function NormalizeUsageImportValue(ByVal rawVal As Variant, _
+                                          ByVal formatType As String, _
+                                          Optional ByVal displayText As String = "", _
+                                          Optional ByVal intervalCode As String = "") As Variant
+    If Len(Trim$(intervalCode)) > 0 Then
+        NormalizeUsageImportValue = CoerceImportedUsageValue(rawVal, displayText, intervalCode)
+    Else
+        NormalizeUsageImportValue = CoerceUsageStorageValue(rawVal, formatType, displayText)
+    End If
 End Function
 
 Public Function ResolveUsageFormatType(ByVal intervalCode As String, _
@@ -616,8 +696,6 @@ Public Function ResolveUsageFormatType(ByVal intervalCode As String, _
                                        Optional ByVal description As String = "") As String
     If IsSecondsCountInterval(intervalCode) Then
         ResolveUsageFormatType = FORMAT_TYPE_NUMBER
-    ElseIf IsMinutesUsageCounter(intervalCode, taskCode, description) Then
-        ResolveUsageFormatType = FORMAT_TYPE_MINUTES
     ElseIf IsHourUsageInterval(intervalCode) Then
         ResolveUsageFormatType = FORMAT_TYPE_HOURS
     ElseIf Len(Trim$(storedFormat)) > 0 Then
@@ -630,96 +708,28 @@ End Function
 Public Function UsageValueAsDayFraction(ByVal value As Variant, _
                                         ByVal formatType As String, _
                                         Optional ByVal displayText As String = "") As Double
-    Dim parsed As Variant
-
-    ' Stored non-zero numerics take precedence — do not let a formatted "0:00" cell
-    ' text override a real day fraction (RefreshUsageView empty target cells).
-    If IsNumeric(value) And CDbl(value) <> 0# Then
-        Select Case UCase$(Trim$(formatType))
-            Case FORMAT_TYPE_MINUTES
-                If CDbl(value) >= 1# Then
-                    UsageValueAsDayFraction = CDbl(value) / 86400#
-                Else
-                    UsageValueAsDayFraction = CDbl(value)
-                End If
-            Case Else
-                UsageValueAsDayFraction = CDbl(value)
-        End Select
-        Exit Function
-    End If
-
-    If Len(Trim$(displayText)) > 0 And InStr(displayText, ":") > 0 Then
-        Select Case UCase$(Trim$(formatType))
-            Case FORMAT_TYPE_MINUTES
-                parsed = ParseMinutesSecondsValue(value, displayText)
-            Case FORMAT_TYPE_HOURS
-                parsed = ParseTimeUsageValue(value, displayText)
-        End Select
-        If Not IsEmpty(parsed) Then
-            UsageValueAsDayFraction = CDbl(parsed)
-            Exit Function
-        End If
-    End If
-
-    If VarType(value) = vbString Then
-        Select Case UCase$(Trim$(formatType))
-            Case FORMAT_TYPE_MINUTES
-                parsed = ParseMinutesSecondsValue(value, CStr(value))
-            Case FORMAT_TYPE_HOURS
-                parsed = ParseTimeUsageValue(value, CStr(value))
-        End Select
-        If Not IsEmpty(parsed) Then
-            UsageValueAsDayFraction = CDbl(parsed)
-            Exit Function
-        End If
-    End If
-
-    If IsNumeric(value) Then
-        Select Case UCase$(Trim$(formatType))
-            Case FORMAT_TYPE_MINUTES
-                If CDbl(value) >= 1# Then
-                    UsageValueAsDayFraction = CDbl(value) / 86400#
-                Else
-                    UsageValueAsDayFraction = CDbl(value)
-                End If
-            Case Else
-                UsageValueAsDayFraction = CDbl(value)
-        End Select
-    Else
-        UsageValueAsDayFraction = 0#
-    End If
+    UsageValueAsDayFraction = CoerceUsageStorageValue(value, formatType, displayText)
 End Function
 
 Public Sub WriteUsageBaselineCell(ByVal target As Range, _
                                   ByVal value As Variant, _
                                   ByVal formatType As String, _
                                   Optional ByVal displayText As String = "")
-    WriteFormattedUsageValue target, value, formatType, displayText
+    WriteUsageCell target, value, formatType, displayText
 End Sub
 
 Public Sub WriteUsageCurrentCell(ByVal target As Range, _
                                  ByVal value As Variant, _
                                  ByVal formatType As String, _
                                  Optional ByVal displayText As String = "")
-    WriteFormattedUsageValue target, value, formatType, displayText
+    WriteUsageCell target, value, formatType, displayText
 End Sub
 
 Public Sub WriteFormattedUsageValue(ByVal target As Range, _
                                     ByVal value As Variant, _
                                     ByVal formatType As String, _
                                     Optional ByVal displayText As String = "")
-    Dim dayFraction As Double
-    Dim pattern As String
-
-    dayFraction = UsageValueAsDayFraction(value, formatType, displayText)
-    pattern = GetFormatPatternForType(formatType)
-
-    If StrComp(pattern, FORMAT_DECIMAL, vbTextCompare) = 0 Then
-        target.Value = dayFraction
-    Else
-        target.Value2 = dayFraction
-    End If
-    target.NumberFormat = pattern
+    WriteUsageCell target, value, formatType, displayText
 End Sub
 
 Public Function FormatUsageValueForDisplay(ByVal value As Variant, _
@@ -730,7 +740,7 @@ Public Function FormatUsageValueForDisplay(ByVal value As Variant, _
     End If
 
     Select Case UCase$(Trim$(formatType))
-        Case FORMAT_TYPE_HOURS
+        Case UCase$(FORMAT_TYPE_HOURS)
             FormatUsageValueForDisplay = FormatElapsedHoursFromDayFraction(CDbl(value))
         Case FORMAT_TYPE_MINUTES
             FormatUsageValueForDisplay = FormatElapsedMinutesFromDayFraction(CDbl(value))
