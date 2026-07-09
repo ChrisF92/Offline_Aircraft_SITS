@@ -47,54 +47,141 @@ Public Sub RefreshSITSViewOnly()
     RefreshSITSView
 End Sub
 
-' Untick SITS view selectors for specific RowIDs without rebuilding the sheet.
-' Checkboxes are linked to column A, so clearing those cells clears the ticks.
-Public Sub ClearSITSViewSelectorsForRowIds(ByVal rowIds As Object)
+' Mark visible SITS rows as IN WORK (remove checkbox, show text) without rebuild.
+Public Sub MarkSITSViewRowsInWork(ByVal rowIds As Object)
     Dim wsView As Worksheet
-    Dim lastRow As Long
-    Dim colRowIdView As Long
-    Dim headerCell As Range
-    Dim viewIds As Variant
-    Dim i As Long
-    Dim rowId As String
+    Dim viewMap As Object
+    Dim rowId As Variant
+    Dim viewRow As Long
 
     If rowIds Is Nothing Or rowIds.Count = 0 Then Exit Sub
-
     Set wsView = GetWorksheet(SHEET_SITS, showError:=False)
     If wsView Is Nothing Then Exit Sub
 
-    colRowIdView = 0
-    For Each headerCell In wsView.Range(wsView.Cells(SITS_VIEW_HEADER_ROW, 1), _
-                                        wsView.Cells(SITS_VIEW_HEADER_ROW, 40))
-        If StrComp(Trim$(CStr(headerCell.Value)), HDR_SITS_ROW_ID, vbTextCompare) = 0 Then
-            colRowIdView = headerCell.Column
-            Exit For
+    Set viewMap = BuildSITSViewRowIdMap(wsView)
+    For Each rowId In rowIds.Keys
+        If viewMap.Exists(CStr(rowId)) Then
+            viewRow = CLng(viewMap(CStr(rowId)))
+            SetSITSViewSelectorInWork wsView, viewRow
         End If
-    Next headerCell
-    If colRowIdView = 0 Then Exit Sub
+    Next rowId
+End Sub
 
-    lastRow = wsView.Cells(wsView.Rows.Count, colRowIdView).End(xlUp).Row
-    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+' Restore checkboxes for released tasks (after WP delete) without rebuild.
+Public Sub RestoreSITSViewSelectorsForRowIds(ByVal rowIds As Object)
+    Dim wsView As Worksheet
+    Dim viewMap As Object
+    Dim rowId As Variant
+    Dim viewRow As Long
 
-    viewIds = wsView.Range(wsView.Cells(SITS_VIEW_DATA_START_ROW, colRowIdView), _
-                           wsView.Cells(lastRow, colRowIdView)).Value
+    If rowIds Is Nothing Or rowIds.Count = 0 Then Exit Sub
+    Set wsView = GetWorksheet(SHEET_SITS, showError:=False)
+    If wsView Is Nothing Then Exit Sub
 
-    If Not IsArray(viewIds) Then
-        rowId = Trim$(CStr(viewIds))
-        If rowIds.Exists(rowId) Then
-            wsView.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL).Value = False
+    Set viewMap = BuildSITSViewRowIdMap(wsView)
+    For Each rowId In rowIds.Keys
+        If viewMap.Exists(CStr(rowId)) Then
+            viewRow = CLng(viewMap(CStr(rowId)))
+            SetSITSViewSelectorCheckbox wsView, viewRow
         End If
-        Exit Sub
+    Next rowId
+End Sub
+
+' Targeted post-close view update: refresh/remove only affected rows.
+' closedRowIds = tasks reforecasted or flagged manual; deletedRowIds = PT2/PT3 removed.
+Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
+                                              ByVal deletedRowIds As Object)
+    Dim wsView As Worksheet
+    Dim wsData As Worksheet
+    Dim tbl As ListObject
+    Dim viewMap As Object
+    Dim rowsToRemove As Collection
+    Dim rowId As Variant
+    Dim viewRow As Long
+    Dim sitsRow As ListRow
+    Dim intervalCode As String
+    Dim lifeHoursFraction As Double
+    Dim daysUntilDue As Long
+    Dim forecastHours As Double
+    Dim forecastDays As Long
+    Dim warnHoursFraction As Double
+    Dim warnDays As Long
+    Dim colManualFlag As Long
+    Dim colInterval As Long
+    Dim includeRow As Boolean
+    Dim i As Long
+    Dim removeRow As Long
+    Dim viewColumns As Collection
+    Dim sitsIndex As Object
+
+    Set wsView = GetWorksheet(SHEET_SITS, showError:=False)
+    Set wsData = GetWorksheet(SHEET_DATA_SITS, showError:=False)
+    If wsView Is Nothing Or wsData Is Nothing Then Exit Sub
+
+    Set tbl = GetTable(wsData, TBL_SITS, showError:=False)
+    If tbl Is Nothing Then Exit Sub
+
+    Set viewMap = BuildSITSViewRowIdMap(wsView)
+    Set sitsIndex = BuildSITSRowIdIndex(tbl)
+    Set rowsToRemove = New Collection
+    Set viewColumns = BuildSITSViewColumns()
+
+    forecastHours = GetForecastHoursSetting()
+    forecastDays = GetForecastDaysSetting()
+    warnHoursFraction = ParseWarnHoursSetting()
+    warnDays = CLng(NzSITSNumber(GetConfigValue(CFG_WARN_DAYS, 7)))
+    colManualFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
+    colInterval = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)
+
+    ' PT2/PT3 deleted from data — remove from view if present.
+    If Not deletedRowIds Is Nothing Then
+        For Each rowId In deletedRowIds.Keys
+            If viewMap.Exists(CStr(rowId)) Then
+                rowsToRemove.Add CLng(viewMap(CStr(rowId)))
+            End If
+        Next rowId
     End If
 
-    For i = LBound(viewIds, 1) To UBound(viewIds, 1)
-        rowId = Trim$(CStr(viewIds(i, 1)))
-        If Len(rowId) = 0 Then GoTo NextClearViewSel
-        If rowIds.Exists(rowId) Then
-            wsView.Cells(SITS_VIEW_DATA_START_ROW + i - 1, SITS_SELECTOR_COL).Value = False
-        End If
-NextClearViewSel:
-    Next i
+    ' Closed / reforecasted tasks: update in place, or remove if outside forecast.
+    If Not closedRowIds Is Nothing Then
+        For Each rowId In closedRowIds.Keys
+            If Not viewMap.Exists(CStr(rowId)) Then GoTo NextClosedView
+
+            viewRow = CLng(viewMap(CStr(rowId)))
+            Set sitsRow = ResolveSITSRowById(sitsIndex, tbl, CStr(rowId))
+            If sitsRow Is Nothing Then
+                rowsToRemove.Add viewRow
+                GoTo NextClosedView
+            End If
+
+            intervalCode = UCase$(Trim$(CStr(sitsRow.Range.Cells(1, colInterval).Value)))
+            includeRow = TaskPassesForecastFilter(sitsRow, tbl, intervalCode, _
+                forecastHours, forecastDays, lifeHoursFraction, daysUntilDue)
+
+            If Not includeRow Then
+                rowsToRemove.Add viewRow
+            Else
+                RewriteSITSViewDataRow wsView, viewRow, sitsRow, tbl, intervalCode, viewColumns
+                ApplySITSViewRowWarnings wsView, viewRow, SITS_VISIBLE_COLUMN_COUNT, _
+                    intervalCode, lifeHoursFraction, daysUntilDue, _
+                    warnHoursFraction, warnDays, sitsRow, colManualFlag
+                SetSITSViewSelectorCheckbox wsView, viewRow
+            End If
+NextClosedView:
+        Next rowId
+    End If
+
+    ' Remove view rows bottom-up so indexes stay valid.
+    If rowsToRemove.Count > 0 Then
+        SortLongCollectionDescending rowsToRemove
+        For i = 1 To rowsToRemove.Count
+            removeRow = CLng(rowsToRemove(i))
+            DeleteSITSViewCheckboxOnRow wsView, removeRow
+            wsView.Rows(removeRow).Delete
+        Next i
+        ' Row deletes invalidate LinkedCell addresses — rebind remaining selectors.
+        RebindSITSViewSelectorCheckboxes wsView
+    End If
 End Sub
 
 Public Sub RecalculateSITS()
@@ -266,7 +353,8 @@ Public Sub RefreshSITSView()
     If ActiveSheet Is wsView Then ActiveWindow.FreezePanes = False
     On Error GoTo CleanFail
 
-    wsView.Cells.Clear
+    ' Clear only used area — faster than wiping the whole sheet.
+    wsView.UsedRange.Clear
     WriteSITSViewShell wsView
     AddSITSViewActionButtons wsView
 
@@ -364,7 +452,7 @@ NextCollectRow:
 
 CleanFail:
     Application.StatusBar = False
-    SetExcelState "enable"
+    SetExcelState "force-enable"
 End Sub
 
 Public Sub SnapshotUsageForSITS()
@@ -732,22 +820,43 @@ Private Sub AddSITSViewActionButtons(ByVal ws As Worksheet)
     btn.Placement = xlFreeFloating
 End Sub
 
+Private Sub WriteSITSViewSelectorCell(ByVal sourceRow As ListRow, _
+                                      ByVal tbl As ListObject, _
+                                      ByVal target As Range)
+    Dim colOrn As Long
+    Dim inWorkOrn As String
+
+    colOrn = GetTableColumnIndex(tbl, HDR_ORN_INWORK)
+    If colOrn > 0 Then
+        inWorkOrn = Trim$(CStr(sourceRow.Range.Cells(1, colOrn).Value))
+    End If
+
+    If Len(inWorkOrn) > 0 Then
+        target.Value = SITS_IN_WORK_TEXT
+        target.NumberFormat = FORMAT_GENERAL
+        target.HorizontalAlignment = xlCenter
+        target.Font.Bold = True
+        target.Font.Color = RGB(192, 0, 0)
+    Else
+        target.Value = False
+        target.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
+        target.Font.Bold = False
+        target.Font.Color = vbBlack
+    End If
+End Sub
+
 Private Sub AddSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
                                           ByVal firstDataRow As Long, _
                                           ByVal lastDataRow As Long)
     Dim rowIndex As Long
     Dim cb As CheckBox
     Dim linkCell As Range
-    Dim colRange As Range
     Dim leftPos As Double
     Dim widthPos As Double
     Dim heightPos As Double
+    Dim cellText As String
 
     If lastDataRow < firstDataRow Then Exit Sub
-
-    Set colRange = ws.Range(ws.Cells(firstDataRow, SITS_SELECTOR_COL), _
-                            ws.Cells(lastDataRow, SITS_SELECTOR_COL))
-    colRange.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
 
     leftPos = ws.Cells(firstDataRow, SITS_SELECTOR_COL).Left
     widthPos = ws.Cells(firstDataRow, SITS_SELECTOR_COL).Width
@@ -755,12 +864,220 @@ Private Sub AddSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
 
     For rowIndex = firstDataRow To lastDataRow
         Set linkCell = ws.Cells(rowIndex, SITS_SELECTOR_COL)
+        cellText = UCase$(Trim$(CStr(linkCell.Value)))
+
+        ' Tasks already in a work package show IN WORK — no checkbox.
+        If StrComp(cellText, SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then
+            linkCell.NumberFormat = FORMAT_GENERAL
+            linkCell.HorizontalAlignment = xlCenter
+            linkCell.Font.Bold = True
+            linkCell.Font.Color = RGB(192, 0, 0)
+            GoTo NextSelectorRow
+        End If
+
+        linkCell.Value = False
+        linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
         Set cb = ws.CheckBoxes.Add(leftPos, linkCell.Top, widthPos, heightPos)
+        cb.Name = SITSCheckboxName(rowIndex)
         cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
         cb.Caption = ""
         cb.Placement = xlMove
         cb.Display3DShading = False
+NextSelectorRow:
     Next rowIndex
+End Sub
+
+Private Function SITSCheckboxName(ByVal viewRow As Long) As String
+    SITSCheckboxName = "SITS_SEL_" & CStr(viewRow)
+End Function
+
+Private Function BuildSITSViewRowIdMap(ByVal wsView As Worksheet) As Object
+    Dim map As Object
+    Dim lastRow As Long
+    Dim colRowIdView As Long
+    Dim headerCell As Range
+    Dim viewIds As Variant
+    Dim i As Long
+    Dim rowId As String
+
+    Set map = CreateObject("Scripting.Dictionary")
+    map.CompareMode = 1
+    Set BuildSITSViewRowIdMap = map
+
+    If wsView Is Nothing Then Exit Function
+
+    colRowIdView = 0
+    For Each headerCell In wsView.Range(wsView.Cells(SITS_VIEW_HEADER_ROW, 1), _
+                                        wsView.Cells(SITS_VIEW_HEADER_ROW, 40))
+        If StrComp(Trim$(CStr(headerCell.Value)), HDR_SITS_ROW_ID, vbTextCompare) = 0 Then
+            colRowIdView = headerCell.Column
+            Exit For
+        End If
+    Next headerCell
+    If colRowIdView = 0 Then Exit Function
+
+    lastRow = wsView.Cells(wsView.Rows.Count, colRowIdView).End(xlUp).Row
+    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Function
+
+    viewIds = wsView.Range(wsView.Cells(SITS_VIEW_DATA_START_ROW, colRowIdView), _
+                           wsView.Cells(lastRow, colRowIdView)).Value
+
+    If Not IsArray(viewIds) Then
+        rowId = Trim$(CStr(viewIds))
+        If Len(rowId) > 0 Then map(rowId) = SITS_VIEW_DATA_START_ROW
+        Exit Function
+    End If
+
+    For i = LBound(viewIds, 1) To UBound(viewIds, 1)
+        rowId = Trim$(CStr(viewIds(i, 1)))
+        If Len(rowId) > 0 Then map(rowId) = SITS_VIEW_DATA_START_ROW + i - 1
+    Next i
+End Function
+
+Private Sub RebindSITSViewSelectorCheckboxes(ByVal ws As Worksheet)
+    Dim lastRow As Long
+    Dim rowIndex As Long
+    Dim linkCell As Range
+    Dim cellText As String
+    Dim i As Long
+    Dim colRowIdView As Long
+    Dim headerCell As Range
+
+    colRowIdView = 0
+    For Each headerCell In ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 1), _
+                                    ws.Cells(SITS_VIEW_HEADER_ROW, 40))
+        If StrComp(Trim$(CStr(headerCell.Value)), HDR_SITS_ROW_ID, vbTextCompare) = 0 Then
+            colRowIdView = headerCell.Column
+            Exit For
+        End If
+    Next headerCell
+
+    If colRowIdView > 0 Then
+        lastRow = ws.Cells(ws.Rows.Count, colRowIdView).End(xlUp).Row
+    Else
+        lastRow = ws.Cells(ws.Rows.Count, SITS_SELECTOR_COL).End(xlUp).Row
+    End If
+
+    ' CheckBoxes collection is separate from action Buttons — safe to clear all.
+    On Error Resume Next
+    For i = ws.CheckBoxes.Count To 1 Step -1
+        ws.CheckBoxes(i).Delete
+    Next i
+    On Error GoTo 0
+
+    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+
+    For rowIndex = SITS_VIEW_DATA_START_ROW To lastRow
+        Set linkCell = ws.Cells(rowIndex, SITS_SELECTOR_COL)
+        cellText = UCase$(Trim$(CStr(linkCell.Value)))
+        If StrComp(cellText, SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then
+            linkCell.NumberFormat = FORMAT_GENERAL
+            linkCell.HorizontalAlignment = xlCenter
+            linkCell.Font.Bold = True
+            linkCell.Font.Color = RGB(192, 0, 0)
+        Else
+            SetSITSViewSelectorCheckbox ws, rowIndex
+        End If
+    Next rowIndex
+End Sub
+
+Private Sub SetSITSViewSelectorInWork(ByVal ws As Worksheet, ByVal viewRow As Long)
+    Dim linkCell As Range
+
+    DeleteSITSViewCheckboxOnRow ws, viewRow
+    Set linkCell = ws.Cells(viewRow, SITS_SELECTOR_COL)
+    linkCell.Value = SITS_IN_WORK_TEXT
+    linkCell.NumberFormat = FORMAT_GENERAL
+    linkCell.HorizontalAlignment = xlCenter
+    linkCell.Font.Bold = True
+    linkCell.Font.Color = RGB(192, 0, 0)
+End Sub
+
+Private Sub SetSITSViewSelectorCheckbox(ByVal ws As Worksheet, ByVal viewRow As Long)
+    Dim linkCell As Range
+    Dim cb As CheckBox
+
+    DeleteSITSViewCheckboxOnRow ws, viewRow
+    Set linkCell = ws.Cells(viewRow, SITS_SELECTOR_COL)
+    linkCell.Value = False
+    linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
+    linkCell.Font.Bold = False
+    linkCell.Font.Color = vbBlack
+
+    Set cb = ws.CheckBoxes.Add(linkCell.Left, linkCell.Top, linkCell.Width, linkCell.Height)
+    cb.Name = SITSCheckboxName(viewRow)
+    cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
+    cb.Caption = ""
+    cb.Placement = xlMove
+    cb.Display3DShading = False
+End Sub
+
+Private Sub DeleteSITSViewCheckboxOnRow(ByVal ws As Worksheet, ByVal viewRow As Long)
+    Dim cb As CheckBox
+    Dim i As Long
+    Dim linkAddr As String
+    Dim targetAddr As String
+
+    On Error Resume Next
+    ws.CheckBoxes(SITSCheckboxName(viewRow)).Delete
+    On Error GoTo 0
+
+    ' Fallback: match by linked cell in case the control was renamed.
+    targetAddr = UCase$("'" & ws.Name & "'!" & ws.Cells(viewRow, SITS_SELECTOR_COL).Address(False, False))
+    On Error Resume Next
+    For i = ws.CheckBoxes.Count To 1 Step -1
+        Set cb = ws.CheckBoxes(i)
+        linkAddr = UCase$(Replace(CStr(cb.LinkedCell), "$", ""))
+        If StrComp(linkAddr, targetAddr, vbTextCompare) = 0 Then
+            cb.Delete
+        ElseIf InStr(1, linkAddr, ws.Cells(viewRow, SITS_SELECTOR_COL).Address(False, False), vbTextCompare) > 0 Then
+            cb.Delete
+        End If
+    Next i
+    On Error GoTo 0
+End Sub
+
+Private Sub RewriteSITSViewDataRow(ByVal wsView As Worksheet, _
+                                   ByVal viewRow As Long, _
+                                   ByVal sitsRow As ListRow, _
+                                   ByVal tbl As ListObject, _
+                                   ByVal intervalCode As String, _
+                                   ByVal viewColumns As Collection)
+    Dim columnName As Variant
+    Dim outputCol As Long
+
+    outputCol = 1
+    For Each columnName In viewColumns
+        ' Selector handled separately by caller.
+        If StrComp(CStr(columnName), HDR_SELECTOR, vbTextCompare) <> 0 Then
+            WriteSITSViewCell sitsRow, tbl, intervalCode, CStr(columnName), _
+                wsView.Cells(viewRow, outputCol)
+        End If
+        outputCol = outputCol + 1
+    Next columnName
+End Sub
+
+Private Sub SortLongCollectionDescending(ByRef values As Collection)
+    Dim i As Long
+    Dim j As Long
+    Dim a As Long
+    Dim b As Long
+
+    If values Is Nothing Then Exit Sub
+    If values.Count < 2 Then Exit Sub
+
+    For i = 1 To values.Count - 1
+        For j = i + 1 To values.Count
+            a = CLng(values(i))
+            b = CLng(values(j))
+            If b > a Then
+                values.Add b, before:=i
+                values.Remove j + 1
+                values.Add a, before:=j + 1
+                values.Remove j + 1
+            End If
+        Next j
+    Next i
 End Sub
 
 Private Sub ApplySITSViewFreezePanes(ByVal ws As Worksheet)
@@ -889,8 +1206,7 @@ Private Sub WriteSITSViewCell(ByVal sourceRow As ListRow, _
     Set sourceCell = sourceRow.Range.Cells(1, colIndex)
 
     If StrComp(columnName, HDR_SELECTOR, vbTextCompare) = 0 Then
-        target.Value = CBool(sourceCell.Value)
-        target.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
+        WriteSITSViewSelectorCell sourceRow, tbl, target
         Exit Sub
     End If
 

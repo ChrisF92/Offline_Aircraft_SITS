@@ -111,6 +111,7 @@ Public Const HDR_NEEDS_MANUAL_UPDATE As String = "Needs Manual Update"
 Public Const WP_STATUS_OPEN As String = "Open"
 Public Const WP_STATUS_CLOSED As String = "Closed"
 Public Const WP_STATUS_DELETED As String = "Deleted"
+Public Const SITS_IN_WORK_TEXT As String = "IN WORK"
 
 ' --- Config keys (tblConfig Setting column) ---
 Public Const CFG_TAIL_NUMBER As String = "TailNumber"

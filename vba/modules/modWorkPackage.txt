@@ -215,9 +215,9 @@ Public Function CreateWorkPackageFromSelection() As Boolean
     AssignORNToSITSTasks orn, expandedIds, tblSITS, rowIndex
     ClearSelectedSITSSelectors expandedIds, tblSITS, rowIndex
 
-    ' Keep the existing SITS view — only untick claimed selectors (linked checkboxes).
+    ' Keep the existing SITS view — replace claimed selectors with IN WORK.
     Application.StatusBar = "Updating SITS selectors…"
-    ClearSITSViewSelectorsForRowIds expandedIds
+    MarkSITSViewRowsInWork expandedIds
 
     LogAction "WP_CREATED", orn, "Tasks=" & expandedIds.Count
 
@@ -286,13 +286,13 @@ Public Function DeleteWorkPackage(ByVal orn As String, _
     RemoveWPTaskRows orn
     MarkWorkPackageStatus orn, WP_STATUS_DELETED, False
 
-    ' No full SITS rebuild — create/delete do not change life remaining or row set.
+    ' No full SITS rebuild — restore checkboxes for released tasks.
     Set taskIdDict = CreateObject("Scripting.Dictionary")
     taskIdDict.CompareMode = 1
     For Each item In taskIds
         taskIdDict(CStr(item)) = True
     Next item
-    ClearSITSViewSelectorsForRowIds taskIdDict
+    RestoreSITSViewSelectorsForRowIds taskIdDict
 
     LogAction "WP_DELETED", orn, "Tasks released=" & taskIds.Count
 
@@ -333,6 +333,10 @@ Public Function CloseWorkPackage(ByVal orn As String, _
     Dim rowsToDelete As Collection
     Dim deleteRow As Variant
     Dim rowIndex As Object
+    Dim closedRowIds As Object
+    Dim deletedRowIds As Object
+    Dim deletedRowId As String
+    Dim colRowId As Long
 
     CloseWorkPackage = False
     orn = UCase$(Trim$(orn))
@@ -367,6 +371,11 @@ Public Function CloseWorkPackage(ByVal orn As String, _
     End If
 
     Set rowsToDelete = New Collection
+    Set closedRowIds = CreateObject("Scripting.Dictionary")
+    closedRowIds.CompareMode = 1
+    Set deletedRowIds = CreateObject("Scripting.Dictionary")
+    deletedRowIds.CompareMode = 1
+
     commentText = "ORN: " & orn & vbCrLf & _
                   "Closed: " & Format$(closeDate, FORMAT_DATE) & vbCrLf & _
                   "User: " & userName
@@ -376,12 +385,15 @@ Public Function CloseWorkPackage(ByVal orn As String, _
     SetExcelState "disable"
 
     Set rowIndex = BuildSITSRowIdIndex(tblSITS)
+    colRowId = GetTableColumnIndex(tblSITS, HDR_SITS_ROW_ID)
 
     For Each rowId In taskIds
         Set sitsRow = ResolveSITSRowById(rowIndex, tblSITS, CStr(rowId))
         If sitsRow Is Nothing Then GoTo NextCloseTask
 
         If IsDeferredFaultTaskCode(GetSITSTaskCode(sitsRow, tblSITS)) Then
+            deletedRowId = Trim$(CStr(sitsRow.Range.Cells(1, colRowId).Value))
+            If Len(deletedRowId) > 0 Then deletedRowIds(deletedRowId) = True
             rowsToDelete.Add sitsRow
             deletedFaults = deletedFaults + 1
             GoTo NextCloseTask
@@ -402,6 +414,7 @@ Public Function CloseWorkPackage(ByVal orn As String, _
 
         ClearTaskOpenORN sitsRow, tblSITS
         ClearTaskSelector sitsRow, tblSITS
+        closedRowIds(CStr(rowId)) = True
 NextCloseTask:
     Next rowId
 
@@ -416,10 +429,14 @@ NextCloseTask:
               "Reforecasted=" & reforecasted & "; Manual=" & manualCount & _
               "; DeletedFaults=" & deletedFaults
 
-    SetExcelState "enable"
+    ' Targeted view update only — no full SITS rebuild / checkbox recreation.
+    Application.StatusBar = "Updating SITS view…"
+    ApplySITSViewAfterWorkPackageClose closedRowIds, deletedRowIds
 
-    RefreshSITS
+    Application.StatusBar = "Updating Dashboard…"
     RefreshDashboardStatusCounts
+
+    SetExcelState "enable"
     Application.StatusBar = False
 
     If showDialogs Then
@@ -441,7 +458,7 @@ NextCloseTask:
 
 ErrorHandler:
     Application.StatusBar = False
-    SetExcelState "enable"
+    SetExcelState "force-enable"
     LogError PROC_NAME, Err.Number, Err.Description
     If showDialogs Then MsgBox "Failed to close work package: " & Err.Description, vbCritical, APP_NAME
 End Function
@@ -527,6 +544,7 @@ Private Function CollectSelectedFromSITSView(ByVal tbl As ListObject, _
                                  wsView.Cells(lastRow, SITS_SELECTOR_COL)).Value
 
     If Not IsArray(viewIds) Then
+        If StrComp(Trim$(CStr(viewSelectors)), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then Exit Function
         If ConvertToBoolean(viewSelectors) Then
             rowId = Trim$(CStr(viewIds))
             If Len(rowId) > 0 Then
@@ -539,6 +557,8 @@ Private Function CollectSelectedFromSITSView(ByVal tbl As ListObject, _
     End If
 
     For i = LBound(viewIds, 1) To UBound(viewIds, 1)
+        ' IN WORK rows have no checkbox and cannot be selected again.
+        If StrComp(Trim$(CStr(viewSelectors(i, 1))), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then GoTo NextSelectedView
         If Not ConvertToBoolean(viewSelectors(i, 1)) Then GoTo NextSelectedView
         rowId = Trim$(CStr(viewIds(i, 1)))
         If Len(rowId) = 0 Then GoTo NextSelectedView
