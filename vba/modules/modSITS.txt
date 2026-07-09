@@ -5,7 +5,7 @@ Option Explicit
 ' ========================================================================
 ' Baseline life remaining from GOLDesp import; usage deltas applied after
 ' sorties. Calendar DD tasks use imported due dates. View sheet with forecast
-' filter and warning highlighting.
+' filter, warning highlighting, and selector-driven row selection highlight.
 ' ========================================================================
 
 Private Const SITS_VIEW_HEADER_ROW As Long = 7
@@ -33,6 +33,143 @@ End Type
 Public Sub RunRefreshSITS()
     RefreshSITS
 End Sub
+
+' Form-control checkbox OnAction — highlight / unhighlight the linked SITS view row.
+' Resolve the control via Application.Caller (name may not stay SITS_SEL_*), then
+' read Value / LinkedCell so we do not depend on a stale name or cell alone.
+Public Sub SITSSelectorCheckboxChanged()
+    Dim ws As Worksheet
+    Dim cb As CheckBox
+    Dim linkCell As Range
+    Dim viewRow As Long
+    Dim selected As Boolean
+    Dim callerName As String
+    Dim linkAddr As String
+    Dim valueKnown As Boolean
+
+    On Error Resume Next
+    callerName = CStr(Application.Caller)
+    On Error GoTo 0
+    If Len(callerName) = 0 Then Exit Sub
+
+    Set ws = Nothing
+    On Error Resume Next
+    Set ws = ActiveSheet
+    If ws Is Nothing Then Set ws = GetWorksheet(SHEET_SITS, showError:=False)
+    On Error GoTo 0
+    If ws Is Nothing Then Exit Sub
+    If StrComp(ws.Name, SHEET_SITS, vbTextCompare) <> 0 Then
+        Set ws = GetWorksheet(SHEET_SITS, showError:=False)
+        If ws Is Nothing Then Exit Sub
+    End If
+
+    Set cb = Nothing
+    On Error Resume Next
+    Set cb = ws.CheckBoxes(callerName)
+    On Error GoTo 0
+    If cb Is Nothing Then Exit Sub
+
+    ' Prefer the control Value (xlOn=1 / xlOff=-4146); fall back to LinkedCell.
+    selected = False
+    valueKnown = False
+    On Error Resume Next
+    If cb.Value = 1 Then
+        selected = True
+        valueKnown = True
+    ElseIf cb.Value = xlOff Then
+        selected = False
+        valueKnown = True
+    End If
+    linkAddr = CStr(cb.LinkedCell)
+    On Error GoTo 0
+
+    Set linkCell = Nothing
+    If Len(linkAddr) > 0 Then
+        On Error Resume Next
+        ' LinkedCell is usually sheet-qualified ('SITS'!A8) — resolve via Application.Range.
+        Set linkCell = Application.Range(linkAddr)
+        If linkCell Is Nothing Then Set linkCell = ws.Range(linkAddr)
+        On Error GoTo 0
+        If Not linkCell Is Nothing Then
+            If Not linkCell.Parent Is ws Then Set linkCell = Nothing
+        End If
+    End If
+
+    If linkCell Is Nothing Then
+        ' Fall back to row inferred from the control name or Top position.
+        viewRow = 0
+        If StrComp(Left$(cb.Name, 8), "SITS_SEL_", vbTextCompare) = 0 Then
+            On Error Resume Next
+            viewRow = CLng(Mid$(cb.Name, 9))
+            On Error GoTo 0
+        End If
+        If viewRow < SITS_VIEW_DATA_START_ROW Then
+            viewRow = EstimateSITSViewRowFromCheckboxTop(ws, cb.Top)
+        End If
+        If viewRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+        Set linkCell = ws.Cells(viewRow, SITS_SELECTOR_COL)
+    Else
+        viewRow = linkCell.Row
+    End If
+
+    If viewRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+    If StrComp(Trim$(CStr(linkCell.Value)), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then Exit Sub
+
+    If Not valueKnown Then selected = ConvertToBoolean(linkCell.Value)
+
+    ApplySITSViewRowSelectionHighlight ws, viewRow, selected
+End Sub
+
+' Called from ThisWorkbook.Workbook_SheetChange when Selector LinkedCells change.
+Public Sub HandleSITSSelectorSheetChange(ByVal Sh As Object, ByVal Target As Range)
+    Dim ws As Worksheet
+    Dim intersectRange As Range
+    Dim cell As Range
+    Dim lastRow As Long
+    Dim selected As Boolean
+
+    If Sh Is Nothing Or Target Is Nothing Then Exit Sub
+    If StrComp(Sh.Name, SHEET_SITS, vbTextCompare) <> 0 Then Exit Sub
+
+    Set ws = Sh
+    lastRow = ws.Cells(ws.Rows.Count, SITS_SELECTOR_COL).End(xlUp).Row
+    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+
+    Set intersectRange = Intersect(Target, _
+        ws.Range(ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL), _
+                 ws.Cells(lastRow, SITS_SELECTOR_COL)))
+    If intersectRange Is Nothing Then Exit Sub
+
+    For Each cell In intersectRange.Cells
+        If StrComp(Trim$(CStr(cell.Value)), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then GoTo NextSelectorChange
+        selected = ConvertToBoolean(cell.Value)
+        ApplySITSViewRowSelectionHighlight ws, cell.Row, selected
+NextSelectorChange:
+    Next cell
+End Sub
+
+Private Function EstimateSITSViewRowFromCheckboxTop(ByVal ws As Worksheet, _
+                                                    ByVal topPos As Double) As Long
+    Dim firstTop As Double
+    Dim rowHeightPx As Double
+    Dim estimatedRow As Long
+    Dim lastRow As Long
+
+    EstimateSITSViewRowFromCheckboxTop = 0
+    If ws Is Nothing Then Exit Function
+
+    firstTop = ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL).Top
+    rowHeightPx = ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL).Height
+    If rowHeightPx <= 0# Then rowHeightPx = 15#
+
+    lastRow = ws.Cells(ws.Rows.Count, SITS_SELECTOR_COL).End(xlUp).Row
+    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Function
+
+    estimatedRow = SITS_VIEW_DATA_START_ROW + CLng((topPos - firstTop) / rowHeightPx)
+    If estimatedRow < SITS_VIEW_DATA_START_ROW Then estimatedRow = SITS_VIEW_DATA_START_ROW
+    If estimatedRow > lastRow Then estimatedRow = lastRow
+    EstimateSITSViewRowFromCheckboxTop = estimatedRow
+End Function
 
 Public Sub RefreshSITS(Optional ByVal skipRecalculate As Boolean = False)
     If Not ValidateWorkbookStructure(showDialogs:=False) Then Exit Sub
@@ -66,6 +203,8 @@ Public Sub MarkSITSViewRowsInWork(ByVal rowIds As Object)
         If viewMap.Exists(CStr(rowId)) Then
             viewRow = CLng(viewMap(CStr(rowId)))
             SetSITSViewSelectorInWork wsView, viewRow
+            ' Selection highlight must not linger after the row leaves the selector pool.
+            ApplySITSViewRowSelectionHighlight wsView, viewRow, False
         End If
     Next rowId
 End Sub
@@ -86,6 +225,7 @@ Public Sub RestoreSITSViewSelectorsForRowIds(ByVal rowIds As Object)
         If viewMap.Exists(CStr(rowId)) Then
             viewRow = CLng(viewMap(CStr(rowId)))
             SetSITSViewSelectorCheckbox wsView, viewRow
+            ApplySITSViewRowSelectionHighlight wsView, viewRow, False
         End If
     Next rowId
 End Sub
@@ -974,6 +1114,7 @@ Private Sub AddSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
         Set cb = ws.CheckBoxes.Add(leftPos, linkCell.Top, widthPos, heightPos)
         cb.Name = SITSCheckboxName(rowIndex)
         cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
+        cb.OnAction = "SITSSelectorCheckboxChanged"
         cb.Caption = ""
         cb.Placement = xlMove
         cb.Display3DShading = False
@@ -1099,12 +1240,14 @@ Private Sub RemapSITSViewSelectorLinkedCells(ByVal ws As Worksheet)
         Else
             cb.Name = SITSCheckboxName(rowIndex)
             cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
+            cb.OnAction = "SITSSelectorCheckboxChanged"
             If Not (VarType(linkCell.Value) = vbBoolean Or IsNumeric(linkCell.Value)) Then
                 linkCell.Value = False
             End If
             linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
             linkCell.Font.Bold = False
             linkCell.Font.Color = vbBlack
+            ApplySITSViewRowSelectionHighlight ws, rowIndex, ConvertToBoolean(linkCell.Value)
         End If
     Next i
     On Error GoTo 0
@@ -1183,6 +1326,7 @@ Private Sub SetSITSViewSelectorCheckbox(ByVal ws As Worksheet, ByVal viewRow As 
     Set cb = ws.CheckBoxes.Add(linkCell.Left, linkCell.Top, linkCell.Width, linkCell.Height)
     cb.Name = SITSCheckboxName(viewRow)
     cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
+    cb.OnAction = "SITSSelectorCheckboxChanged"
     cb.Caption = ""
     cb.Placement = xlMove
     cb.Display3DShading = False
@@ -1682,42 +1826,123 @@ Private Sub ApplySITSViewRowWarnings(ByVal ws As Worksheet, _
                                      ByVal sourceRow As ListRow, _
                                      ByVal colManualFlag As Long)
     Dim warnColor As Long
+    Dim rowRange As Range
+
+    Set rowRange = ws.Range(ws.Cells(rowIndex, 1), ws.Cells(rowIndex, colCount))
+    rowRange.Interior.ColorIndex = xlNone
+
+    warnColor = ResolveSITSViewWarningColor(intervalCode, warnHoursFraction, warnDays, _
+                                           sourceRow, colManualFlag)
+
+    If warnColor <> 0 Then
+        rowRange.Interior.Color = warnColor
+    End If
+End Sub
+
+' Light-blue selection highlight while a Selector checkbox is ticked.
+' Deselect restores due-soon / overdue / manual-update colours (or clears).
+Private Sub ApplySITSViewRowSelectionHighlight(ByVal ws As Worksheet, _
+                                               ByVal viewRow As Long, _
+                                               ByVal selected As Boolean)
+    Dim rowRange As Range
+    Dim wsData As Worksheet
+    Dim tbl As ListObject
+    Dim sitsRow As ListRow
+    Dim colRowIdView As Long
+    Dim colInterval As Long
+    Dim colManualFlag As Long
+    Dim headerCell As Range
+    Dim rowId As String
+    Dim intervalCode As String
+    Dim warnColor As Long
+    Dim warnHoursFraction As Double
+    Dim warnDays As Long
+    Dim sitsIndex As Object
+
+    If ws Is Nothing Or viewRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+
+    Set rowRange = ws.Range(ws.Cells(viewRow, 1), ws.Cells(viewRow, SITS_VISIBLE_COLUMN_COUNT))
+
+    If selected Then
+        rowRange.Interior.Color = COLOR_SELECTED_BLUE
+        Exit Sub
+    End If
+
+    ' Deselected — clear selection colour, then restore any warning colour.
+    rowRange.Interior.ColorIndex = xlNone
+
+    colRowIdView = 0
+    For Each headerCell In ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 1), _
+                                    ws.Cells(SITS_VIEW_HEADER_ROW, 40))
+        If StrComp(Trim$(CStr(headerCell.Value)), HDR_SITS_ROW_ID, vbTextCompare) = 0 Then
+            colRowIdView = headerCell.Column
+            Exit For
+        End If
+    Next headerCell
+    If colRowIdView = 0 Then Exit Sub
+
+    rowId = Trim$(CStr(ws.Cells(viewRow, colRowIdView).Value))
+    If Len(rowId) = 0 Then Exit Sub
+
+    Set wsData = GetWorksheet(SHEET_DATA_SITS, showError:=False)
+    If wsData Is Nothing Then Exit Sub
+    Set tbl = GetTable(wsData, TBL_SITS, showError:=False)
+    If tbl Is Nothing Then Exit Sub
+
+    Set sitsIndex = BuildSITSRowIdIndex(tbl)
+    Set sitsRow = ResolveSITSRowById(sitsIndex, tbl, rowId)
+    If sitsRow Is Nothing Then Exit Sub
+
+    colInterval = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)
+    colManualFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
+    If colInterval = 0 Then Exit Sub
+
+    intervalCode = UCase$(Trim$(CStr(sitsRow.Range.Cells(1, colInterval).Value)))
+    warnHoursFraction = ParseWarnHoursSetting()
+    warnDays = CLng(NzSITSNumber(GetConfigValue(CFG_WARN_DAYS, 7)))
+    warnColor = ResolveSITSViewWarningColor(intervalCode, warnHoursFraction, warnDays, _
+                                           sitsRow, colManualFlag)
+    If warnColor <> 0 Then
+        rowRange.Interior.Color = warnColor
+    End If
+End Sub
+
+Private Function ResolveSITSViewWarningColor(ByVal intervalCode As String, _
+                                             ByVal warnHoursFraction As Double, _
+                                             ByVal warnDays As Long, _
+                                             ByVal sourceRow As ListRow, _
+                                             ByVal colManualFlag As Long) As Long
     Dim lifeValue As Double
     Dim hasLife As Boolean
 
-    warnColor = 0
+    ResolveSITSViewWarningColor = 0
 
     ' Manual-update flag takes priority over due-soon / overdue colours.
     If colManualFlag > 0 Then
         If ConvertToBoolean(sourceRow.Range.Cells(1, colManualFlag).Value) Then
-            warnColor = COLOR_MANUAL_BLUE
+            ResolveSITSViewWarningColor = COLOR_MANUAL_BLUE
+            Exit Function
         End If
     End If
 
-    If warnColor = 0 Then
-        hasLife = TryGetWarningLifeValue(sourceRow, intervalCode, lifeValue)
-        If hasLife Then
-            Select Case intervalCode
-                Case TYPE_HH, TYPE_E1, TYPE_E2
-                    If lifeValue < 0# Then
-                        warnColor = COLOR_WARN_PINK
-                    ElseIf lifeValue <= warnHoursFraction Then
-                        warnColor = COLOR_WARN_AMBER
-                    End If
-                Case TYPE_DD
-                    If lifeValue < 0# Then
-                        warnColor = COLOR_WARN_PINK
-                    ElseIf lifeValue <= CDbl(warnDays) Then
-                        warnColor = COLOR_WARN_AMBER
-                    End If
-            End Select
-        End If
-    End If
+    hasLife = TryGetWarningLifeValue(sourceRow, intervalCode, lifeValue)
+    If Not hasLife Then Exit Function
 
-    If warnColor <> 0 Then
-        ws.Range(ws.Cells(rowIndex, 1), ws.Cells(rowIndex, colCount)).Interior.Color = warnColor
-    End If
-End Sub
+    Select Case intervalCode
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            If lifeValue < 0# Then
+                ResolveSITSViewWarningColor = COLOR_WARN_PINK
+            ElseIf lifeValue <= warnHoursFraction Then
+                ResolveSITSViewWarningColor = COLOR_WARN_AMBER
+            End If
+        Case TYPE_DD
+            If lifeValue < 0# Then
+                ResolveSITSViewWarningColor = COLOR_WARN_PINK
+            ElseIf lifeValue <= CDbl(warnDays) Then
+                ResolveSITSViewWarningColor = COLOR_WARN_AMBER
+            End If
+    End Select
+End Function
 
 Private Function TryGetWarningLifeValue(ByVal sourceRow As ListRow, _
                                         ByVal intervalCode As String, _

@@ -494,10 +494,6 @@ Public Function CloseWorkPackage(ByVal orn As String, _
     Dim rowsToDelete As Collection
     Dim deleteRow As Variant
     Dim rowIndex As Object
-    Dim closedRowIds As Object
-    Dim deletedRowIds As Object
-    Dim deletedRowId As String
-    Dim colRowId As Long
 
     CloseWorkPackage = False
     orn = UCase$(Trim$(orn))
@@ -534,10 +530,6 @@ Public Function CloseWorkPackage(ByVal orn As String, _
     End If
 
     Set rowsToDelete = New Collection
-    Set closedRowIds = CreateObject("Scripting.Dictionary")
-    closedRowIds.CompareMode = 1
-    Set deletedRowIds = CreateObject("Scripting.Dictionary")
-    deletedRowIds.CompareMode = 1
 
     commentText = "ORN: " & orn & vbCrLf & _
                   "Closed: " & Format$(closeDate, FORMAT_DATE) & vbCrLf & _
@@ -548,15 +540,12 @@ Public Function CloseWorkPackage(ByVal orn As String, _
     SetExcelState "disable"
 
     Set rowIndex = BuildSITSRowIdIndex(tblSITS)
-    colRowId = GetTableColumnIndex(tblSITS, HDR_SITS_ROW_ID)
 
     For Each rowId In taskIds
         Set sitsRow = ResolveSITSRowById(rowIndex, tblSITS, CStr(rowId))
         If sitsRow Is Nothing Then GoTo NextCloseTask
 
         If IsDeferredFaultTaskCode(GetSITSTaskCode(sitsRow, tblSITS)) Then
-            deletedRowId = Trim$(CStr(sitsRow.Range.Cells(1, colRowId).Value))
-            If Len(deletedRowId) > 0 Then deletedRowIds(deletedRowId) = True
             rowsToDelete.Add sitsRow
             deletedFaults = deletedFaults + 1
             GoTo NextCloseTask
@@ -577,7 +566,6 @@ Public Function CloseWorkPackage(ByVal orn As String, _
 
         ClearTaskOpenORN sitsRow, tblSITS
         ClearTaskSelector sitsRow, tblSITS
-        closedRowIds(CStr(rowId)) = True
 NextCloseTask:
     Next rowId
 
@@ -592,9 +580,10 @@ NextCloseTask:
               "Reforecasted=" & reforecasted & "; Manual=" & manualCount & _
               "; DeletedFaults=" & deletedFaults
 
-    ' Targeted view update only — no full SITS rebuild / checkbox recreation.
-    Application.StatusBar = "Updating SITS view…"
-    ApplySITSViewAfterWorkPackageClose closedRowIds, deletedRowIds
+    ' Full rebuild so reforecasted life remaining re-sorts the view
+    ' (in-place updates left completed tasks in their old due-soon position).
+    Application.StatusBar = "Refreshing SITS view…"
+    RefreshSITSView
 
     Application.StatusBar = "Updating Dashboard…"
     RefreshDashboardStatusCounts
