@@ -145,9 +145,10 @@ Step 7 — SITS view and refresh (Phase 3)
    **Extend** / **Defer** buttons on the SITS sheet (recreated by RefreshSITS).
 4. Use the **AutoFilter** dropdowns on the header row (row 7) to show/hide interval
    types (e.g. hide AU, OP) or other columns — standard Excel filtering.
-5. Life remaining warnings highlight rows in pink when below config thresholds
-   (default 10:00 hours / 7 days).
-6. Zero-interval tasks awaiting manual update after WP close highlight in amber.
+5. Life remaining highlighting:
+   - Amber when due soon (within warn thresholds: default 10:00 hours / 7 days)
+   - Pink/red when overdue (life remaining / days remaining below zero)
+6. Zero-interval tasks awaiting manual update after WP close highlight in strong amber.
 
 SITS recalculation runs automatically after:
   - SITS import (Import SITS / Setup Wizard)

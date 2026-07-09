@@ -908,13 +908,18 @@ Public Function FormatElapsedHoursFromDayFraction(ByVal dayFraction As Double) A
     Dim totalMinutes As Long
     Dim hours As Long
     Dim minutes As Long
+    Dim negative As Boolean
 
     totalMinutes = CLng(Round(dayFraction * 24# * 60#, 0))
-    If totalMinutes < 0 Then totalMinutes = 0
+    If totalMinutes < 0 Then
+        negative = True
+        totalMinutes = Abs(totalMinutes)
+    End If
 
     hours = totalMinutes \ 60
     minutes = totalMinutes Mod 60
     FormatElapsedHoursFromDayFraction = CStr(hours) & ":" & Format$(minutes, "00")
+    If negative Then FormatElapsedHoursFromDayFraction = "-" & FormatElapsedHoursFromDayFraction
 End Function
 
 ' Elapsed minutes:seconds for display — supports totals above 59:59.

@@ -1320,7 +1320,6 @@ Private Sub ReforecastCompletedTask(ByVal sitsRow As ListRow, _
     If intervalCode = TYPE_DD Then
         dueDate = DateAdd("d", CLng(CDbl(actualInterval)), closeDate)
         daysRemainingClose = CLng(DateDiff("d", Date, dueDate))
-        If daysRemainingClose < 0 Then daysRemainingClose = 0
         If colDaysDue > 0 Then
             sitsRow.Range.Cells(1, colDaysDue).Value = CDbl(daysRemainingClose)
             sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL

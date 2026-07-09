@@ -844,7 +844,6 @@ Private Sub BumpBaselineLifeRemaining(ByVal sitsRow As ListRow, _
         End If
 
         daysRemaining = CDbl(DateDiff("d", Date, newDueDate))
-        If daysRemaining < 0# Then daysRemaining = 0#
 
         If colDaysDue > 0 Then
             sitsRow.Range.Cells(1, colDaysDue).Value = daysRemaining
@@ -958,9 +957,9 @@ Private Sub SetDaysDueTarget(ByVal sitsRow As ListRow, _
     colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
     colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
 
-    ' Life Remaining is days remaining (number). Absolute due date goes to Projected Due Date.
+    ' Life Remaining is days remaining (number; negative = overdue).
+    ' Absolute due date goes to Projected Due Date / baseline.
     daysRemaining = CLng(DateDiff("d", Date, dueDate))
-    If daysRemaining < 0 Then daysRemaining = 0
 
     If colDaysDue > 0 Then
         sitsRow.Range.Cells(1, colDaysDue).Value = CDbl(daysRemaining)
