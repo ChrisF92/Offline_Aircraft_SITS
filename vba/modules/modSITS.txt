@@ -35,33 +35,141 @@ Public Sub RunRefreshSITS()
 End Sub
 
 ' Form-control checkbox OnAction — highlight / unhighlight the linked SITS view row.
+' Resolve the control via Application.Caller (name may not stay SITS_SEL_*), then
+' read Value / LinkedCell so we do not depend on a stale name or cell alone.
 Public Sub SITSSelectorCheckboxChanged()
     Dim ws As Worksheet
-    Dim cbName As String
-    Dim viewRow As Long
+    Dim cb As CheckBox
     Dim linkCell As Range
+    Dim viewRow As Long
     Dim selected As Boolean
+    Dim callerName As String
+    Dim linkAddr As String
+    Dim valueKnown As Boolean
 
     On Error Resume Next
-    cbName = CStr(Application.Caller)
+    callerName = CStr(Application.Caller)
     On Error GoTo 0
-    If Len(cbName) = 0 Then Exit Sub
-    If StrComp(Left$(cbName, 8), "SITS_SEL_", vbTextCompare) <> 0 Then Exit Sub
+    If Len(callerName) = 0 Then Exit Sub
 
+    Set ws = Nothing
     On Error Resume Next
-    viewRow = CLng(Mid$(cbName, 9))
+    Set ws = ActiveSheet
+    If ws Is Nothing Then Set ws = GetWorksheet(SHEET_SITS, showError:=False)
     On Error GoTo 0
-    If viewRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
-
-    Set ws = GetWorksheet(SHEET_SITS, showError:=False)
     If ws Is Nothing Then Exit Sub
+    If StrComp(ws.Name, SHEET_SITS, vbTextCompare) <> 0 Then
+        Set ws = GetWorksheet(SHEET_SITS, showError:=False)
+        If ws Is Nothing Then Exit Sub
+    End If
 
-    Set linkCell = ws.Cells(viewRow, SITS_SELECTOR_COL)
+    Set cb = Nothing
+    On Error Resume Next
+    Set cb = ws.CheckBoxes(callerName)
+    On Error GoTo 0
+    If cb Is Nothing Then Exit Sub
+
+    ' Prefer the control Value (xlOn=1 / xlOff=-4146); fall back to LinkedCell.
+    selected = False
+    valueKnown = False
+    On Error Resume Next
+    If cb.Value = 1 Then
+        selected = True
+        valueKnown = True
+    ElseIf cb.Value = xlOff Then
+        selected = False
+        valueKnown = True
+    End If
+    linkAddr = CStr(cb.LinkedCell)
+    On Error GoTo 0
+
+    Set linkCell = Nothing
+    If Len(linkAddr) > 0 Then
+        On Error Resume Next
+        ' LinkedCell is usually sheet-qualified ('SITS'!A8) — resolve via Application.Range.
+        Set linkCell = Application.Range(linkAddr)
+        If linkCell Is Nothing Then Set linkCell = ws.Range(linkAddr)
+        On Error GoTo 0
+        If Not linkCell Is Nothing Then
+            If Not linkCell.Parent Is ws Then Set linkCell = Nothing
+        End If
+    End If
+
+    If linkCell Is Nothing Then
+        ' Fall back to row inferred from the control name or Top position.
+        viewRow = 0
+        If StrComp(Left$(cb.Name, 8), "SITS_SEL_", vbTextCompare) = 0 Then
+            On Error Resume Next
+            viewRow = CLng(Mid$(cb.Name, 9))
+            On Error GoTo 0
+        End If
+        If viewRow < SITS_VIEW_DATA_START_ROW Then
+            viewRow = EstimateSITSViewRowFromCheckboxTop(ws, cb.Top)
+        End If
+        If viewRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+        Set linkCell = ws.Cells(viewRow, SITS_SELECTOR_COL)
+    Else
+        viewRow = linkCell.Row
+    End If
+
+    If viewRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
     If StrComp(Trim$(CStr(linkCell.Value)), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then Exit Sub
 
-    selected = ConvertToBoolean(linkCell.Value)
+    If Not valueKnown Then selected = ConvertToBoolean(linkCell.Value)
+
     ApplySITSViewRowSelectionHighlight ws, viewRow, selected
 End Sub
+
+' Called from ThisWorkbook.Workbook_SheetChange when Selector LinkedCells change.
+Public Sub HandleSITSSelectorSheetChange(ByVal Sh As Object, ByVal Target As Range)
+    Dim ws As Worksheet
+    Dim intersectRange As Range
+    Dim cell As Range
+    Dim lastRow As Long
+    Dim selected As Boolean
+
+    If Sh Is Nothing Or Target Is Nothing Then Exit Sub
+    If StrComp(Sh.Name, SHEET_SITS, vbTextCompare) <> 0 Then Exit Sub
+
+    Set ws = Sh
+    lastRow = ws.Cells(ws.Rows.Count, SITS_SELECTOR_COL).End(xlUp).Row
+    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+
+    Set intersectRange = Intersect(Target, _
+        ws.Range(ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL), _
+                 ws.Cells(lastRow, SITS_SELECTOR_COL)))
+    If intersectRange Is Nothing Then Exit Sub
+
+    For Each cell In intersectRange.Cells
+        If StrComp(Trim$(CStr(cell.Value)), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then GoTo NextSelectorChange
+        selected = ConvertToBoolean(cell.Value)
+        ApplySITSViewRowSelectionHighlight ws, cell.Row, selected
+NextSelectorChange:
+    Next cell
+End Sub
+
+Private Function EstimateSITSViewRowFromCheckboxTop(ByVal ws As Worksheet, _
+                                                    ByVal topPos As Double) As Long
+    Dim firstTop As Double
+    Dim rowHeightPx As Double
+    Dim estimatedRow As Long
+    Dim lastRow As Long
+
+    EstimateSITSViewRowFromCheckboxTop = 0
+    If ws Is Nothing Then Exit Function
+
+    firstTop = ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL).Top
+    rowHeightPx = ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL).Height
+    If rowHeightPx <= 0# Then rowHeightPx = 15#
+
+    lastRow = ws.Cells(ws.Rows.Count, SITS_SELECTOR_COL).End(xlUp).Row
+    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Function
+
+    estimatedRow = SITS_VIEW_DATA_START_ROW + CLng((topPos - firstTop) / rowHeightPx)
+    If estimatedRow < SITS_VIEW_DATA_START_ROW Then estimatedRow = SITS_VIEW_DATA_START_ROW
+    If estimatedRow > lastRow Then estimatedRow = lastRow
+    EstimateSITSViewRowFromCheckboxTop = estimatedRow
+End Function
 
 Public Sub RefreshSITS(Optional ByVal skipRecalculate As Boolean = False)
     If Not ValidateWorkbookStructure(showDialogs:=False) Then Exit Sub

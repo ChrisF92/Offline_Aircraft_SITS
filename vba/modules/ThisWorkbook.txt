@@ -22,6 +22,14 @@ Private Sub Workbook_Open()
     On Error GoTo 0
 End Sub
 
+' Form-control LinkedCell writes fire SheetChange — keep selection highlight in sync
+' even when a checkbox OnAction was not assigned (e.g. view not refreshed yet).
+Private Sub Workbook_SheetChange(ByVal Sh As Object, ByVal Target As Range)
+    On Error Resume Next
+    HandleSITSSelectorSheetChange Sh, Target
+    On Error GoTo 0
+End Sub
+
 Private Sub Workbook_BeforeClose(Cancel As Boolean)
     SetExcelState "enable"
 End Sub

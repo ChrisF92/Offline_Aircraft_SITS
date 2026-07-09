@@ -150,7 +150,8 @@ Step 7 — SITS view and refresh (Phase 3)
    - Pink/red when overdue (life remaining / days remaining below zero)
 6. Zero-interval tasks awaiting manual update after WP close highlight in light blue.
 7. Ticking a Selector checkbox highlights that row light blue; unticking restores the
-   previous warning colour (or clears the fill).
+   previous warning colour (or clears the fill). Refresh View once after importing
+   updated VBA so checkboxes pick up the OnAction (SheetChange is a backup path).
 
 SITS recalculation runs automatically after:
   - SITS import (Import SITS / Setup Wizard)
@@ -186,6 +187,8 @@ Manage:
    - Resets Extension to 0 / 0:00
    - Writes a Task Description cell comment: ORN, close date, user
    - Zero-interval tasks: skip auto-reforecast, flag Needs Manual Update (light blue + Dashboard count)
+   - Rebuilds / re-sorts the SITS view so newly reforecasted tasks move to their
+     correct due-soon position (e.g. 25:00 no longer sits above sooner jobs)
 7. Form stays open and refreshes after Delete/Remove/Close.
 
 Dashboard (Phase 4/5):
