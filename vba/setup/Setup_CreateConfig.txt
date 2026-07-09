@@ -25,6 +25,7 @@ Public Sub Setup_CreateConfig(Optional ByVal silent As Boolean = False, _
     SetConfigValue CFG_WARN_DAYS, 7
     SetConfigValue CFG_FORECAST_HOURS, 50
     SetConfigValue CFG_FORECAST_DAYS, 90
+    SetConfigValue CFG_FORECAST_NUMBER, 500
     SetConfigValue CFG_SITS_SNAPSHOT_DATE, ""
 
     SeedIntervalMapDefaults

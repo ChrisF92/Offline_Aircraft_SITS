@@ -12,6 +12,7 @@ Private Const SITS_VIEW_HEADER_ROW As Long = 7
 Private Const SITS_VIEW_DATA_START_ROW As Long = 8
 Private Const SITS_FORECAST_HOURS_CELL As String = "B3"
 Private Const SITS_FORECAST_DAYS_CELL As String = "B4"
+Private Const SITS_FORECAST_NUMBER_CELL As String = "B5"
 Private Const SITS_SELECTOR_COL As Long = 1
 Private Const SITS_VISIBLE_COLUMN_COUNT As Long = 10
 Private Const SITS_HEADER_ROW_HEIGHT_PX As Double = 40
@@ -106,6 +107,7 @@ Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
     Dim daysUntilDue As Long
     Dim forecastHours As Double
     Dim forecastDays As Long
+    Dim forecastNumber As Long
     Dim warnHoursFraction As Double
     Dim warnDays As Long
     Dim colManualFlag As Long
@@ -130,6 +132,7 @@ Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
 
     forecastHours = GetForecastHoursSetting()
     forecastDays = GetForecastDaysSetting()
+    forecastNumber = GetForecastNumberSetting()
     warnHoursFraction = ParseWarnHoursSetting()
     warnDays = CLng(NzSITSNumber(GetConfigValue(CFG_WARN_DAYS, 7)))
     colManualFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
@@ -158,7 +161,7 @@ Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
 
             intervalCode = UCase$(Trim$(CStr(sitsRow.Range.Cells(1, colInterval).Value)))
             includeRow = TaskPassesForecastFilter(sitsRow, tbl, intervalCode, _
-                forecastHours, forecastDays, lifeHoursFraction, daysUntilDue)
+                forecastHours, forecastDays, forecastNumber, lifeHoursFraction, daysUntilDue)
 
             If Not includeRow Then
                 rowsToRemove.Add viewRow
@@ -322,6 +325,7 @@ Public Sub RefreshSITSView()
     Dim intervalCode As String
     Dim forecastHours As Double
     Dim forecastDays As Long
+    Dim forecastNumber As Long
     Dim lifeHoursFraction As Double
     Dim daysUntilDue As Long
     Dim warnHoursFraction As Double
@@ -341,6 +345,7 @@ Public Sub RefreshSITSView()
     Set viewColumns = BuildSITSViewColumns()
     forecastHours = GetForecastHoursSetting()
     forecastDays = GetForecastDaysSetting()
+    forecastNumber = GetForecastNumberSetting()
     warnHoursFraction = ParseWarnHoursSetting()
     warnDays = CLng(NzSITSNumber(GetConfigValue(CFG_WARN_DAYS, 7)))
     colManualFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
@@ -358,7 +363,7 @@ Public Sub RefreshSITSView()
 
     ' Clear only used area — faster than wiping the whole sheet.
     wsView.UsedRange.Clear
-    WriteSITSViewShell wsView, forecastHours, forecastDays
+    WriteSITSViewShell wsView, forecastHours, forecastDays, forecastNumber
     AddSITSViewActionButtons wsView
 
     outputCol = 1
@@ -392,7 +397,7 @@ Public Sub RefreshSITSView()
             intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, colIntervalCached).Value)))
 
             includeRow = TaskPassesForecastFilter(row, tbl, intervalCode, _
-                forecastHours, forecastDays, lifeHoursFraction, daysUntilDue)
+                forecastHours, forecastDays, forecastNumber, lifeHoursFraction, daysUntilDue)
             If Not includeRow Then GoTo NextCollectRow
 
             sortCount = sortCount + 1
@@ -701,11 +706,14 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
                                           ByVal intervalCode As String, _
                                           ByVal forecastHours As Double, _
                                           ByVal forecastDays As Long, _
+                                          ByVal forecastNumber As Long, _
                                           ByRef lifeHoursFraction As Double, _
                                           ByRef daysUntilDue As Long) As Boolean
     Dim colLRHours As Long
+    Dim colLRNumber As Long
     Dim colDaysDue As Long
     Dim dueValue As Variant
+    Dim lifeNumber As Double
 
     lifeHoursFraction = -1#
     daysUntilDue = -1
@@ -741,7 +749,22 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
             End If
 
         Case Else
-            TaskPassesForecastFilter = True
+            If IsNumberBasedSITSInterval(intervalCode) Then
+                colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+                lifeNumber = -1#
+                If colLRNumber > 0 And IsNumeric(row.Range.Cells(1, colLRNumber).Value) Then
+                    lifeNumber = CDbl(row.Range.Cells(1, colLRNumber).Value)
+                End If
+                If forecastNumber <= 0 Then
+                    TaskPassesForecastFilter = True
+                ElseIf lifeNumber < 0# Then
+                    TaskPassesForecastFilter = True
+                Else
+                    TaskPassesForecastFilter = (lifeNumber <= forecastNumber)
+                End If
+            Else
+                TaskPassesForecastFilter = True
+            End If
     End Select
 End Function
 
@@ -759,7 +782,8 @@ End Sub
 
 Private Sub WriteSITSViewShell(ByVal ws As Worksheet, _
                                Optional ByVal forecastHours As Double = -1#, _
-                               Optional ByVal forecastDays As Long = -1)
+                               Optional ByVal forecastDays As Long = -1, _
+                               Optional ByVal forecastNumber As Long = -1)
     With ws.Range("A1")
         .Value = "SITS — Task View"
         .Font.Size = 14
@@ -772,6 +796,7 @@ Private Sub WriteSITSViewShell(ByVal ws As Worksheet, _
 
     If forecastHours < 0# Then forecastHours = GetForecastHoursSetting()
     If forecastDays < 0 Then forecastDays = GetForecastDaysSetting()
+    If forecastNumber < 0 Then forecastNumber = GetForecastNumberSetting()
 
     ws.Range("A3").Value = "Forecast hours (HH/E1/E2):"
     ws.Range("B3").Value = forecastHours
@@ -781,9 +806,13 @@ Private Sub WriteSITSViewShell(ByVal ws As Worksheet, _
     ws.Range("B4").Value = forecastDays
     ws.Range("B4").NumberFormat = FORMAT_GENERAL
 
-    ws.Range("A5").Value = "Tick tasks, then Create Work Package / Extend / Defer. Use Manage Work Packages to delete, remove tasks, or close open ORNs. Filter dropdowns on row 7 hide interval types."
-    ws.Range("A5").Font.Size = 9
-    ws.Range("A5").Font.Italic = True
+    ws.Range("A5").Value = "Forecast number (other):"
+    ws.Range("B5").Value = forecastNumber
+    ws.Range("B5").NumberFormat = FORMAT_GENERAL
+
+    ws.Range("A6").Value = "Tick tasks, then Create Work Package / Extend / Defer. Use Manage Work Packages to delete, remove tasks, or close open ORNs. Filter dropdowns on row 7 hide interval types."
+    ws.Range("A6").Font.Size = 9
+    ws.Range("A6").Font.Italic = True
 End Sub
 
 Private Sub ClearSITSViewControls(ByVal ws As Worksheet)
@@ -1450,6 +1479,7 @@ Private Sub SaveForecastSettingsFromView()
     Dim ws As Worksheet
     Dim hoursValue As Variant
     Dim daysValue As Variant
+    Dim numberValue As Variant
 
     Set ws = GetWorksheet(SHEET_SITS, showError:=False)
     If ws Is Nothing Then Exit Sub
@@ -1464,6 +1494,11 @@ Private Sub SaveForecastSettingsFromView()
     daysValue = ws.Range(SITS_FORECAST_DAYS_CELL).Value
     If IsPresentNumericSetting(daysValue) Then
         SetConfigValue CFG_FORECAST_DAYS, CLng(daysValue)
+    End If
+
+    numberValue = ws.Range(SITS_FORECAST_NUMBER_CELL).Value
+    If IsPresentNumericSetting(numberValue) Then
+        SetConfigValue CFG_FORECAST_NUMBER, CLng(numberValue)
     End If
 End Sub
 
@@ -1509,6 +1544,27 @@ Private Function GetForecastDaysSetting() As Long
     End If
 End Function
 
+Private Function GetForecastNumberSetting() As Long
+    Dim ws As Worksheet
+    Dim value As Variant
+
+    Set ws = GetWorksheet(SHEET_SITS, showError:=False)
+    If Not ws Is Nothing Then
+        value = ws.Range(SITS_FORECAST_NUMBER_CELL).Value
+        If IsPresentNumericSetting(value) Then
+            GetForecastNumberSetting = CLng(value)
+            Exit Function
+        End If
+    End If
+
+    value = GetConfigValue(CFG_FORECAST_NUMBER, 500)
+    If IsPresentNumericSetting(value) Then
+        GetForecastNumberSetting = CLng(value)
+    Else
+        GetForecastNumberSetting = 500
+    End If
+End Function
+
 ' True only for a real entered number — Empty/blank must not count (VBA
 ' IsNumeric(Empty) is True and CDbl(Empty)=0, which corrupted B3/B4).
 ' Note: 0 itself is a valid setting (show all tasks).
@@ -1522,11 +1578,12 @@ Private Function IsPresentNumericSetting(ByVal value As Variant) As Boolean
     IsPresentNumericSetting = IsNumeric(value)
 End Function
 
-' Seed missing forecast config to defaults (50 hours / 90 days).
+' Seed missing forecast config to defaults (50 hours / 90 days / 500 number).
 ' Does not overwrite an intentional 0 (show-all) value.
 Private Sub EnsureForecastConfigDefaults()
     Dim hoursValue As Variant
     Dim daysValue As Variant
+    Dim numberValue As Variant
 
     hoursValue = GetConfigValue(CFG_FORECAST_HOURS, Empty)
     If Not IsPresentNumericSetting(hoursValue) Then
@@ -1536,6 +1593,11 @@ Private Sub EnsureForecastConfigDefaults()
     daysValue = GetConfigValue(CFG_FORECAST_DAYS, Empty)
     If Not IsPresentNumericSetting(daysValue) Then
         SetConfigValue CFG_FORECAST_DAYS, 90
+    End If
+
+    numberValue = GetConfigValue(CFG_FORECAST_NUMBER, Empty)
+    If Not IsPresentNumericSetting(numberValue) Then
+        SetConfigValue CFG_FORECAST_NUMBER, 500
     End If
 End Sub
 

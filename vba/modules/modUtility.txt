@@ -664,6 +664,15 @@ Public Function IsSecondsCountInterval(ByVal intervalCode As String) As Boolean
     End Select
 End Function
 
+' Number-based SITS intervals (starts, cycles, etc.) — not DD or hour-based types.
+Public Function IsNumberBasedSITSInterval(ByVal intervalCode As String) As Boolean
+    intervalCode = UCase$(Trim$(intervalCode))
+    If intervalCode = TYPE_DD Then Exit Function
+    If IsHourUsageInterval(intervalCode) Then Exit Function
+    If IsHourBasedIntervalType(intervalCode) And Not IsSecondsCountInterval(intervalCode) Then Exit Function
+    IsNumberBasedSITSInterval = True
+End Function
+
 Public Function GetFormatPatternForType(ByVal formatType As String) As String
     Select Case UCase$(Trim$(formatType))
         Case UCase$(FORMAT_TYPE_HOURS)

@@ -226,7 +226,9 @@ Private Sub FormatSITSView()
     ws.Range("B3").Value = 50
     ws.Range("A4").Value = "Forecast days (DD):"
     ws.Range("B4").Value = 90
-    ws.Range("A5").Value = "Use filter dropdowns on row 7 to hide interval types. Check tasks to select for future work packages."
+    ws.Range("A5").Value = "Forecast number (other):"
+    ws.Range("B5").Value = 500
+    ws.Range("A6").Value = "Use filter dropdowns on row 7 to hide interval types. Check tasks to select for future work packages."
 End Sub
 
 Private Sub FormatUsageView()

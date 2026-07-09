@@ -127,6 +127,7 @@ Public Const CFG_MASTER_TEMPLATE As String = "MasterTemplate"
 Public Const CFG_SITS_SNAPSHOT_DATE As String = "SITSSnapshotDate"
 Public Const CFG_FORECAST_HOURS As String = "ForecastHours"
 Public Const CFG_FORECAST_DAYS As String = "ForecastDays"
+Public Const CFG_FORECAST_NUMBER As String = "ForecastNumber"
 
 ' --- Interval type codes ---
 Public Const TYPE_HH As String = "HH"
