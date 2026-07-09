@@ -188,6 +188,9 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
     Dim newRow As ListRow
     Dim rowCount As Long
     Dim resolvedFormat As String
+    Dim intervalCode As String
+    Dim taskCode As String
+    Dim valuePattern As String
 
     CommitUsageImport = False
     failReason = ""
@@ -253,25 +256,37 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
 
     For Each mergeKey In mUsageRows.Keys
         rowData = mUsageRows(mergeKey)
-        resolvedFormat = ResolveUsageFormatType(CStr(rowData(0)), CStr(rowData(1)), _
+        If Not IsArray(rowData) Then
+            SetExcelState "enable"
+            failReason = "Staged usage data is invalid. Re-import airframe and engine usage."
+            Exit Function
+        End If
+
+        intervalCode = CStr(rowData(0))
+        taskCode = CStr(rowData(1))
+        resolvedFormat = ResolveUsageFormatType(intervalCode, taskCode, _
             CStr(rowData(4)), CStr(rowData(2)))
+        valuePattern = UsageNumberFormatPattern(resolvedFormat, rowData(3))
 
         Set newRow = tblBaseline.ListRows.Add
         With newRow.Range
-            .Cells(1, 1).Value = rowData(0)
-            .Cells(1, 2).Value = rowData(1)
+            .Cells(1, 1).Value = intervalCode
+            .Cells(1, 2).Value = taskCode
             .Cells(1, 3).Value = rowData(2)
-            WriteUsageBaselineCell .Cells(1, 4), rowData(3), resolvedFormat
+            .Cells(1, 4).Value = rowData(3)
+            .Cells(1, 4).NumberFormat = valuePattern
             .Cells(1, 5).Value = resolvedFormat
             .Cells(1, 6).Value = rowData(5)
-            WriteSerialCell .Cells(1, 7), rowData(6)
+            .Cells(1, 7).NumberFormat = FORMAT_TEXT
+            .Cells(1, 7).Value = CStr(rowData(6))
         End With
 
         Set newRow = tblCurrent.ListRows.Add
         With newRow.Range
-            .Cells(1, 1).Value = rowData(0)
-            .Cells(1, 2).Value = rowData(1)
-            WriteUsageCurrentCell .Cells(1, 3), rowData(3), resolvedFormat
+            .Cells(1, 1).Value = intervalCode
+            .Cells(1, 2).Value = taskCode
+            .Cells(1, 3).Value = rowData(3)
+            .Cells(1, 3).NumberFormat = valuePattern
         End With
 
         rowCount = rowCount + 1
@@ -280,11 +295,7 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
     SetExcelState "enable"
     CommitUsageImport = True
     LogAction "USAGE_IMPORTED", "", "Committed " & rowCount & " merged usage row(s)"
-
-    On Error Resume Next
-    ApplyUsageTableFormats
     RefreshUsageView
-    On Error GoTo 0
 
     If showDialogs Then
         MsgBox "Committed " & rowCount & " usage baseline row(s).", vbInformation, APP_NAME
@@ -293,7 +304,14 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
 
 ErrorHandler:
     SetExcelState "enable"
-    failReason = "Usage commit error: " & Err.Number & " - " & Err.Description
+    If Len(failReason) = 0 Then
+        If Len(intervalCode) > 0 Then
+            failReason = "Usage commit error on " & intervalCode & "/" & taskCode & _
+                         ": " & Err.Number & " - " & Err.Description
+        Else
+            failReason = "Usage commit error: " & Err.Number & " - " & Err.Description
+        End If
+    End If
     LogError "CommitUsageImport", Err.Number, Err.Description
     If showDialogs Then
         MsgBox failReason, vbCritical, APP_NAME
@@ -313,7 +331,9 @@ Public Function ValidateRequiredUsageIntervals(ByVal usageRows As Object, _
 
     For Each mergeKey In usageRows.Keys
         rowData = usageRows(mergeKey)
-        foundCodes(UCase$(Trim$(CStr(rowData(0))))) = True
+        If IsArray(rowData) Then
+            foundCodes(UCase$(Trim$(CStr(rowData(0))))) = True
+        End If
     Next mergeKey
 
     ApplyIntervalMapToUsageRows usageRows, foundCodes
@@ -426,9 +446,13 @@ Private Function LookupOptionalComponentSerial(ByVal srcWs As Worksheet, _
 End Function
 
 Private Function UsageRowComponentSerial(ByVal rowData As Variant) As String
-    If UBound(rowData) >= 7 Then
-        UsageRowComponentSerial = Trim$(CStr(rowData(7)))
+    On Error Resume Next
+    If IsArray(rowData) Then
+        If UBound(rowData) >= 7 Then
+            UsageRowComponentSerial = Trim$(CStr(rowData(7)))
+        End If
     End If
+    On Error GoTo 0
 End Function
 
 Private Function LookupOptionalDescription(ByVal srcWs As Worksheet, _
