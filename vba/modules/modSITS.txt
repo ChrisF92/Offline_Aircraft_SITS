@@ -520,7 +520,9 @@ Public Sub CaptureTaskBaselineFromImport(ByVal tbl As ListObject, ByVal newRow A
     Dim colBaseHours As Long
     Dim colBaseNumber As Long
     Dim colBaseDue As Long
+    Dim colProjected As Long
     Dim dueValue As Variant
+    Dim projectedDue As Variant
 
     EnsureSITSBaselineColumns tbl
 
@@ -532,9 +534,6 @@ Public Sub CaptureTaskBaselineFromImport(ByVal tbl As ListObject, ByVal newRow A
     colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
 
     If intervalCode = TYPE_DD Then
-        Dim colProjected As Long
-        Dim projectedDue As Variant
-
         colProjected = GetTableColumnIndex(tbl, HDR_PROJECTED_DUE_DATE)
         If colProjected > 0 Then
             projectedDue = newRow.Range.Cells(1, colProjected).Value
