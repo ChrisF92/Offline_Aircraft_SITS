@@ -163,27 +163,26 @@ Public Function CreateWorkPackageFromSelection() As Boolean
     If tblSITS Is Nothing Then Exit Function
     EnsureWorkPackageSITSColumns tblSITS
 
-    Application.StatusBar = "Reading SITS selection…"
-    SetExcelState "disable"
     On Error GoTo ErrorHandler
+    SetExcelState "disable"
+    Application.StatusBar = "Reading SITS selection…"
 
     Set rowIndex = BuildSITSRowIdIndex(tblSITS)
     Set selectedIds = CollectSelectedFromSITSView(tblSITS, rowIndex)
 
-    SetExcelState "enable"
-    Application.StatusBar = False
-
     If selectedIds.Count = 0 Then
+        SetExcelState "enable"
         MsgBox "Tick one or more tasks on the SITS view, then click Create Work Package.", _
                vbExclamation, APP_NAME
         Exit Function
     End If
 
     Application.StatusBar = "Checking associated tasks…"
-    SetExcelState "disable"
     Set linkIndex = BuildAssociatedLinkIndex(tblSITS)
     Set expandedIds = ExpandSelectionWithAssociatedTasks(selectedIds, tblSITS, autoClaimed, _
                                                          rowIndex, linkIndex)
+
+    ' Dialogs need a responsive UI — briefly restore Excel state.
     SetExcelState "enable"
     Application.StatusBar = False
 
@@ -207,8 +206,8 @@ Public Function CreateWorkPackageFromSelection() As Boolean
     End If
 
     On Error GoTo ErrorHandler
-    Application.StatusBar = "Creating work package…"
     SetExcelState "disable"
+    Application.StatusBar = "Creating work package…"
 
     RemoveWPTaskRows orn
     WriteWorkPackageHeader orn
@@ -216,12 +215,16 @@ Public Function CreateWorkPackageFromSelection() As Boolean
     AssignORNToSITSTasks orn, expandedIds, tblSITS, rowIndex
     ClearSelectedSITSSelectors expandedIds, tblSITS, rowIndex
 
-    LogAction "WP_CREATED", orn, "Tasks=" & expandedIds.Count
-    SetExcelState "enable"
+    ' Keep the existing SITS view — only untick claimed selectors (linked checkboxes).
+    Application.StatusBar = "Updating SITS selectors…"
+    ClearSITSViewSelectorsForRowIds expandedIds
 
-    ' Create only assigns ORNs / clears selectors — no life-remaining maths needed.
-    RefreshSITSViewOnly
+    LogAction "WP_CREATED", orn, "Tasks=" & expandedIds.Count
+
+    Application.StatusBar = "Updating Dashboard…"
     RefreshDashboardStatusCounts
+
+    SetExcelState "enable"
     Application.StatusBar = False
 
     MsgBox "Work package " & orn & " created with " & expandedIds.Count & " task(s).", _
@@ -231,7 +234,7 @@ Public Function CreateWorkPackageFromSelection() As Boolean
 
 ErrorHandler:
     Application.StatusBar = False
-    SetExcelState "enable"
+    SetExcelState "force-enable"
     LogError PROC_NAME, Err.Number, Err.Description
     MsgBox "Failed to create work package: " & Err.Description, vbCritical, APP_NAME
 End Function
@@ -242,7 +245,9 @@ Public Function DeleteWorkPackage(ByVal orn As String, _
 
     Dim tblSITS As ListObject
     Dim taskIds As Collection
+    Dim taskIdDict As Object
     Dim failReason As String
+    Dim item As Variant
 
     DeleteWorkPackage = False
     orn = UCase$(Trim$(orn))
@@ -275,17 +280,27 @@ Public Function DeleteWorkPackage(ByVal orn As String, _
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
+    Application.StatusBar = "Deleting work package…"
 
     ClearORNFromSITSTasks orn, taskIds, tblSITS
     RemoveWPTaskRows orn
     MarkWorkPackageStatus orn, WP_STATUS_DELETED, False
 
-    LogAction "WP_DELETED", orn, "Tasks released=" & taskIds.Count
-    SetExcelState "enable"
+    ' No full SITS rebuild — create/delete do not change life remaining or row set.
+    Set taskIdDict = CreateObject("Scripting.Dictionary")
+    taskIdDict.CompareMode = 1
+    For Each item In taskIds
+        taskIdDict(CStr(item)) = True
+    Next item
+    ClearSITSViewSelectorsForRowIds taskIdDict
 
-    ' Delete only clears ORNs — no life-remaining maths needed.
-    RefreshSITSViewOnly
+    LogAction "WP_DELETED", orn, "Tasks released=" & taskIds.Count
+
+    Application.StatusBar = "Updating Dashboard…"
     RefreshDashboardStatusCounts
+
+    SetExcelState "enable"
+    Application.StatusBar = False
     DeleteWorkPackage = True
     Exit Function
 
@@ -294,7 +309,8 @@ Failed:
     Exit Function
 
 ErrorHandler:
-    SetExcelState "enable"
+    Application.StatusBar = False
+    SetExcelState "force-enable"
     LogError PROC_NAME, Err.Number, Err.Description
     If showDialogs Then MsgBox "Failed to delete work package: " & Err.Description, vbCritical, APP_NAME
 End Function

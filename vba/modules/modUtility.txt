@@ -4,20 +4,57 @@ Option Explicit
 ' UTILITY MODULE — Offline Aircraft SITS v2
 ' ========================================================================
 
+' Nested disable/enable so inner helpers cannot turn ScreenUpdating back on
+' while an outer operation is still running.
+Private mExcelStateDepth As Long
+Private mSavedCalculation As XlCalculation
+Private mSavedStatusBar As Variant
+
 Public Sub SetExcelState(ByVal action As String)
     Select Case LCase$(Trim$(action))
-        Case "disable"
-            Application.ScreenUpdating = False
-            Application.EnableEvents = False
-            Application.Calculation = xlCalculationManual
+        Case "disable", "fast"
+            If mExcelStateDepth = 0 Then
+                On Error Resume Next
+                mSavedCalculation = Application.Calculation
+                mSavedStatusBar = Application.StatusBar
+                On Error GoTo 0
+
+                Application.ScreenUpdating = False
+                Application.EnableEvents = False
+                Application.DisplayAlerts = False
+                Application.Calculation = xlCalculationManual
+                Application.Cursor = xlWait
+            End If
+            mExcelStateDepth = mExcelStateDepth + 1
+
         Case "enable"
+            If mExcelStateDepth > 0 Then mExcelStateDepth = mExcelStateDepth - 1
+            If mExcelStateDepth = 0 Then
+                On Error Resume Next
+                If mSavedCalculation = 0 Then
+                    Application.Calculation = xlCalculationAutomatic
+                Else
+                    Application.Calculation = mSavedCalculation
+                End If
+                Application.StatusBar = False
+                On Error GoTo 0
+
+                Application.Cursor = xlDefault
+                Application.DisplayAlerts = True
+                Application.EnableEvents = True
+                Application.ScreenUpdating = True
+            End If
+
+        Case "force-enable"
+            mExcelStateDepth = 0
+            On Error Resume Next
             Application.Calculation = xlCalculationAutomatic
+            Application.StatusBar = False
+            On Error GoTo 0
+            Application.Cursor = xlDefault
+            Application.DisplayAlerts = True
             Application.EnableEvents = True
             Application.ScreenUpdating = True
-        Case "fast"
-            Application.ScreenUpdating = False
-            Application.EnableEvents = False
-            Application.Calculation = xlCalculationManual
     End Select
 End Sub
 

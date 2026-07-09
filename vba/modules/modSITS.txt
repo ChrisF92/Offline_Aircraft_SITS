@@ -47,6 +47,56 @@ Public Sub RefreshSITSViewOnly()
     RefreshSITSView
 End Sub
 
+' Untick SITS view selectors for specific RowIDs without rebuilding the sheet.
+' Checkboxes are linked to column A, so clearing those cells clears the ticks.
+Public Sub ClearSITSViewSelectorsForRowIds(ByVal rowIds As Object)
+    Dim wsView As Worksheet
+    Dim lastRow As Long
+    Dim colRowIdView As Long
+    Dim headerCell As Range
+    Dim viewIds As Variant
+    Dim i As Long
+    Dim rowId As String
+
+    If rowIds Is Nothing Or rowIds.Count = 0 Then Exit Sub
+
+    Set wsView = GetWorksheet(SHEET_SITS, showError:=False)
+    If wsView Is Nothing Then Exit Sub
+
+    colRowIdView = 0
+    For Each headerCell In wsView.Range(wsView.Cells(SITS_VIEW_HEADER_ROW, 1), _
+                                        wsView.Cells(SITS_VIEW_HEADER_ROW, 40))
+        If StrComp(Trim$(CStr(headerCell.Value)), HDR_SITS_ROW_ID, vbTextCompare) = 0 Then
+            colRowIdView = headerCell.Column
+            Exit For
+        End If
+    Next headerCell
+    If colRowIdView = 0 Then Exit Sub
+
+    lastRow = wsView.Cells(wsView.Rows.Count, colRowIdView).End(xlUp).Row
+    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+
+    viewIds = wsView.Range(wsView.Cells(SITS_VIEW_DATA_START_ROW, colRowIdView), _
+                           wsView.Cells(lastRow, colRowIdView)).Value
+
+    If Not IsArray(viewIds) Then
+        rowId = Trim$(CStr(viewIds))
+        If rowIds.Exists(rowId) Then
+            wsView.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL).Value = False
+        End If
+        Exit Sub
+    End If
+
+    For i = LBound(viewIds, 1) To UBound(viewIds, 1)
+        rowId = Trim$(CStr(viewIds(i, 1)))
+        If Len(rowId) = 0 Then GoTo NextClearViewSel
+        If rowIds.Exists(rowId) Then
+            wsView.Cells(SITS_VIEW_DATA_START_ROW + i - 1, SITS_SELECTOR_COL).Value = False
+        End If
+NextClearViewSel:
+    Next i
+End Sub
+
 Public Sub RecalculateSITS()
     Dim wsData As Worksheet
     Dim tbl As ListObject
