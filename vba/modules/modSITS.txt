@@ -9,9 +9,14 @@ Option Explicit
 ' ========================================================================
 
 Private Const SITS_VIEW_HEADER_ROW As Long = 7
+Private Const SITS_VIEW_DATA_START_ROW As Long = 8
 Private Const SITS_FORECAST_HOURS_CELL As String = "B3"
 Private Const SITS_FORECAST_DAYS_CELL As String = "B4"
+Private Const SITS_SELECTOR_COL As Long = 1
+Private Const SITS_BTN_WIDTH As Double = 110
+Private Const SITS_BTN_HEIGHT As Double = 22
 Private Const SITS_SORT_KEY_MISSING As Double = 9.9E+307
+Private Const SITS_CHECKBOX_HIDE_FORMAT As String = ";;;"
 
 Private Type SITSViewSortEntry
     ListRowIndex As Long
@@ -155,8 +160,8 @@ Public Sub RefreshSITSView()
     Dim wsData As Worksheet
     Dim tbl As ListObject
     Dim row As ListRow
-    Dim headers As Collection
-    Dim headerName As Variant
+    Dim viewColumns As Collection
+    Dim columnName As Variant
     Dim colIndex As Long
     Dim outputCol As Long
     Dim outputRow As Long
@@ -167,6 +172,8 @@ Public Sub RefreshSITSView()
     Dim daysUntilDue As Long
     Dim warnHoursFraction As Double
     Dim warnDays As Long
+    Dim lastDataRow As Long
+    Dim hiddenCol As Long
 
     Set wsView = GetWorksheet(SHEET_SITS, showError:=False)
     Set wsData = GetWorksheet(SHEET_DATA_SITS, showError:=False)
@@ -175,7 +182,7 @@ Public Sub RefreshSITSView()
     Set tbl = GetTable(wsData, TBL_SITS, showError:=False)
     If tbl Is Nothing Then Exit Sub
 
-    Set headers = BuildSITSViewHeaders(tbl)
+    Set viewColumns = BuildSITSViewColumns()
     forecastHours = GetForecastHoursSetting()
     forecastDays = GetForecastDaysSetting()
     warnHoursFraction = ParseWarnHoursSetting()
@@ -183,27 +190,33 @@ Public Sub RefreshSITSView()
 
     SetExcelState "disable"
 
+    ClearSITSViewControls wsView
+
     On Error Resume Next
     If wsView.AutoFilterMode Then wsView.AutoFilterMode = False
+    wsView.Activate
+    ActiveWindow.FreezePanes = False
     On Error GoTo 0
 
     wsView.Cells.Clear
     WriteSITSViewShell wsView
+    AddSITSRefreshButton wsView
 
     outputCol = 1
-    For Each headerName In headers
-        wsView.Cells(SITS_VIEW_HEADER_ROW, outputCol).Value = CStr(headerName)
+    For Each columnName In viewColumns
+        wsView.Cells(SITS_VIEW_HEADER_ROW, outputCol).Value = CStr(columnName)
         outputCol = outputCol + 1
-    Next headerName
+    Next columnName
 
     With wsView.Range(wsView.Cells(SITS_VIEW_HEADER_ROW, 1), _
-                      wsView.Cells(SITS_VIEW_HEADER_ROW, headers.Count))
+                      wsView.Cells(SITS_VIEW_HEADER_ROW, viewColumns.Count))
         .Font.Bold = True
         .Font.Color = vbWhite
         .Interior.Color = COLOR_HEADER_BLUE
+        .WrapText = False
     End With
 
-    outputRow = SITS_VIEW_HEADER_ROW + 1
+    outputRow = SITS_VIEW_DATA_START_ROW
 
     If Not tbl.DataBodyRange Is Nothing Then
         Dim sortEntries() As SITSViewSortEntry
@@ -244,16 +257,13 @@ NextCollectRow:
                 daysUntilDue = sortEntries(entryIndex).DaysUntilDue
 
                 outputCol = 1
-                For Each headerName In headers
-                    colIndex = GetTableColumnIndex(tbl, CStr(headerName))
-                    If colIndex > 0 Then
-                        CopySITSViewCell row.Range.Cells(1, colIndex), _
-                            wsView.Cells(outputRow, outputCol), CStr(headerName)
-                    End If
+                For Each columnName In viewColumns
+                    WriteSITSViewCell row, tbl, intervalCode, CStr(columnName), _
+                        wsView.Cells(outputRow, outputCol)
                     outputCol = outputCol + 1
-                Next headerName
+                Next columnName
 
-                ApplySITSViewRowWarnings wsView, outputRow, headers.Count, _
+                ApplySITSViewRowWarnings wsView, outputRow, viewColumns.Count, _
                     intervalCode, lifeHoursFraction, daysUntilDue, _
                     warnHoursFraction, warnDays
 
@@ -262,8 +272,26 @@ NextCollectRow:
         End If
     End If
 
+    lastDataRow = outputRow - 1
+    If lastDataRow >= SITS_VIEW_DATA_START_ROW Then
+        With wsView.Range(wsView.Cells(SITS_VIEW_DATA_START_ROW, 1), _
+                          wsView.Cells(lastDataRow, viewColumns.Count))
+            .WrapText = False
+        End With
+        AddSITSViewSelectorCheckboxes wsView, SITS_VIEW_DATA_START_ROW, lastDataRow
+    End If
+
+    outputCol = 1
+    For Each columnName In viewColumns
+        If IsSITSViewHiddenColumn(CStr(columnName)) Then
+            wsView.Columns(outputCol).Hidden = True
+        End If
+        outputCol = outputCol + 1
+    Next columnName
+
     wsView.Columns.AutoFit
-    ApplySITSViewAutoFilter wsView, outputRow - 1, headers.Count
+    ApplySITSViewAutoFilter wsView, lastDataRow, viewColumns.Count
+    ApplySITSViewFreezePanes wsView
     SetExcelState "enable"
 End Sub
 
@@ -585,9 +613,247 @@ Private Sub WriteSITSViewShell(ByVal ws As Worksheet)
     ws.Range("B4").Value = GetForecastDaysSetting()
     ws.Range("B4").NumberFormat = FORMAT_GENERAL
 
-    ws.Range("A5").Value = "Assign RunRefreshSITS to a button here to refresh. Selector is display-only until work packages. Use the header-row filter dropdowns to hide interval types (e.g. AU, OP)."
+    ws.Range("A5").Value = "Use filter dropdowns on row 7 to hide interval types. Check a task to select it for future work packages."
     ws.Range("A5").Font.Size = 9
     ws.Range("A5").Font.Italic = True
+End Sub
+
+Private Sub ClearSITSViewControls(ByVal ws As Worksheet)
+    Dim cb As CheckBox
+    Dim btn As Button
+    Dim shp As Shape
+
+    On Error Resume Next
+    For Each cb In ws.CheckBoxes
+        cb.Delete
+    Next cb
+    For Each btn In ws.Buttons
+        btn.Delete
+    Next btn
+    For Each shp In ws.Shapes
+        If shp.Type = msoFormControl Then
+            shp.Delete
+        End If
+    Next shp
+    On Error GoTo 0
+End Sub
+
+Private Sub AddSITSRefreshButton(ByVal ws As Worksheet)
+    Dim btn As Button
+    Dim anchor As Range
+
+    Set anchor = ws.Range("D1")
+    Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, SITS_BTN_WIDTH, SITS_BTN_HEIGHT)
+    btn.OnAction = "RunRefreshSITS"
+    btn.Caption = "Refresh View"
+    btn.Placement = xlFreeFloating
+End Sub
+
+Private Sub AddSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
+                                          ByVal firstDataRow As Long, _
+                                          ByVal lastDataRow As Long)
+    Dim rowIndex As Long
+    Dim cb As CheckBox
+    Dim linkCell As Range
+
+    ws.Columns(SITS_SELECTOR_COL).ColumnWidth = 4
+
+    For rowIndex = firstDataRow To lastDataRow
+        Set linkCell = ws.Cells(rowIndex, SITS_SELECTOR_COL)
+        linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
+
+        Set cb = ws.CheckBoxes.Add(linkCell.Left, linkCell.Top, linkCell.Width, linkCell.Height)
+        cb.LinkedCell = linkCell.Address(External:=True)
+        cb.Caption = ""
+        cb.Placement = xlMove
+    Next rowIndex
+End Sub
+
+Private Sub ApplySITSViewFreezePanes(ByVal ws As Worksheet)
+    On Error Resume Next
+    ws.Activate
+    ws.Range("A" & CStr(SITS_VIEW_DATA_START_ROW)).Select
+    ActiveWindow.FreezePanes = True
+    On Error GoTo 0
+End Sub
+
+Private Function BuildSITSViewColumns() As Collection
+    Dim result As New Collection
+
+    result.Add HDR_SELECTOR
+    result.Add HDR_INTERVAL_TYPE_CODE
+    result.Add HDR_ACTUAL_INTERVAL
+    result.Add HDR_VIEW_LIFE_REMAINING
+    result.Add HDR_EXTENSION
+    result.Add HDR_TASK_CODE
+    result.Add HDR_TASK_SEQUENCE
+    result.Add HDR_TASK_DESCRIPTION
+    result.Add HDR_SERIAL
+    result.Add HDR_PROJECTED_DUE_DATE
+    result.Add HDR_INTERVAL_TYPE
+    result.Add HDR_CURRENT_USAGE_HOURS
+    result.Add HDR_CURRENT_USAGE_NUMBER
+    result.Add HDR_END_ITEM_SERIAL
+    result.Add HDR_TASK_TYPE_CODE
+    result.Add HDR_WARNING_INTERVAL
+    result.Add HDR_SITS_ROW_ID
+
+    Set BuildSITSViewColumns = result
+End Function
+
+Private Function IsSITSViewHiddenColumn(ByVal columnName As String) As Boolean
+    Select Case columnName
+        Case HDR_SELECTOR, HDR_INTERVAL_TYPE_CODE, HDR_ACTUAL_INTERVAL, _
+             HDR_VIEW_LIFE_REMAINING, HDR_EXTENSION, HDR_TASK_CODE, _
+             HDR_TASK_SEQUENCE, HDR_TASK_DESCRIPTION, HDR_SERIAL, _
+             HDR_PROJECTED_DUE_DATE
+            IsSITSViewHiddenColumn = False
+        Case Else
+            IsSITSViewHiddenColumn = True
+    End Select
+End Function
+
+Private Function SITSViewUsesHourFormat(ByVal intervalCode As String) As Boolean
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            SITSViewUsesHourFormat = True
+    End Select
+End Function
+
+Private Sub WriteSITSViewCell(ByVal sourceRow As ListRow, _
+                              ByVal tbl As ListObject, _
+                              ByVal intervalCode As String, _
+                              ByVal columnName As String, _
+                              ByVal target As Range)
+    Dim sourceCell As Range
+    Dim colIndex As Long
+    Dim value As Variant
+
+    target.WrapText = False
+
+    If StrComp(columnName, HDR_VIEW_LIFE_REMAINING, vbTextCompare) = 0 Then
+        WriteSITSViewLifeRemaining sourceRow, tbl, intervalCode, target
+        Exit Sub
+    End If
+
+    colIndex = GetTableColumnIndex(tbl, columnName)
+    If colIndex = 0 Then Exit Sub
+
+    Set sourceCell = sourceRow.Range.Cells(1, colIndex)
+
+    If StrComp(columnName, HDR_SELECTOR, vbTextCompare) = 0 Then
+        target.Value = CBool(sourceCell.Value)
+        target.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_SERIAL, vbTextCompare) = 0 Or _
+       StrComp(columnName, HDR_END_ITEM_SERIAL, vbTextCompare) = 0 Then
+        WriteSerialCell target, sourceCell.Value, sourceCell.Text
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_ACTUAL_INTERVAL, vbTextCompare) = 0 Or _
+       StrComp(columnName, HDR_EXTENSION, vbTextCompare) = 0 Or _
+       StrComp(columnName, HDR_WARNING_INTERVAL, vbTextCompare) = 0 Then
+        WriteSITSViewIntervalValue sourceCell, target, intervalCode
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_CURRENT_USAGE_HOURS, vbTextCompare) = 0 Then
+        If SITSViewUsesHourFormat(intervalCode) Then
+            WriteSITSViewIntervalValue sourceCell, target, intervalCode
+        Else
+            target.ClearContents
+        End If
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_CURRENT_USAGE_NUMBER, vbTextCompare) = 0 Then
+        If SITSViewUsesHourFormat(intervalCode) Then
+            target.ClearContents
+        ElseIf IsEmpty(sourceCell.Value) Or Len(Trim$(CStr(sourceCell.Value))) = 0 Then
+            target.ClearContents
+        Else
+            target.Value = CDbl(NzSITSNumber(sourceCell.Value))
+            target.NumberFormat = FORMAT_DECIMAL
+        End If
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_PROJECTED_DUE_DATE, vbTextCompare) = 0 Then
+        value = sourceCell.Value
+        If IsDate(value) Then
+            target.Value = CDate(value)
+            target.NumberFormat = FORMAT_DATE
+        Else
+            target.ClearContents
+        End If
+        Exit Sub
+    End If
+
+    target.Value = sourceCell.Value
+    target.NumberFormat = FORMAT_GENERAL
+End Sub
+
+Private Sub WriteSITSViewLifeRemaining(ByVal sourceRow As ListRow, _
+                                       ByVal tbl As ListObject, _
+                                       ByVal intervalCode As String, _
+                                       ByVal target As Range)
+    Dim sourceCell As Range
+    Dim colIndex As Long
+    Dim value As Variant
+
+    If SITSViewUsesHourFormat(intervalCode) Then
+        colIndex = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+        If colIndex = 0 Then Exit Sub
+        Set sourceCell = sourceRow.Range.Cells(1, colIndex)
+        WriteSITSViewIntervalValue sourceCell, target, intervalCode
+        Exit Sub
+    End If
+
+    If intervalCode = TYPE_DD Then
+        colIndex = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+        If colIndex = 0 Then Exit Sub
+        Set sourceCell = sourceRow.Range.Cells(1, colIndex)
+        value = sourceCell.Value
+        If IsDate(value) Then
+            target.Value = CDate(value)
+            target.NumberFormat = FORMAT_DATE
+        ElseIf IsNumeric(value) Then
+            target.Value = CDbl(value)
+            target.NumberFormat = FORMAT_DECIMAL
+        Else
+            target.ClearContents
+        End If
+        Exit Sub
+    End If
+
+    colIndex = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    If colIndex = 0 Then Exit Sub
+    Set sourceCell = sourceRow.Range.Cells(1, colIndex)
+    If IsEmpty(sourceCell.Value) Or Len(Trim$(CStr(sourceCell.Value))) = 0 Then
+        target.ClearContents
+    Else
+        target.Value = CDbl(NzSITSNumber(sourceCell.Value))
+        target.NumberFormat = FORMAT_DECIMAL
+    End If
+End Sub
+
+Private Sub WriteSITSViewIntervalValue(ByVal sourceCell As Range, _
+                                       ByVal target As Range, _
+                                       ByVal intervalCode As String)
+    If IsEmpty(sourceCell.Value) Or Len(Trim$(CStr(sourceCell.Value))) = 0 Then
+        target.ClearContents
+        Exit Sub
+    End If
+
+    If SITSViewUsesHourFormat(intervalCode) Then
+        WriteFormattedUsageValue target, sourceCell.Value, FORMAT_TYPE_HOURS, sourceCell.Text
+    Else
+        target.Value = CDbl(NzSITSNumber(sourceCell.Value))
+        target.NumberFormat = FORMAT_DECIMAL
+    End If
 End Sub
 
 Private Sub SaveForecastSettingsFromView()
@@ -663,40 +929,6 @@ Private Function ParseWarnHoursSetting() As Double
         ParseWarnHoursSetting = CDbl(parsed)
     End If
 End Function
-
-Private Function BuildSITSViewHeaders(ByVal tbl As ListObject) As Collection
-    Dim result As New Collection
-    Dim col As ListColumn
-
-    For Each col In tbl.ListColumns
-        If Not IsBaselineColumn(col.Name) Then
-            result.Add col.Name
-        End If
-    Next col
-
-    Set BuildSITSViewHeaders = result
-End Function
-
-Private Function IsBaselineColumn(ByVal columnName As String) As Boolean
-    Select Case columnName
-        Case HDR_BASELINE_LR_HOURS, HDR_BASELINE_LR_NUMBER, HDR_BASELINE_DAYS_DUE
-            IsBaselineColumn = True
-        Case Else
-            IsBaselineColumn = False
-    End Select
-End Function
-
-Private Sub CopySITSViewCell(ByVal source As Range, ByVal target As Range, _
-                             ByVal columnName As String)
-    If StrComp(columnName, HDR_SELECTOR, vbTextCompare) = 0 Then
-        target.Value = CBool(source.Value)
-        target.NumberFormat = FORMAT_GENERAL
-        Exit Sub
-    End If
-
-    target.Value = source.Value
-    target.NumberFormat = source.NumberFormat
-End Sub
 
 Private Sub ApplySITSViewRowWarnings(ByVal ws As Worksheet, _
                                      ByVal rowIndex As Long, _

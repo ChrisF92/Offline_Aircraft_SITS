@@ -130,8 +130,7 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
 
         Set newRow = tbl.ListRows.Add
         With newRow.Range
-            .Cells(1, GetTableColumnIndex(tbl, HDR_SELECTOR)).Value = _
-                DefaultSelectorValue(intervalCode, taskCode, optCols, srcWs, rowIndex)
+            .Cells(1, GetTableColumnIndex(tbl, HDR_SELECTOR)).Value = False
             .Cells(1, GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)).Value = intervalCode
             .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_CODE)).Value = taskCode
             .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_SEQUENCE)).Value = _
@@ -271,36 +270,6 @@ Private Function SITSRowHasData(ByVal srcWs As Worksheet, _
                                     colMap("Task Code"), colMap("Interval Type Code"))
 End Function
 
-Private Function DefaultSelectorValue(ByVal intervalCode As String, _
-                                    ByVal taskCode As String, _
-                                    ByVal optCols As Object, _
-                                    ByVal srcWs As Worksheet, _
-                                    ByVal rowIndex As Long) As Boolean
-    Dim taskTypeCode As String
-
-    If Not optCols Is Nothing Then
-        If optCols.Exists(OPT_TASK_TYPE_CODE) Then
-            taskTypeCode = UCase$(Trim$(CStr(srcWs.Cells(rowIndex, optCols(OPT_TASK_TYPE_CODE)).Value)))
-            If IsDeferredFaultTaskCode(taskTypeCode) Then
-                DefaultSelectorValue = False
-                Exit Function
-            End If
-        End If
-    End If
-
-    If IsDeferredFaultTaskCode(taskCode) Then
-        DefaultSelectorValue = False
-        Exit Function
-    End If
-
-    Select Case intervalCode
-        Case TYPE_HH, TYPE_E1, TYPE_E2, TYPE_DD, "AF", "HRS", "CAL", "C"
-            DefaultSelectorValue = True
-        Case Else
-            DefaultSelectorValue = False
-    End Select
-End Function
-
 Private Sub ApplyImportedExtension(ByVal targetCell As Range, _
                                    ByVal intervalCode As String, _
                                    ByVal taskCode As String, _
@@ -319,7 +288,7 @@ Private Sub ApplyImportedExtension(ByVal targetCell As Range, _
     End If
 
     If IsDeferredFaultTaskCode(taskCode) Or IsDeferredFaultTaskCode(taskTypeCode) Then
-        If IsHourUsageInterval(intervalCode) Or IsHourBasedIntervalType(intervalCode) Then
+        If SITSViewUsesHourFormatForImport(intervalCode) Then
             WriteFormattedUsageValue targetCell, 0#, FORMAT_TYPE_HOURS
         Else
             targetCell.Value = 0#
@@ -330,6 +299,13 @@ Private Sub ApplyImportedExtension(ByVal targetCell As Range, _
 
     ApplyTimeOrNumberCell targetCell, rawValue, displayText, intervalCode
 End Sub
+
+Private Function SITSViewUsesHourFormatForImport(ByVal intervalCode As String) As Boolean
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            SITSViewUsesHourFormatForImport = True
+    End Select
+End Function
 
 Private Sub ApplyActualIntervalValue(ByVal targetCell As Range, _
                                      ByVal rawValue As Variant, _
