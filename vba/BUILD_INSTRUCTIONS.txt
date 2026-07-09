@@ -220,6 +220,8 @@ Import rules (strict — abort if any required column missing)
 SITS Long Forecast:
   Interval Type Code, Life Remaining, Task Code, Task Sequence,
   Task Description, Serial, Actual Interval, Extension, End Item Serial
+  Number-based interval types (excluding DD) are skipped on import unless both
+  Actual Interval and Life Remaining are zero.
 
 Usage exports (airframe + engine):
   Interval Type, Task Code, Life Used, Top Serial
