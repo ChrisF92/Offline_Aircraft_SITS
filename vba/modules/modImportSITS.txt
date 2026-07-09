@@ -34,6 +34,7 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
     Dim firstDataRow As Long
     Dim rowIndex As Long
     Dim importedRows As Long
+    Dim skippedRows As Long
     Dim intervalCode As String
     Dim taskCode As String
     Dim lifeRemaining As Variant
@@ -128,6 +129,15 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
         taskCode = Trim$(CStr(srcWs.Cells(rowIndex, colMap("Task Code")).Value))
         lifeRemaining = srcWs.Cells(rowIndex, colMap("Life Remaining")).Value
 
+        If ShouldSkipNumberBasedSITSImportRow(intervalCode, _
+                srcWs.Cells(rowIndex, colMap("Actual Interval")).Value, _
+                srcWs.Cells(rowIndex, colMap("Actual Interval")).Text, _
+                lifeRemaining, _
+                srcWs.Cells(rowIndex, colMap("Life Remaining")).Text) Then
+            skippedRows = skippedRows + 1
+            GoTo NextRow
+        End If
+
         Set newRow = tbl.ListRows.Add
         With newRow.Range
             .Cells(1, GetTableColumnIndex(tbl, HDR_SELECTOR)).Value = False
@@ -171,12 +181,17 @@ NextRow:
     RefreshSITSView
     SetExcelState "enable"
 
-    LogAction "SITS_IMPORTED", "", "Imported " & importedRows & " rows from " & filePath
+    LogAction "SITS_IMPORTED", "", "Imported " & importedRows & " rows (skipped " & skippedRows & ") from " & filePath
     ImportSITSFromFile = importedRows
 
     If showDialogs Then
-        MsgBox "Imported " & importedRows & " SITS task(s) for " & tailNumber & ".", _
-               vbInformation, APP_NAME
+        Dim msg As String
+        msg = "Imported " & importedRows & " SITS task(s) for " & tailNumber & "."
+        If skippedRows > 0 Then
+            msg = msg & vbCrLf & skippedRows & " number-based row(s) were skipped " & _
+                  "(actual interval and life remaining were not both zero)."
+        End If
+        MsgBox msg, vbInformation, APP_NAME
     End If
     Exit Function
 
@@ -406,3 +421,43 @@ Private Sub ApplyOptionalSITSColumns(ByVal tbl As ListObject, _
         End If
     End If
 End Sub
+
+Private Function ShouldSkipNumberBasedSITSImportRow(ByVal intervalCode As String, _
+                                                    ByVal actualIntervalValue As Variant, _
+                                                    ByVal actualIntervalText As String, _
+                                                    ByVal lifeRemainingValue As Variant, _
+                                                    ByVal lifeRemainingText As String) As Boolean
+    If Not IsNumberBasedSITSInterval(intervalCode) Then Exit Function
+
+    ShouldSkipNumberBasedSITSImportRow = Not ( _
+        IsImportedScalarZero(actualIntervalValue, actualIntervalText) And _
+        IsImportedScalarZero(lifeRemainingValue, lifeRemainingText))
+End Function
+
+Private Function IsImportedScalarZero(ByVal rawValue As Variant, ByVal displayText As String) As Boolean
+    Dim parsed As Variant
+
+    If IsError(rawValue) Then Exit Function
+
+    If IsEmpty(rawValue) Or IsNull(rawValue) Then
+        IsImportedScalarZero = True
+        Exit Function
+    End If
+
+    If VarType(rawValue) = vbString And Len(Trim$(CStr(rawValue))) = 0 Then
+        IsImportedScalarZero = True
+        Exit Function
+    End If
+
+    If InStr(displayText, ":") > 0 Then
+        parsed = ParseTimeUsageValue(rawValue, displayText)
+        If Not IsEmpty(parsed) Then
+            IsImportedScalarZero = (CDbl(parsed) = 0#)
+            Exit Function
+        End If
+    End If
+
+    If IsNumeric(rawValue) Then
+        IsImportedScalarZero = (CDbl(rawValue) = 0#)
+    End If
+End Function

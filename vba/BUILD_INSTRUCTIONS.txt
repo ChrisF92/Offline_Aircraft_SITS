@@ -122,10 +122,11 @@ Each logged increment:
 Step 7 — SITS view and refresh (Phase 3)
 ------------------------------------------
 1. Open the **SITS** sheet after setup or import.
-2. Set **Forecast hours** (B3) and **Forecast days** (B4) to filter the view:
+2. Set **Forecast hours** (B3), **Forecast days** (B4), and **Forecast number** (B5) to filter the view:
    - HH/E1/E2 tasks: shown only if life remaining is within the hour threshold
    - DD tasks: shown only if due within the day threshold
-   - Other interval types: always shown
+   - Other number-based interval types (starts, cycles, etc.): shown only if life remaining is within the number threshold
+   - Set any forecast to 0 to show all tasks of that type
 3. Use **Refresh View** / **Create Work Package** / **Manage Work Packages** buttons
    on the SITS sheet (recreated automatically by RefreshSITS).
 4. Use the **AutoFilter** dropdowns on the header row (row 7) to show/hide interval
@@ -197,7 +198,7 @@ What is NOT included yet
 - Extensions / deferrals UI (Phase 5)
 - Protected-sheet manual life-remaining edit form for zero-interval tasks
 - Sortie correction / reversal UI (CorrectedFrom column reserved)
-- Forecast settings UserForm (values editable on SITS sheet B3/B4 for now)
+- Forecast settings UserForm (values editable on SITS sheet B3/B5 for now)
 
 SITS life remaining model (Phase 3)
 -----------------------------------
