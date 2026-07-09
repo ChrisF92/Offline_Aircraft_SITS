@@ -781,7 +781,7 @@ Private Sub WriteSITSViewShell(ByVal ws As Worksheet, _
     ws.Range("B4").Value = forecastDays
     ws.Range("B4").NumberFormat = FORMAT_GENERAL
 
-    ws.Range("A5").Value = "Tick tasks, then Create Work Package. Use Manage Work Packages to delete or close open ORNs. Filter dropdowns on row 7 hide interval types."
+    ws.Range("A5").Value = "Tick tasks, then Create Work Package / Extend / Defer. Use Manage Work Packages to delete, remove tasks, or close open ORNs. Filter dropdowns on row 7 hide interval types."
     ws.Range("A5").Font.Size = 9
     ws.Range("A5").Font.Italic = True
 End Sub
@@ -825,6 +825,18 @@ Private Sub AddSITSViewActionButtons(ByVal ws As Worksheet)
     Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, SITS_BTN_WIDTH + 30, SITS_BTN_HEIGHT)
     btn.OnAction = "RunManageWorkPackages"
     btn.Caption = "Manage Work Packages"
+    btn.Placement = xlFreeFloating
+
+    Set anchor = ws.Range("D3")
+    Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, SITS_BTN_WIDTH, SITS_BTN_HEIGHT)
+    btn.OnAction = "RunExtendFromSelection"
+    btn.Caption = "Extend"
+    btn.Placement = xlFreeFloating
+
+    Set anchor = ws.Range("F3")
+    Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, SITS_BTN_WIDTH, SITS_BTN_HEIGHT)
+    btn.OnAction = "RunDeferFromSelection"
+    btn.Caption = "Defer"
     btn.Placement = xlFreeFloating
 End Sub
 

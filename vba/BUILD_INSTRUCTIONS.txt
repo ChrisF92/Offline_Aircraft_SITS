@@ -1,4 +1,4 @@
-Offline Aircraft SITS v2 — Build Instructions (Phase 4)
+Offline Aircraft SITS v2 — Build Instructions (Phase 5)
 =========================================================
 
 You build the .xlsm workbook locally from the .txt VBA sources in this folder.
@@ -7,8 +7,8 @@ Prerequisites
 -------------
 - Microsoft Excel 2016 (Office 16) with macros enabled
 - Trust access to the VBA project object model (optional, for import tools):
-  File > Options > Trust Center > Trust Center Settings > Macro Settings >
-  check "Trust access to the VBA project object model"
+    File > Options > Trust Center > Trust Center Settings > Macro Settings >
+    check "Trust access to the VBA project object model"
 
 Overview — master template workflow
 -------------------------------------
@@ -16,7 +16,8 @@ Overview — master template workflow
 2. Save as `Wildcat_SITS_Master.xlsm` (or similar).
 3. For each aircraft: **File > Save As** a copy (e.g. `ZZ383_SITS_v2.xlsm`).
 4. On the aircraft copy, run **Setup Wizard** to declare the tail and import data.
-5. Use **Dashboard / SITS buttons** for day-to-day actions (log sorties, work packages, etc.).
+5. Use **Dashboard / SITS buttons** for day-to-day actions (log sorties, work packages,
+   extensions, deferrals, etc.).
 
 Step 1 — Create a new workbook
 ------------------------------
@@ -51,6 +52,7 @@ Runtime modules:
   vba/modules/modSITS.txt               modSITS
   vba/modules/modAssociatedTasks.txt    modAssociatedTasks
   vba/modules/modWorkPackage.txt        modWorkPackage
+  vba/modules/modExtensions.txt         modExtensions
 
 Setup modules (one-time use):
 
@@ -77,17 +79,29 @@ Log Sortie (Phase 2):
 2. Add controls per vba/forms/LOG_SORTIE_FORM_LAYOUT.txt
 3. Paste vba/forms/frmLogSortie.txt into the form code module
 
-Work Packages (Phase 4):
+Work Packages (Phase 4/5):
 1. Insert > UserForm, Name = frmWorkPackage
 2. Add controls per vba/forms/WORK_PACKAGE_FORM_LAYOUT.txt
+   (includes Remove task button)
 3. Paste vba/forms/frmWorkPackage.txt into the form code module
+
+Extend (Phase 5):
+1. Insert > UserForm, Name = frmExtend
+2. Add controls per vba/forms/EXTEND_FORM_LAYOUT.txt
+3. Paste vba/forms/frmExtend.txt into the form code module
+
+Defer (Phase 5):
+1. Insert > UserForm, Name = frmDefer
+2. Add controls per vba/forms/DEFER_FORM_LAYOUT.txt
+3. Paste vba/forms/frmDefer.txt into the form code module
 
 Step 4 — Run Phase 0 setup (master template — once)
 ---------------------------------------------------
 Required before running setup (compile-time dependencies):
   CONFIG, modUtility, modValidation
 
-Import modAuditTrail / modWorkPackage / modAssociatedTasks before normal use.
+Import modAuditTrail / modWorkPackage / modAssociatedTasks / modExtensions
+before normal use.
 
 1. Run **Setup_RunAll** (Dashboard dev button or macro in modSetupRunAll).
 2. Do **not** enter a tail number — the master template is aircraft-neutral.
@@ -126,8 +140,8 @@ Step 7 — SITS view and refresh (Phase 3)
    - HH/E1/E2 tasks: shown only if life remaining is within the hour threshold
    - DD tasks: shown only if due within the day threshold
    - Other interval types: always shown
-3. Use **Refresh View** / **Create Work Package** / **Manage Work Packages** buttons
-   on the SITS sheet (recreated automatically by RefreshSITS).
+3. Use **Refresh View** / **Create Work Package** / **Manage Work Packages** /
+   **Extend** / **Defer** buttons on the SITS sheet (recreated by RefreshSITS).
 4. Use the **AutoFilter** dropdowns on the header row (row 7) to show/hide interval
    types (e.g. hide AU, OP) or other columns — standard Excel filtering.
 5. Life remaining warnings highlight rows in pink when below config thresholds
@@ -137,7 +151,8 @@ Step 7 — SITS view and refresh (Phase 3)
 SITS recalculation runs automatically after:
   - SITS import (Import SITS / Setup Wizard)
   - Sortie logging
-  - Work package create / delete / close
+  - Work package create / delete / close / remove task
+  - Extension / deferral apply
   - Manual RunRefreshSITS
 
 Step 8 — Work packages (Phase 4)
@@ -158,43 +173,87 @@ Manage:
 2. Read-only open count + dropdown of open ORNs.
 3. Selecting an ORN lists Task Code + Task Description.
 4. **Delete** — undoes the WP only (clears In Work ORN; no SITS reforecast).
-5. **Close** — completes all tasks in one go:
+5. **Remove task** — releases one selected task from the open WP (no reforecast).
+   If the WP becomes empty it is deleted.
+6. **Close** — completes all tasks in one go:
    - Reforecasts by Actual Interval (HH/E1/E2 hours, DD date, counters by number)
    - Auto-includes associated tasks already in the WP
    - Deletes PT2/PT3 deferred fault rows from SITS
    - Resets Extension to 0 / 0:00
    - Writes a Task Description cell comment: ORN, close date, user
    - Zero-interval tasks: skip auto-reforecast, flag Needs Manual Update (amber + Dashboard count)
-6. Form stays open and refreshes after Delete/Close.
+7. Form stays open and refreshes after Delete/Remove/Close.
 
-Dashboard (Phase 4):
+Dashboard (Phase 4/5):
   Open work packages count
   Tasks needing manual update count
-  User Actions include Work Packages
+  User Actions include Work Packages, Extend, Defer
 
 Developer Tools:
   Repair Formats, Repair Visibility, Validate Structure, Rebuild Dashboard, Phase 0 Setup
 
-Step 9 — Save
--------------
+Step 9 — Extensions and deferrals (Phase 5)
+-------------------------------------------
+Extend (scheduled tasks — not PT2/PT3):
+1. On the SITS view, tick one or more Selector checkboxes.
+2. Click **Extend** (SITS sheet or Dashboard).
+3. Validation before the form opens:
+   - All selected tasks must share the same Interval Type Code
+   - All selected tasks must share the same Actual Interval
+   - PT2/PT3 cannot be extended (use Defer)
+   - Tasks in an open work package (IN WORK) are blocked
+4. Enter:
+   - Extension amount (format matches interval: h:mm for HH/E1/E2, days for DD, number otherwise)
+   - SNOW authorisation (required)
+   - Authoriser name (required)
+5. Warnings if total Extension (existing + this increment) exceeds 10% or 20% of Actual Interval.
+6. On apply:
+   - Adds the amount to any existing Extension
+   - Writes Extension SNOW
+   - Bumps baseline / life remaining by the increment
+   - Appends Task Description cell comment (amount, SNOW, authoriser, date, user)
+   - Clears selectors, recalculates SITS, refreshes the view
+   - Audits EXTENSION_APPLIED
+
+Defer (PT2/PT3 only — one at a time):
+1. Tick exactly one PT2-D / PT2-H / PT3-D / PT3-H on the SITS view.
+2. Click **Defer**.
+3. Validation:
+   - Exactly one selected task
+   - Must be a deferred fault code
+   - Must not be IN WORK
+4. Enter:
+   - PT2/3-H: airframe hours due as h:mm — life remaining = due − current HH
+   - PT2/3-D: date due as dd/mm/yyyy — due date / life remaining set from that date
+   - SNOW + authoriser (required)
+5. On apply:
+   - Sets life remaining / due from the entered due point
+   - Records Extension delta + Extension SNOW
+   - Appends Task Description cell comment
+   - Clears selector, recalculates, refreshes
+   - Audits DEFERRAL_APPLIED
+
+Step 10 — Save
+--------------
 Save the workbook.
 
-What Phase 4 includes
+What Phase 5 includes
 ---------------------
-- modWorkPackage — create / delete / close lifecycle
-- modAssociatedTasks — `/1` LinkKey auto-claim into WP
-  (LinkKey = BaseTaskCode|TaskSequence|Serial — same code on different
-  serials, e.g. each engine's WC/PMP/7200005, do not claim each other)
-- frmWorkPackage — manage open WPs (count, dropdown, task list, delete, close)
-- SITS buttons: Create Work Package, Manage Work Packages
-- ORN validation ####TAILDDMMYY with real-date check
-- Task Description cell comments on close (copied to SITS view on refresh)
-- Zero-interval manual-update flag + amber highlight + Dashboard count
-- Dashboard open WP count (Active WP / Extension SNOW placeholders removed)
+- modExtensions — Extend / Defer apply lifecycle
+- frmExtend — multi-task extension with amount + SNOW + authoriser
+- frmDefer — single PT2/PT3 deferral with HH due or date due
+- SITS buttons: Extend, Defer
+- Dashboard buttons: Extend, Defer
+- Same Interval Type + Actual Interval validation for Extend
+- Authority warnings at >10% / >20% total Extension of Actual Interval
+- Extension amount added to existing Extension; baseline LR bumped
+- Deferral life remaining from absolute HH due or date due
+- Task Description cell comments for SNOW + authoriser
+- Remove single task from open work package (frmWorkPackage)
+- Audit: EXTENSION_APPLIED / DEFERRAL_APPLIED / WP_TASK_REMOVED
 
 What is NOT included yet
 ------------------------
-- Extensions / deferrals UI (Phase 5)
 - Protected-sheet manual life-remaining edit form for zero-interval tasks
 - Sortie correction / reversal UI (CorrectedFrom column reserved)
 - Forecast settings UserForm (values editable on SITS sheet B3/B4 for now)
@@ -214,6 +273,10 @@ GOLDesp provides a days count; absolute due dates are shown as imported.
 On WP close, baseline life remaining is adjusted so RecalculateSITS yields the
 full Actual Interval immediately after close (until further usage accrues).
 
+On Extend, baseline life remaining is increased by the extension increment so
+RecalculateSITS reflects the added life. On Defer (PT2/PT3), baseline is set so
+life remaining matches the entered due HH / date.
+
 Import rules (strict — abort if any required column missing)
 ------------------------------------------------------------
 SITS Long Forecast:
@@ -231,28 +294,26 @@ Sample files in repo root:
   ZZ383 Item Usage.xlsx               — Airframe usage sample
   ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)
 
-Upgrading an existing Phase 0–3 workbook to Phase 4
+Upgrading an existing Phase 0–4 workbook to Phase 5
 -----------------------------------------------------
-1. Import new modules: modAssociatedTasks, modWorkPackage, and updated modules.
-2. Create frmWorkPackage from the layout + code files.
-3. Re-run **Setup_CreateNamedRanges** and **Rebuild Dashboard** (or Phase 0 Setup
-   on a fresh copy) so Open_WP_Count / Manual_Update_Count exist.
-4. Re-run **Setup_CreateTables** only on a fresh copy if you need the new
-   Needs Manual Update column created by setup — runtime Ensure* helpers also
-   add the column when missing.
-5. Refresh the SITS view to recreate Create/Manage Work Package buttons.
+1. Import new module: modExtensions, and updated modules (modSITS, modWorkPackage,
+   CONFIG, Setup_CreateDashboard, Setup_RunAll).
+2. Create frmExtend and frmDefer from the layout + code files.
+3. Update frmWorkPackage controls to include cmdRemoveTask (or recreate the form).
+4. Re-run **Rebuild Dashboard** so Extend / Defer buttons appear.
+5. Refresh the SITS view to recreate Extend / Defer buttons.
 
 Troubleshooting
 ---------------
 "Expected variable or procedure, not module"
   -> Setup module Name must be modSetupRunAll etc., not Setup_RunAll.
 
-"Variable not defined: frmLogSortie" / "frmWorkPackage"
+"Variable not defined: frmLogSortie" / "frmWorkPackage" / "frmExtend" / "frmDefer"
   -> Create the UserForm in the IDE. The form object must exist even though
      the code is stored as a .txt file in the repo.
 
 "Missing named range: Open_WP_Count"
-  -> Run Setup_CreateNamedRanges or Rebuild Dashboard after pasting Phase 4 VBA.
+  -> Run Setup_CreateNamedRanges or Rebuild Dashboard after pasting Phase 4+ VBA.
 
 VBA name shadowing ("expects an array" on a function call)
   -> Do not name parameters the same as functions (VBA is case-insensitive).
@@ -281,4 +342,13 @@ Dashboard buttons missing after updating VBA
 ORN rejected on create
   -> Must be ####TAILDDMMYY with this aircraft's tail and a real DDMMYY date.
 
-Build marker: Phase-4-work-packages-v1
+Extend rejected — mixed intervals
+  -> All ticked tasks must share Interval Type Code and Actual Interval.
+
+Extend rejected — PT2/PT3
+  -> Use Defer for deferred faults.
+
+Defer rejected — more than one task
+  -> Defer exactly one PT2/PT3 at a time.
+
+Build marker: Phase-5-extensions-deferrals-v1

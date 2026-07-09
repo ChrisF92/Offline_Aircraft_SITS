@@ -1,0 +1,1274 @@
+Option Explicit
+
+' ========================================================================
+' EXTENSIONS / DEFERRALS MODULE — Offline Aircraft SITS v2 (Phase 5)
+' ========================================================================
+' Extend: tick matching-interval SITS tasks → enter amount + SNOW +
+' authoriser → add to Extension, bump baseline life remaining, comment.
+' Defer: exactly one PT2/PT3 → enter HH due or date due + SNOW +
+' authoriser → set life remaining from that due point.
+' ========================================================================
+
+Private Const SITS_VIEW_DATA_START_ROW As Long = 8
+Private Const SITS_VIEW_HEADER_ROW As Long = 7
+Private Const SITS_SELECTOR_COL As Long = 1
+Private Const SITS_ROW_ID_COL_NAME As String = "SITS_RowID"
+
+' Pending selection for UserForms (Initialize runs before Show; pass via getters).
+Private mPendingExtendIds As Object
+Private mPendingDeferRowId As String
+
+Public Function GetPendingExtendSelection() As Object
+    Set GetPendingExtendSelection = mPendingExtendIds
+End Function
+
+Public Function GetPendingDeferRowId() As String
+    GetPendingDeferRowId = mPendingDeferRowId
+End Function
+
+Public Sub RunExtendFromSelection()
+    ShowExtendFormFromSelection
+End Sub
+
+Public Sub RunDeferFromSelection()
+    ShowDeferFormFromSelection
+End Sub
+
+Public Sub ShowExtendFormFromSelection()
+    Dim tbl As ListObject
+    Dim selectedIds As Object
+    Dim rowIndex As Object
+    Dim failReason As String
+
+    If Not ValidateSetupReady() Then Exit Sub
+
+    Set tbl = GetExtensionsSITSTable(True)
+    If tbl Is Nothing Then Exit Sub
+    EnsureWorkPackageSITSColumns tbl
+
+    Set rowIndex = BuildSITSRowIdIndex(tbl)
+    Set selectedIds = CollectSelectedFromSITSViewExt(tbl, rowIndex)
+
+    If selectedIds.Count = 0 Then
+        MsgBox "Tick one or more tasks on the SITS view, then click Extend.", _
+               vbExclamation, APP_NAME
+        Exit Sub
+    End If
+
+    If Not ValidateSelectionForExtend(selectedIds, tbl, rowIndex, failReason) Then
+        MsgBox failReason, vbExclamation, APP_NAME
+        Exit Sub
+    End If
+
+    Set mPendingExtendIds = selectedIds
+    frmExtend.Show
+    Set mPendingExtendIds = Nothing
+End Sub
+
+Public Sub ShowDeferFormFromSelection()
+    Dim tbl As ListObject
+    Dim selectedIds As Object
+    Dim rowIndex As Object
+    Dim failReason As String
+    Dim rowId As String
+
+    If Not ValidateSetupReady() Then Exit Sub
+
+    Set tbl = GetExtensionsSITSTable(True)
+    If tbl Is Nothing Then Exit Sub
+    EnsureWorkPackageSITSColumns tbl
+
+    Set rowIndex = BuildSITSRowIdIndex(tbl)
+    Set selectedIds = CollectSelectedFromSITSViewExt(tbl, rowIndex)
+
+    If selectedIds.Count = 0 Then
+        MsgBox "Tick one PT2/PT3 deferred fault on the SITS view, then click Defer.", _
+               vbExclamation, APP_NAME
+        Exit Sub
+    End If
+
+    If Not ValidateSelectionForDefer(selectedIds, tbl, rowIndex, rowId, failReason) Then
+        MsgBox failReason, vbExclamation, APP_NAME
+        Exit Sub
+    End If
+
+    mPendingDeferRowId = rowId
+    frmDefer.Show
+    mPendingDeferRowId = ""
+End Sub
+
+' ------------------------------------------------------------------------
+' Public helpers used by forms
+' ------------------------------------------------------------------------
+
+Public Function GetExtendSelectionDisplayRows(ByVal selectedIds As Object) As Collection
+    Dim result As New Collection
+    Dim tbl As ListObject
+    Dim rowIndex As Object
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim taskCode As String
+    Dim taskDesc As String
+    Dim intervalCode As String
+    Dim actualText As String
+
+    Set GetExtendSelectionDisplayRows = result
+    If selectedIds Is Nothing Then Exit Function
+
+    Set tbl = GetExtensionsSITSTable(False)
+    If tbl Is Nothing Then Exit Function
+    Set rowIndex = BuildSITSRowIdIndex(tbl)
+
+    For Each rowId In selectedIds.Keys
+        Set sitsRow = ResolveSITSRowById(rowIndex, tbl, CStr(rowId))
+        If sitsRow Is Nothing Then GoTo NextDisplay
+        taskCode = ExtGetTaskCode(sitsRow, tbl)
+        taskDesc = ExtGetTaskDescription(sitsRow, tbl)
+        intervalCode = ExtGetIntervalCode(sitsRow, tbl)
+        actualText = FormatExtensionAmountForDisplay( _
+            ExtGetActualInterval(sitsRow, tbl), intervalCode)
+        result.Add Array(taskCode, taskDesc, intervalCode, actualText, CStr(rowId))
+NextDisplay:
+    Next rowId
+End Function
+
+Public Function GetExtendSelectionMeta(ByVal selectedIds As Object, _
+                                       ByRef intervalCode As String, _
+                                       ByRef actualInterval As Variant, _
+                                       ByRef formatType As String, _
+                                       ByRef amountHint As String) As Boolean
+    Dim tbl As ListObject
+    Dim rowIndex As Object
+    Dim sitsRow As ListRow
+    Dim firstId As String
+    Dim rowId As Variant
+
+    GetExtendSelectionMeta = False
+    intervalCode = ""
+    actualInterval = Empty
+    formatType = FORMAT_TYPE_NUMBER
+    amountHint = ""
+
+    If selectedIds Is Nothing Or selectedIds.Count = 0 Then Exit Function
+    Set tbl = GetExtensionsSITSTable(False)
+    If tbl Is Nothing Then Exit Function
+    Set rowIndex = BuildSITSRowIdIndex(tbl)
+
+    For Each rowId In selectedIds.Keys
+        firstId = CStr(rowId)
+        Exit For
+    Next rowId
+
+    Set sitsRow = ResolveSITSRowById(rowIndex, tbl, firstId)
+    If sitsRow Is Nothing Then Exit Function
+
+    intervalCode = ExtGetIntervalCode(sitsRow, tbl)
+    actualInterval = ExtGetActualInterval(sitsRow, tbl)
+    formatType = ExtensionFormatTypeForInterval(intervalCode)
+    amountHint = ExtensionAmountHint(intervalCode, formatType)
+    GetExtendSelectionMeta = True
+End Function
+
+Public Function GetDeferSelectionMeta(ByVal rowId As String, _
+                                      ByRef taskCode As String, _
+                                      ByRef taskDesc As String, _
+                                      ByRef intervalCode As String, _
+                                      ByRef isHoursFault As Boolean, _
+                                      ByRef dueHint As String, _
+                                      ByRef currentHHDisplay As String) As Boolean
+    Dim tbl As ListObject
+    Dim rowIndex As Object
+    Dim sitsRow As ListRow
+    Dim currentHH As Variant
+
+    GetDeferSelectionMeta = False
+    taskCode = ""
+    taskDesc = ""
+    intervalCode = ""
+    isHoursFault = False
+    dueHint = ""
+    currentHHDisplay = ""
+
+    Set tbl = GetExtensionsSITSTable(False)
+    If tbl Is Nothing Then Exit Function
+    Set rowIndex = BuildSITSRowIdIndex(tbl)
+    Set sitsRow = ResolveSITSRowById(rowIndex, tbl, rowId)
+    If sitsRow Is Nothing Then Exit Function
+
+    taskCode = ExtGetTaskCode(sitsRow, tbl)
+    taskDesc = ExtGetTaskDescription(sitsRow, tbl)
+    intervalCode = ExtGetIntervalCode(sitsRow, tbl)
+    isHoursFault = IsHoursDeferredFault(taskCode)
+
+    If isHoursFault Then
+        dueHint = "Enter airframe hours due as h:mm (e.g. 1250:30)."
+        currentHH = LookupAirframeHHUsage()
+        If Not IsEmpty(currentHH) Then
+            currentHHDisplay = FormatUsageValueForDisplay( _
+                UsageValueAsDayFraction(currentHH, FORMAT_TYPE_HOURS), FORMAT_TYPE_HOURS)
+        Else
+            currentHHDisplay = "(not found)"
+        End If
+    Else
+        dueHint = "Enter date due as dd/mm/yyyy."
+        currentHHDisplay = ""
+    End If
+
+    GetDeferSelectionMeta = True
+End Function
+
+Public Function ApplyExtensionsToSelection(ByVal selectedIds As Object, _
+                                           ByVal amountText As String, _
+                                           ByVal snowAuth As String, _
+                                           ByVal authoriser As String, _
+                                           Optional ByVal showDialogs As Boolean = True) As Boolean
+    Const PROC_NAME As String = "ApplyExtensionsToSelection"
+
+    Dim tbl As ListObject
+    Dim rowIndex As Object
+    Dim failReason As String
+    Dim intervalCode As String
+    Dim actualInterval As Variant
+    Dim formatType As String
+    Dim amountHint As String
+    Dim incrementValue As Variant
+    Dim totalPct As Double
+    Dim warnMsg As String
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim applied As Long
+    Dim commentText As String
+    Dim existingExt As Double
+    Dim newTotalExt As Double
+    Dim maxExisting As Double
+
+    ApplyExtensionsToSelection = False
+
+    If selectedIds Is Nothing Or selectedIds.Count = 0 Then
+        If showDialogs Then MsgBox "No tasks selected.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    snowAuth = Trim$(snowAuth)
+    authoriser = Trim$(authoriser)
+    If Len(snowAuth) = 0 Then
+        If showDialogs Then MsgBox "SNOW authorisation is required.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+    If Len(authoriser) = 0 Then
+        If showDialogs Then MsgBox "Authoriser name is required.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    Set tbl = GetExtensionsSITSTable(True)
+    If tbl Is Nothing Then Exit Function
+    EnsureWorkPackageSITSColumns tbl
+    Set rowIndex = BuildSITSRowIdIndex(tbl)
+
+    If Not ValidateSelectionForExtend(selectedIds, tbl, rowIndex, failReason) Then
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If Not GetExtendSelectionMeta(selectedIds, intervalCode, actualInterval, formatType, amountHint) Then
+        If showDialogs Then MsgBox "Could not read selected task interval details.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    incrementValue = ParseExtensionAmount(amountText, intervalCode, formatType, failReason)
+    If IsEmpty(incrementValue) Then
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    maxExisting = 0#
+    For Each rowId In selectedIds.Keys
+        Set sitsRow = ResolveSITSRowById(rowIndex, tbl, CStr(rowId))
+        If sitsRow Is Nothing Then GoTo NextMax
+        existingExt = ExtensionValueAsDouble(ExtGetExtension(sitsRow, tbl), formatType)
+        If existingExt + CDbl(incrementValue) > maxExisting Then
+            maxExisting = existingExt + CDbl(incrementValue)
+        End If
+NextMax:
+    Next rowId
+
+    If Not IsEmpty(actualInterval) And CDbl(actualInterval) > 0# Then
+        totalPct = maxExisting / CDbl(actualInterval)
+        warnMsg = BuildExtensionPercentWarning(totalPct)
+        If Len(warnMsg) > 0 Then
+            If showDialogs Then
+                If MsgBox(warnMsg & vbCrLf & vbCrLf & "Continue and apply the extension?", _
+                          vbExclamation + vbYesNo, APP_NAME) <> vbYes Then Exit Function
+            End If
+        End If
+    End If
+
+    If showDialogs Then
+        If MsgBox("Apply extension of " & FormatExtensionAmountForDisplay(incrementValue, intervalCode) & _
+                  " to " & selectedIds.Count & " task(s)?" & vbCrLf & vbCrLf & _
+                  "SNOW: " & snowAuth & vbCrLf & _
+                  "Authoriser: " & authoriser, _
+                  vbQuestion + vbYesNo, APP_NAME) <> vbYes Then Exit Function
+    End If
+
+    commentText = "Extension +" & FormatExtensionAmountForDisplay(incrementValue, intervalCode) & vbCrLf & _
+                  "SNOW: " & snowAuth & vbCrLf & _
+                  "Authoriser: " & authoriser & vbCrLf & _
+                  "Date: " & Format$(Date, FORMAT_DATE) & vbCrLf & _
+                  "User: " & CurrentUserName()
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+    Application.StatusBar = "Applying extensions…"
+
+    For Each rowId In selectedIds.Keys
+        Set sitsRow = ResolveSITSRowById(rowIndex, tbl, CStr(rowId))
+        If sitsRow Is Nothing Then GoTo NextApply
+
+        existingExt = ExtensionValueAsDouble(ExtGetExtension(sitsRow, tbl), formatType)
+        newTotalExt = existingExt + CDbl(incrementValue)
+
+        WriteExtensionValue sitsRow, tbl, newTotalExt, intervalCode, formatType
+        WriteExtensionSnow sitsRow, tbl, snowAuth
+        AppendTaskDescriptionComment sitsRow, tbl, commentText
+        BumpBaselineLifeRemaining sitsRow, tbl, intervalCode, CDbl(incrementValue), formatType
+        ClearTaskSelectorExt sitsRow, tbl
+        applied = applied + 1
+NextApply:
+    Next rowId
+
+    ClearSelectedSITSSelectorsExt selectedIds, tbl, rowIndex
+    RecalculateSITS
+    RefreshSITSView
+    RefreshDashboardStatusCounts
+
+    LogAction "EXTENSION_APPLIED", snowAuth, _
+              "Tasks=" & applied & "; Increment=" & _
+              FormatExtensionAmountForDisplay(incrementValue, intervalCode) & _
+              "; Authoriser=" & authoriser
+
+    SetExcelState "enable"
+    Application.StatusBar = False
+
+    If showDialogs Then
+        MsgBox "Extension applied to " & applied & " task(s).", vbInformation, APP_NAME
+    End If
+    ApplyExtensionsToSelection = True
+    Exit Function
+
+ErrorHandler:
+    Application.StatusBar = False
+    SetExcelState "force-enable"
+    LogError PROC_NAME, Err.Number, Err.Description
+    If showDialogs Then
+        MsgBox "Failed to apply extension: " & Err.Description, vbCritical, APP_NAME
+    End If
+End Function
+
+Public Function ApplyDeferralToSelection(ByVal rowId As String, _
+                                         ByVal dueText As String, _
+                                         ByVal snowAuth As String, _
+                                         ByVal authoriser As String, _
+                                         Optional ByVal showDialogs As Boolean = True) As Boolean
+    Const PROC_NAME As String = "ApplyDeferralToSelection"
+
+    Dim tbl As ListObject
+    Dim rowIndex As Object
+    Dim sitsRow As ListRow
+    Dim failReason As String
+    Dim taskCode As String
+    Dim intervalCode As String
+    Dim isHoursFault As Boolean
+    Dim formatType As String
+    Dim dueHours As Variant
+    Dim dueDate As Date
+    Dim currentHH As Variant
+    Dim newLife As Double
+    Dim oldLife As Double
+    Dim extensionDelta As Double
+    Dim existingExt As Double
+    Dim commentText As String
+    Dim dueDisplay As String
+    Dim clearIds As Object
+
+    ApplyDeferralToSelection = False
+    rowId = Trim$(rowId)
+    snowAuth = Trim$(snowAuth)
+    authoriser = Trim$(authoriser)
+
+    If Len(rowId) = 0 Then
+        If showDialogs Then MsgBox "No deferred fault selected.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+    If Len(snowAuth) = 0 Then
+        If showDialogs Then MsgBox "SNOW authorisation is required.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+    If Len(authoriser) = 0 Then
+        If showDialogs Then MsgBox "Authoriser name is required.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    Set tbl = GetExtensionsSITSTable(True)
+    If tbl Is Nothing Then Exit Function
+    EnsureWorkPackageSITSColumns tbl
+    Set rowIndex = BuildSITSRowIdIndex(tbl)
+    Set sitsRow = ResolveSITSRowById(rowIndex, tbl, rowId)
+    If sitsRow Is Nothing Then
+        If showDialogs Then MsgBox "Selected SITS task is no longer present.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    taskCode = ExtGetTaskCode(sitsRow, tbl)
+    intervalCode = ExtGetIntervalCode(sitsRow, tbl)
+
+    If Not IsDeferredFaultTaskCode(taskCode) Then
+        If showDialogs Then MsgBox "Only PT2/PT3 deferred faults can be deferred.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+    If Len(ExtGetInWorkORN(sitsRow, tbl)) > 0 Then
+        If showDialogs Then
+            MsgBox "Task is in an open work package. Remove it from the WP before deferring.", _
+                   vbExclamation, APP_NAME
+        End If
+        Exit Function
+    End If
+
+    isHoursFault = IsHoursDeferredFault(taskCode)
+    formatType = IIf(isHoursFault, FORMAT_TYPE_HOURS, FORMAT_TYPE_NUMBER)
+
+    If isHoursFault Then
+        dueHours = ParseExtensionAmount(dueText, TYPE_HH, FORMAT_TYPE_HOURS, failReason)
+        If IsEmpty(dueHours) Then
+            If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+            Exit Function
+        End If
+
+        currentHH = LookupAirframeHHUsage()
+        If IsEmpty(currentHH) Then
+            If showDialogs Then
+                MsgBox "Current airframe HH usage was not found in tblUsageCurrent.", _
+                       vbExclamation, APP_NAME
+            End If
+            Exit Function
+        End If
+
+        newLife = CDbl(dueHours) - UsageValueAsDayFraction(currentHH, FORMAT_TYPE_HOURS)
+        If newLife < 0# Then
+            If showDialogs Then
+                MsgBox "Airframe hours due must be greater than or equal to current HH (" & _
+                       FormatUsageValueForDisplay(UsageValueAsDayFraction(currentHH, FORMAT_TYPE_HOURS), _
+                                                  FORMAT_TYPE_HOURS) & ").", _
+                       vbExclamation, APP_NAME
+            End If
+            Exit Function
+        End If
+
+        oldLife = ExtensionValueAsDouble(ExtGetLifeRemainingHours(sitsRow, tbl), FORMAT_TYPE_HOURS)
+        extensionDelta = newLife - oldLife
+        dueDisplay = FormatUsageValueForDisplay(CDbl(dueHours), FORMAT_TYPE_HOURS)
+    Else
+        If Not TryParseDeferDueDate(dueText, dueDate, failReason) Then
+            If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+            Exit Function
+        End If
+        If dueDate < Date Then
+            If showDialogs Then
+                MsgBox "Date due cannot be earlier than today.", vbExclamation, APP_NAME
+            End If
+            Exit Function
+        End If
+
+        oldLife = CDbl(DateDiff("d", Date, ExtGetEffectiveDueDate(sitsRow, tbl, Date)))
+        newLife = CDbl(DateDiff("d", Date, dueDate))
+        extensionDelta = newLife - oldLife
+        dueDisplay = Format$(dueDate, FORMAT_DATE)
+    End If
+
+    If showDialogs Then
+        If MsgBox("Defer " & taskCode & " to " & dueDisplay & "?" & vbCrLf & vbCrLf & _
+                  "SNOW: " & snowAuth & vbCrLf & _
+                  "Authoriser: " & authoriser, _
+                  vbQuestion + vbYesNo, APP_NAME) <> vbYes Then Exit Function
+    End If
+
+    commentText = "Deferral due: " & dueDisplay & vbCrLf & _
+                  "SNOW: " & snowAuth & vbCrLf & _
+                  "Authoriser: " & authoriser & vbCrLf & _
+                  "Date: " & Format$(Date, FORMAT_DATE) & vbCrLf & _
+                  "User: " & CurrentUserName()
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+    Application.StatusBar = "Applying deferral…"
+
+    existingExt = ExtensionValueAsDouble(ExtGetExtension(sitsRow, tbl), formatType)
+    If extensionDelta < 0# Then extensionDelta = 0#
+    WriteExtensionValue sitsRow, tbl, existingExt + extensionDelta, intervalCode, formatType
+    WriteExtensionSnow sitsRow, tbl, snowAuth
+    AppendTaskDescriptionComment sitsRow, tbl, commentText
+
+    If isHoursFault Then
+        SetHoursLifeRemainingTarget sitsRow, tbl, newLife
+    Else
+        SetDaysDueTarget sitsRow, tbl, dueDate
+    End If
+
+    ClearTaskSelectorExt sitsRow, tbl
+
+    Set clearIds = CreateObject("Scripting.Dictionary")
+    clearIds.CompareMode = 1
+    clearIds(rowId) = True
+    ClearSelectedSITSSelectorsExt clearIds, tbl, rowIndex
+
+    RecalculateSITS
+    RefreshSITSView
+    RefreshDashboardStatusCounts
+
+    LogAction "DEFERRAL_APPLIED", snowAuth, _
+              "Task=" & taskCode & "; Due=" & dueDisplay & "; Authoriser=" & authoriser
+
+    SetExcelState "enable"
+    Application.StatusBar = False
+
+    If showDialogs Then
+        MsgBox "Deferral applied to " & taskCode & ".", vbInformation, APP_NAME
+    End If
+    ApplyDeferralToSelection = True
+    Exit Function
+
+ErrorHandler:
+    Application.StatusBar = False
+    SetExcelState "force-enable"
+    LogError PROC_NAME, Err.Number, Err.Description
+    If showDialogs Then
+        MsgBox "Failed to apply deferral: " & Err.Description, vbCritical, APP_NAME
+    End If
+End Function
+
+Public Function FormatExtensionAmountForDisplay(ByVal value As Variant, _
+                                                ByVal intervalCode As String) As String
+    Dim formatType As String
+
+    If IsEmpty(value) Then
+        FormatExtensionAmountForDisplay = ""
+        Exit Function
+    End If
+
+    formatType = ExtensionFormatTypeForInterval(intervalCode)
+    If formatType = FORMAT_TYPE_HOURS Then
+        FormatExtensionAmountForDisplay = FormatUsageValueForDisplay(CDbl(value), FORMAT_TYPE_HOURS)
+    ElseIf intervalCode = TYPE_DD Then
+        If CDbl(value) = Fix(CDbl(value)) Then
+            FormatExtensionAmountForDisplay = Format$(CDbl(value), FORMAT_INTEGER) & " day(s)"
+        Else
+            FormatExtensionAmountForDisplay = CStr(value) & " day(s)"
+        End If
+    Else
+        FormatExtensionAmountForDisplay = FormatUsageValueForDisplay(CDbl(value), FORMAT_TYPE_NUMBER)
+    End If
+End Function
+
+' ------------------------------------------------------------------------
+' Selection validation
+' ------------------------------------------------------------------------
+
+Private Function ValidateSelectionForExtend(ByVal selectedIds As Object, _
+                                            ByVal tbl As ListObject, _
+                                            ByVal rowIndex As Object, _
+                                            ByRef failReason As String) As Boolean
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim firstInterval As String
+    Dim firstActual As Double
+    Dim intervalCode As String
+    Dim actualInterval As Variant
+    Dim taskCode As String
+    Dim inWorkOrn As String
+    Dim haveFirst As Boolean
+
+    failReason = ""
+    haveFirst = False
+
+    For Each rowId In selectedIds.Keys
+        Set sitsRow = ResolveSITSRowById(rowIndex, tbl, CStr(rowId))
+        If sitsRow Is Nothing Then
+            failReason = "A selected SITS task is no longer present."
+            Exit Function
+        End If
+
+        taskCode = ExtGetTaskCode(sitsRow, tbl)
+        If IsDeferredFaultTaskCode(taskCode) Then
+            failReason = "PT2/PT3 deferred faults cannot be extended." & vbCrLf & _
+                         "Use Defer for " & taskCode & "."
+            Exit Function
+        End If
+
+        inWorkOrn = ExtGetInWorkORN(sitsRow, tbl)
+        If Len(inWorkOrn) > 0 Then
+            failReason = "Task " & taskCode & " is in open work package " & inWorkOrn & "." & vbCrLf & _
+                         "Remove it from the work package before extending."
+            Exit Function
+        End If
+
+        intervalCode = ExtGetIntervalCode(sitsRow, tbl)
+        actualInterval = ExtGetActualInterval(sitsRow, tbl)
+        If IsEmpty(actualInterval) Then
+            failReason = "Task " & taskCode & " has no Actual Interval."
+            Exit Function
+        End If
+
+        If Not haveFirst Then
+            firstInterval = intervalCode
+            firstActual = CDbl(actualInterval)
+            haveFirst = True
+        Else
+            If StrComp(intervalCode, firstInterval, vbTextCompare) <> 0 Then
+                failReason = "All selected tasks must share the same Interval Type Code." & vbCrLf & _
+                             "Found " & firstInterval & " and " & intervalCode & "."
+                Exit Function
+            End If
+            If Abs(CDbl(actualInterval) - firstActual) > 0.0000001 Then
+                failReason = "All selected tasks must share the same Actual Interval."
+                Exit Function
+            End If
+        End If
+    Next rowId
+
+    If Not haveFirst Then
+        failReason = "No valid tasks selected."
+        Exit Function
+    End If
+
+    ValidateSelectionForExtend = True
+End Function
+
+Private Function ValidateSelectionForDefer(ByVal selectedIds As Object, _
+                                           ByVal tbl As ListObject, _
+                                           ByVal rowIndex As Object, _
+                                           ByRef rowIdOut As String, _
+                                           ByRef failReason As String) As Boolean
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim taskCode As String
+    Dim inWorkOrn As String
+    Dim count As Long
+
+    failReason = ""
+    rowIdOut = ""
+    count = selectedIds.Count
+
+    If count <> 1 Then
+        failReason = "Defer exactly one PT2/PT3 deferred fault at a time." & vbCrLf & _
+                     "Currently selected: " & count & "."
+        Exit Function
+    End If
+
+    For Each rowId In selectedIds.Keys
+        rowIdOut = CStr(rowId)
+        Exit For
+    Next rowId
+
+    Set sitsRow = ResolveSITSRowById(rowIndex, tbl, rowIdOut)
+    If sitsRow Is Nothing Then
+        failReason = "Selected SITS task is no longer present."
+        Exit Function
+    End If
+
+    taskCode = ExtGetTaskCode(sitsRow, tbl)
+    If Not IsDeferredFaultTaskCode(taskCode) Then
+        failReason = "Only PT2/PT3 deferred faults can be deferred." & vbCrLf & _
+                     "Selected task: " & taskCode & "."
+        Exit Function
+    End If
+
+    inWorkOrn = ExtGetInWorkORN(sitsRow, tbl)
+    If Len(inWorkOrn) > 0 Then
+        failReason = "Task " & taskCode & " is in open work package " & inWorkOrn & "." & vbCrLf & _
+                     "Remove it from the work package before deferring."
+        Exit Function
+    End If
+
+    ValidateSelectionForDefer = True
+End Function
+
+' ------------------------------------------------------------------------
+' Apply helpers
+' ------------------------------------------------------------------------
+
+Private Function ParseExtensionAmount(ByVal rawText As String, _
+                                      ByVal intervalCode As String, _
+                                      ByVal formatType As String, _
+                                      ByRef failReason As String) As Variant
+    Dim parsed As Variant
+
+    failReason = ""
+    rawText = Trim$(rawText)
+    If Len(rawText) = 0 Then
+        failReason = "Enter an extension amount."
+        Exit Function
+    End If
+
+    If formatType = FORMAT_TYPE_HOURS Then
+        parsed = ParseTimeUsageValue(rawText, rawText)
+        If IsEmpty(parsed) Then
+            failReason = "Enter the amount as h:mm (e.g. 1:30)."
+            Exit Function
+        End If
+        If CDbl(parsed) <= 0# Then
+            failReason = "Extension amount must be greater than zero."
+            Exit Function
+        End If
+        ParseExtensionAmount = parsed
+    Else
+        If Not IsNumeric(rawText) Then
+            If intervalCode = TYPE_DD Then
+                failReason = "Enter the extension as a number of days."
+            Else
+                failReason = "Enter a numeric extension amount."
+            End If
+            Exit Function
+        End If
+        If CDbl(rawText) <= 0# Then
+            failReason = "Extension amount must be greater than zero."
+            Exit Function
+        End If
+        ParseExtensionAmount = CDbl(rawText)
+    End If
+End Function
+
+Private Function BuildExtensionPercentWarning(ByVal totalPct As Double) As String
+    Dim standardPct As Double
+    Dim extendedPct As Double
+
+    standardPct = CDbl(NzExtNumber(GetConfigValue(CFG_EXT_STANDARD_PCT, MAX_EXTENSION_STANDARD)))
+    extendedPct = CDbl(NzExtNumber(GetConfigValue(CFG_EXT_EXTENDED_PCT, MAX_EXTENSION_EXTENDED)))
+
+    If totalPct > extendedPct Then
+        BuildExtensionPercentWarning = _
+            "Total extension is " & Format$(totalPct * 100#, "0.0") & _
+            "% of Actual Interval (above " & Format$(extendedPct * 100#, "0") & "%)." & vbCrLf & _
+            "This requires exceptional authority to certify."
+    ElseIf totalPct > standardPct Then
+        BuildExtensionPercentWarning = _
+            "Total extension is " & Format$(totalPct * 100#, "0.0") & _
+            "% of Actual Interval (above " & Format$(standardPct * 100#, "0") & "% standard)." & vbCrLf & _
+            "This requires extended authority to certify."
+    End If
+End Function
+
+Private Sub WriteExtensionValue(ByVal sitsRow As ListRow, _
+                                ByVal tbl As ListObject, _
+                                ByVal totalExtension As Double, _
+                                ByVal intervalCode As String, _
+                                ByVal formatType As String)
+    Dim col As Long
+    col = GetTableColumnIndex(tbl, HDR_EXTENSION)
+    If col = 0 Then Exit Sub
+
+    If formatType = FORMAT_TYPE_HOURS Then
+        WriteFormattedUsageValue sitsRow.Range.Cells(1, col), totalExtension, FORMAT_TYPE_HOURS
+    Else
+        sitsRow.Range.Cells(1, col).Value = totalExtension
+        sitsRow.Range.Cells(1, col).NumberFormat = FORMAT_DECIMAL
+    End If
+End Sub
+
+Private Sub WriteExtensionSnow(ByVal sitsRow As ListRow, _
+                               ByVal tbl As ListObject, _
+                               ByVal snowAuth As String)
+    Dim col As Long
+    col = GetTableColumnIndex(tbl, HDR_EXTENSION_SNOW)
+    If col = 0 Then Exit Sub
+    sitsRow.Range.Cells(1, col).Value = snowAuth
+    sitsRow.Range.Cells(1, col).NumberFormat = FORMAT_TEXT
+End Sub
+
+Private Sub AppendTaskDescriptionComment(ByVal sitsRow As ListRow, _
+                                         ByVal tbl As ListObject, _
+                                         ByVal commentText As String)
+    Dim colDesc As Long
+    Dim target As Range
+    Dim existing As String
+    Dim combined As String
+
+    colDesc = GetTableColumnIndex(tbl, HDR_TASK_DESCRIPTION)
+    If colDesc = 0 Then Exit Sub
+
+    Set target = sitsRow.Range.Cells(1, colDesc)
+    existing = GetCellCommentText(target)
+    If Len(existing) > 0 Then
+        combined = existing & vbCrLf & vbCrLf & commentText
+    Else
+        combined = commentText
+    End If
+    SetCellCommentText target, combined
+End Sub
+
+Private Sub BumpBaselineLifeRemaining(ByVal sitsRow As ListRow, _
+                                      ByVal tbl As ListObject, _
+                                      ByVal intervalCode As String, _
+                                      ByVal incrementValue As Double, _
+                                      ByVal formatType As String)
+    Dim colBaseHours As Long
+    Dim colBaseNumber As Long
+    Dim colBaseDue As Long
+    Dim colLRHours As Long
+    Dim colLRNumber As Long
+    Dim colDaysDue As Long
+    Dim baseline As Variant
+    Dim dueValue As Variant
+
+    colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
+    colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
+    colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
+    colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+    colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+
+    If intervalCode = TYPE_DD Then
+        dueValue = sitsRow.Range.Cells(1, colBaseDue).Value
+        If IsEmpty(dueValue) Or Len(Trim$(CStr(dueValue))) = 0 Then
+            dueValue = sitsRow.Range.Cells(1, colDaysDue).Value
+        End If
+
+        If IsDate(dueValue) Then
+            dueValue = DateAdd("d", CLng(incrementValue), CDate(dueValue))
+            If colDaysDue > 0 Then
+                sitsRow.Range.Cells(1, colDaysDue).Value = CDate(dueValue)
+                sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
+            End If
+            If colBaseDue > 0 Then
+                sitsRow.Range.Cells(1, colBaseDue).Value = CDate(dueValue)
+                sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
+            End If
+        ElseIf IsNumeric(dueValue) Then
+            dueValue = CDbl(dueValue) + incrementValue
+            If colDaysDue > 0 Then
+                sitsRow.Range.Cells(1, colDaysDue).Value = CDbl(dueValue)
+                sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
+            End If
+            If colBaseDue > 0 Then
+                sitsRow.Range.Cells(1, colBaseDue).Value = CDbl(dueValue)
+                sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DECIMAL
+            End If
+        Else
+            ' No existing due — treat increment as days remaining from today.
+            If colDaysDue > 0 Then
+                sitsRow.Range.Cells(1, colDaysDue).Value = DateAdd("d", CLng(incrementValue), Date)
+                sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
+            End If
+            If colBaseDue > 0 Then
+                sitsRow.Range.Cells(1, colBaseDue).Value = DateAdd("d", CLng(incrementValue), Date)
+                sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
+            End If
+        End If
+        Exit Sub
+    End If
+
+    If formatType = FORMAT_TYPE_HOURS Then
+        baseline = sitsRow.Range.Cells(1, colBaseHours).Value
+        If IsEmpty(baseline) Or Len(Trim$(CStr(baseline))) = 0 Then
+            baseline = sitsRow.Range.Cells(1, colLRHours).Value
+        End If
+        If IsEmpty(baseline) Or Len(Trim$(CStr(baseline))) = 0 Then
+            baseline = 0#
+        End If
+        baseline = UsageValueAsDayFraction(baseline, FORMAT_TYPE_HOURS) + incrementValue
+        If colBaseHours > 0 Then
+            WriteFormattedUsageValue sitsRow.Range.Cells(1, colBaseHours), baseline, FORMAT_TYPE_HOURS
+        End If
+        If colLRHours > 0 Then
+            WriteFormattedUsageValue sitsRow.Range.Cells(1, colLRHours), _
+                ExtensionValueAsDouble(sitsRow.Range.Cells(1, colLRHours).Value, FORMAT_TYPE_HOURS) + _
+                incrementValue, FORMAT_TYPE_HOURS
+        End If
+    Else
+        baseline = sitsRow.Range.Cells(1, colBaseNumber).Value
+        If IsEmpty(baseline) Or Len(Trim$(CStr(baseline))) = 0 Then
+            baseline = sitsRow.Range.Cells(1, colLRNumber).Value
+        End If
+        If IsEmpty(baseline) Or Len(Trim$(CStr(baseline))) = 0 Then
+            baseline = 0#
+        End If
+        baseline = CDbl(NzExtNumber(baseline)) + incrementValue
+        If colBaseNumber > 0 Then
+            sitsRow.Range.Cells(1, colBaseNumber).Value = baseline
+            sitsRow.Range.Cells(1, colBaseNumber).NumberFormat = FORMAT_DECIMAL
+        End If
+        If colLRNumber > 0 Then
+            sitsRow.Range.Cells(1, colLRNumber).Value = _
+                CDbl(NzExtNumber(sitsRow.Range.Cells(1, colLRNumber).Value)) + incrementValue
+            sitsRow.Range.Cells(1, colLRNumber).NumberFormat = FORMAT_DECIMAL
+        End If
+    End If
+End Sub
+
+Private Sub SetHoursLifeRemainingTarget(ByVal sitsRow As ListRow, _
+                                        ByVal tbl As ListObject, _
+                                        ByVal targetLife As Double)
+    Dim colLRHours As Long
+    Dim colBaseHours As Long
+    Dim colLRNumber As Long
+    Dim colBaseNumber As Long
+    Dim colDaysDue As Long
+    Dim colBaseDue As Long
+    Dim currentUsage As Variant
+    Dim snapshotUsage As Variant
+    Dim usageDelta As Double
+    Dim adjusted As Double
+
+    colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+    colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
+    colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
+    colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+    colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
+
+    If colLRHours > 0 Then
+        WriteFormattedUsageValue sitsRow.Range.Cells(1, colLRHours), targetLife, FORMAT_TYPE_HOURS
+    End If
+
+    currentUsage = LookupAirframeHHUsage()
+    snapshotUsage = LookupSnapshotUsageForIntervalExt(TYPE_HH)
+    If Not IsEmpty(currentUsage) And Not IsEmpty(snapshotUsage) Then
+        usageDelta = UsageValueAsDayFraction(currentUsage, FORMAT_TYPE_HOURS) - _
+                     UsageValueAsDayFraction(snapshotUsage, FORMAT_TYPE_HOURS)
+        adjusted = targetLife + usageDelta
+    Else
+        adjusted = targetLife
+    End If
+
+    If colBaseHours > 0 Then
+        WriteFormattedUsageValue sitsRow.Range.Cells(1, colBaseHours), adjusted, FORMAT_TYPE_HOURS
+    End If
+    If colLRNumber > 0 Then sitsRow.Range.Cells(1, colLRNumber).ClearContents
+    If colBaseNumber > 0 Then sitsRow.Range.Cells(1, colBaseNumber).ClearContents
+    If colDaysDue > 0 Then sitsRow.Range.Cells(1, colDaysDue).ClearContents
+    If colBaseDue > 0 Then sitsRow.Range.Cells(1, colBaseDue).ClearContents
+End Sub
+
+Private Sub SetDaysDueTarget(ByVal sitsRow As ListRow, _
+                             ByVal tbl As ListObject, _
+                             ByVal dueDate As Date)
+    Dim colDaysDue As Long
+    Dim colBaseDue As Long
+    Dim colLRHours As Long
+    Dim colBaseHours As Long
+    Dim colLRNumber As Long
+    Dim colBaseNumber As Long
+
+    colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+    colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
+    colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+    colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
+    colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
+
+    If colDaysDue > 0 Then
+        sitsRow.Range.Cells(1, colDaysDue).Value = dueDate
+        sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
+    End If
+    If colBaseDue > 0 Then
+        sitsRow.Range.Cells(1, colBaseDue).Value = dueDate
+        sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
+    End If
+    If colLRHours > 0 Then sitsRow.Range.Cells(1, colLRHours).ClearContents
+    If colBaseHours > 0 Then sitsRow.Range.Cells(1, colBaseHours).ClearContents
+    If colLRNumber > 0 Then sitsRow.Range.Cells(1, colLRNumber).ClearContents
+    If colBaseNumber > 0 Then sitsRow.Range.Cells(1, colBaseNumber).ClearContents
+End Sub
+
+Private Function TryParseDeferDueDate(ByVal rawText As String, _
+                                      ByRef dueDate As Date, _
+                                      ByRef failReason As String) As Boolean
+    Dim parsed As Variant
+
+    failReason = ""
+    rawText = Trim$(rawText)
+    If Len(rawText) = 0 Then
+        failReason = "Enter the date due as dd/mm/yyyy."
+        Exit Function
+    End If
+
+    parsed = ParseDMYDateValue(rawText)
+    If IsEmpty(parsed) Then
+        failReason = "Enter the date due as dd/mm/yyyy."
+        Exit Function
+    End If
+
+    dueDate = CDate(parsed)
+    TryParseDeferDueDate = True
+End Function
+
+Private Function ExtensionFormatTypeForInterval(ByVal intervalCode As String) As String
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            ExtensionFormatTypeForInterval = FORMAT_TYPE_HOURS
+        Case Else
+            ExtensionFormatTypeForInterval = FORMAT_TYPE_NUMBER
+    End Select
+End Function
+
+Private Function ExtensionAmountHint(ByVal intervalCode As String, _
+                                     ByVal formatType As String) As String
+    If formatType = FORMAT_TYPE_HOURS Then
+        ExtensionAmountHint = "Enter extension as h:mm (e.g. 1:30)."
+    ElseIf intervalCode = TYPE_DD Then
+        ExtensionAmountHint = "Enter extension as a number of days."
+    Else
+        ExtensionAmountHint = "Enter a numeric extension amount."
+    End If
+End Function
+
+Private Function IsHoursDeferredFault(ByVal taskCode As String) As Boolean
+    Select Case UCase$(Trim$(taskCode))
+        Case FAULT_PT2_H, FAULT_PT3_H
+            IsHoursDeferredFault = True
+    End Select
+End Function
+
+Private Function ExtensionValueAsDouble(ByVal value As Variant, _
+                                        ByVal formatType As String) As Double
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+    If formatType = FORMAT_TYPE_HOURS Then
+        ExtensionValueAsDouble = UsageValueAsDayFraction(value, FORMAT_TYPE_HOURS)
+    ElseIf IsNumeric(value) Then
+        ExtensionValueAsDouble = CDbl(value)
+    End If
+End Function
+
+Private Function NzExtNumber(ByVal value As Variant) As Double
+    If IsError(value) Or IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
+        NzExtNumber = 0#
+    ElseIf IsNumeric(value) Then
+        NzExtNumber = CDbl(value)
+    End If
+End Function
+
+' ------------------------------------------------------------------------
+' Field accessors / lookups
+' ------------------------------------------------------------------------
+
+Private Function ExtGetTaskCode(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As String
+    Dim col As Long
+    col = GetTableColumnIndex(tbl, HDR_TASK_CODE)
+    If col > 0 Then ExtGetTaskCode = Trim$(CStr(sitsRow.Range.Cells(1, col).Value))
+End Function
+
+Private Function ExtGetTaskDescription(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As String
+    Dim col As Long
+    col = GetTableColumnIndex(tbl, HDR_TASK_DESCRIPTION)
+    If col > 0 Then ExtGetTaskDescription = Trim$(CStr(sitsRow.Range.Cells(1, col).Value))
+End Function
+
+Private Function ExtGetIntervalCode(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As String
+    Dim col As Long
+    col = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)
+    If col > 0 Then ExtGetIntervalCode = UCase$(Trim$(CStr(sitsRow.Range.Cells(1, col).Value)))
+End Function
+
+Private Function ExtGetActualInterval(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As Variant
+    Dim col As Long
+    Dim value As Variant
+    col = GetTableColumnIndex(tbl, HDR_ACTUAL_INTERVAL)
+    If col = 0 Then Exit Function
+    value = sitsRow.Range.Cells(1, col).Value
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+    If IsNumeric(value) Then ExtGetActualInterval = CDbl(value)
+End Function
+
+Private Function ExtGetExtension(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As Variant
+    Dim col As Long
+    col = GetTableColumnIndex(tbl, HDR_EXTENSION)
+    If col > 0 Then ExtGetExtension = sitsRow.Range.Cells(1, col).Value
+End Function
+
+Private Function ExtGetInWorkORN(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As String
+    Dim col As Long
+    col = GetTableColumnIndex(tbl, HDR_ORN_INWORK)
+    If col > 0 Then ExtGetInWorkORN = Trim$(CStr(sitsRow.Range.Cells(1, col).Value))
+End Function
+
+Private Function ExtGetLifeRemainingHours(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As Variant
+    Dim col As Long
+    col = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+    If col > 0 Then ExtGetLifeRemainingHours = sitsRow.Range.Cells(1, col).Value
+End Function
+
+Private Function ExtGetEffectiveDueDate(ByVal sitsRow As ListRow, _
+                                        ByVal tbl As ListObject, _
+                                        ByVal fallbackDate As Date) As Date
+    Dim colDaysDue As Long
+    Dim colBaseDue As Long
+    Dim value As Variant
+
+    colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
+    colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+
+    If colBaseDue > 0 Then
+        value = sitsRow.Range.Cells(1, colBaseDue).Value
+        If IsDate(value) Then
+            ExtGetEffectiveDueDate = CDate(value)
+            Exit Function
+        ElseIf IsNumeric(value) Then
+            ExtGetEffectiveDueDate = DateAdd("d", CLng(CDbl(value)), Date)
+            Exit Function
+        End If
+    End If
+
+    If colDaysDue > 0 Then
+        value = sitsRow.Range.Cells(1, colDaysDue).Value
+        If IsDate(value) Then
+            ExtGetEffectiveDueDate = CDate(value)
+            Exit Function
+        ElseIf IsNumeric(value) Then
+            ExtGetEffectiveDueDate = DateAdd("d", CLng(CDbl(value)), Date)
+            Exit Function
+        End If
+    End If
+
+    ExtGetEffectiveDueDate = fallbackDate
+End Function
+
+Private Function LookupAirframeHHUsage() As Variant
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_CURRENT, showError:=False)
+    If ws Is Nothing Then Exit Function
+    Set tbl = GetTable(ws, TBL_USAGE_CURRENT, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), TYPE_HH, vbTextCompare) = 0 Then
+            LookupAirframeHHUsage = row.Range.Cells(1, 3).Value
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Function LookupSnapshotUsageForIntervalExt(ByVal intervalCode As String) As Variant
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+
+    Set ws = GetWorksheet(SHEET_CONFIG, showError:=False)
+    If ws Is Nothing Then Exit Function
+    Set tbl = GetTable(ws, TBL_USAGE_SNAPSHOT, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), intervalCode, vbTextCompare) = 0 Then
+            LookupSnapshotUsageForIntervalExt = row.Range.Cells(1, 2).Value
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Function GetExtensionsSITSTable(Optional ByVal showError As Boolean = True) As ListObject
+    Dim ws As Worksheet
+    Set ws = GetWorksheet(SHEET_DATA_SITS, showError:=showError)
+    If ws Is Nothing Then Exit Function
+    Set GetExtensionsSITSTable = GetTable(ws, TBL_SITS, showError:=showError)
+End Function
+
+Private Sub ClearTaskSelectorExt(ByVal sitsRow As ListRow, ByVal tbl As ListObject)
+    Dim colSelector As Long
+    colSelector = GetTableColumnIndex(tbl, HDR_SELECTOR)
+    If colSelector > 0 Then sitsRow.Range.Cells(1, colSelector).Value = False
+End Sub
+
+Private Sub ClearSelectedSITSSelectorsExt(ByVal rowIds As Object, _
+                                          ByVal tbl As ListObject, _
+                                          Optional ByVal rowIndex As Object = Nothing)
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim colSelector As Long
+    Dim localIndex As Object
+
+    colSelector = GetTableColumnIndex(tbl, HDR_SELECTOR)
+    If colSelector = 0 Then Exit Sub
+
+    If rowIndex Is Nothing Then
+        Set localIndex = BuildSITSRowIdIndex(tbl)
+    Else
+        Set localIndex = rowIndex
+    End If
+
+    For Each rowId In rowIds.Keys
+        Set sitsRow = ResolveSITSRowById(localIndex, tbl, CStr(rowId))
+        If Not sitsRow Is Nothing Then
+            sitsRow.Range.Cells(1, colSelector).Value = False
+        End If
+    Next rowId
+End Sub
+
+Private Function CollectSelectedFromSITSViewExt(ByVal tbl As ListObject, _
+                                                Optional ByVal rowIndex As Object = Nothing) As Object
+    Dim selected As Object
+    Dim wsView As Worksheet
+    Dim lastRow As Long
+    Dim rowId As String
+    Dim colRowIdView As Long
+    Dim headerCell As Range
+    Dim viewIds As Variant
+    Dim viewSelectors As Variant
+    Dim i As Long
+    Dim localIndex As Object
+
+    Set selected = CreateObject("Scripting.Dictionary")
+    selected.CompareMode = 1
+    Set CollectSelectedFromSITSViewExt = selected
+
+    Set wsView = GetWorksheet(SHEET_SITS, showError:=False)
+    If wsView Is Nothing Or tbl Is Nothing Then Exit Function
+
+    If rowIndex Is Nothing Then
+        Set localIndex = BuildSITSRowIdIndex(tbl)
+    Else
+        Set localIndex = rowIndex
+    End If
+
+    colRowIdView = 0
+    For Each headerCell In wsView.Range(wsView.Cells(SITS_VIEW_HEADER_ROW, 1), _
+                                        wsView.Cells(SITS_VIEW_HEADER_ROW, 40))
+        If StrComp(Trim$(CStr(headerCell.Value)), SITS_ROW_ID_COL_NAME, vbTextCompare) = 0 Then
+            colRowIdView = headerCell.Column
+            Exit For
+        End If
+    Next headerCell
+    If colRowIdView = 0 Then Exit Function
+
+    lastRow = wsView.Cells(wsView.Rows.Count, colRowIdView).End(xlUp).Row
+    If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Function
+
+    viewIds = wsView.Range(wsView.Cells(SITS_VIEW_DATA_START_ROW, colRowIdView), _
+                           wsView.Cells(lastRow, colRowIdView)).Value
+    viewSelectors = wsView.Range(wsView.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL), _
+                                 wsView.Cells(lastRow, SITS_SELECTOR_COL)).Value
+
+    If Not IsArray(viewIds) Then
+        If StrComp(Trim$(CStr(viewSelectors)), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then Exit Function
+        If ConvertToBoolean(viewSelectors) Then
+            rowId = Trim$(CStr(viewIds))
+            If Len(rowId) > 0 Then
+                If Not ResolveSITSRowById(localIndex, tbl, rowId) Is Nothing Then
+                    selected(rowId) = True
+                End If
+            End If
+        End If
+        Exit Function
+    End If
+
+    For i = LBound(viewIds, 1) To UBound(viewIds, 1)
+        If StrComp(Trim$(CStr(viewSelectors(i, 1))), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then GoTo NextSel
+        If Not ConvertToBoolean(viewSelectors(i, 1)) Then GoTo NextSel
+        rowId = Trim$(CStr(viewIds(i, 1)))
+        If Len(rowId) = 0 Then GoTo NextSel
+        If ResolveSITSRowById(localIndex, tbl, rowId) Is Nothing Then GoTo NextSel
+        selected(rowId) = True
+NextSel:
+    Next i
+End Function
