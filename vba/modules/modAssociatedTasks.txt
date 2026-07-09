@@ -3,9 +3,13 @@ Option Explicit
 ' ========================================================================
 ' ASSOCIATED TASKS MODULE — Offline Aircraft SITS v2 (Phase 4)
 ' ========================================================================
-' Links HH/DD (and similar) tasks that share a base Task Code + Sequence,
-' typically with a trailing "/1" on the calendar side. Completing one claims
-' and reforecasts the other.
+' Links HH/DD (and similar) tasks that share a base Task Code + Sequence
+' on the SAME Serial, typically with a trailing "/1" on the calendar side.
+' Completing one claims and reforecasts the other.
+'
+' Serial is required: the same task code can exist on different items
+' (e.g. each engine has its own WC/PMP/7200005) and must not claim across
+' serials.
 ' ========================================================================
 
 Public Function GetAssociatedTaskRows(ByVal sourceRow As ListRow, _
@@ -16,6 +20,7 @@ Public Function GetAssociatedTaskRows(ByVal sourceRow As ListRow, _
     Dim sourceRowId As String
     Dim colTaskCode As Long
     Dim colSequence As Long
+    Dim colSerial As Long
     Dim colRowId As Long
     Dim linkKey As String
     Dim rowId As String
@@ -27,15 +32,18 @@ Public Function GetAssociatedTaskRows(ByVal sourceRow As ListRow, _
 
     colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
     colSequence = GetTableColumnIndex(tbl, HDR_TASK_SEQUENCE)
+    colSerial = GetTableColumnIndex(tbl, HDR_SERIAL)
     colRowId = GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)
-    If colTaskCode = 0 Or colSequence = 0 Or colRowId = 0 Then Exit Function
+    If colTaskCode = 0 Or colSequence = 0 Or colSerial = 0 Or colRowId = 0 Then Exit Function
 
     sourceRowId = Trim$(CStr(sourceRow.Range.Cells(1, colRowId).Value))
     sourceKey = BuildAssociatedLinkKey( _
         CStr(sourceRow.Range.Cells(1, colTaskCode).Value), _
-        CStr(sourceRow.Range.Cells(1, colSequence).Value))
+        CStr(sourceRow.Range.Cells(1, colSequence).Value), _
+        CStr(sourceRow.Range.Cells(1, colSerial).Value))
 
-    If Len(sourceKey) <= 1 Then Exit Function
+    If Len(Trim$(CStr(sourceRow.Range.Cells(1, colSerial).Value))) = 0 Then Exit Function
+    If Len(sourceKey) <= 2 Then Exit Function
 
     For Each row In tbl.ListRows
         rowId = Trim$(CStr(row.Range.Cells(1, colRowId).Value))
@@ -43,7 +51,8 @@ Public Function GetAssociatedTaskRows(ByVal sourceRow As ListRow, _
 
         linkKey = BuildAssociatedLinkKey( _
             CStr(row.Range.Cells(1, colTaskCode).Value), _
-            CStr(row.Range.Cells(1, colSequence).Value))
+            CStr(row.Range.Cells(1, colSequence).Value), _
+            CStr(row.Range.Cells(1, colSerial).Value))
 
         If StrComp(linkKey, sourceKey, vbTextCompare) = 0 Then
             result.Add row
@@ -63,7 +72,9 @@ Public Function ExpandSelectionWithAssociatedTasks(ByVal selectedRowIds As Objec
     Dim assocId As String
     Dim colRowId As Long
     Dim colTaskCode As Long
+    Dim colSerial As Long
     Dim sourceCode As String
+    Dim sourceSerial As String
     Dim assocCode As String
 
     Set expanded = CreateObject("Scripting.Dictionary")
@@ -74,7 +85,8 @@ Public Function ExpandSelectionWithAssociatedTasks(ByVal selectedRowIds As Objec
 
     colRowId = GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)
     colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
-    If colRowId = 0 Or colTaskCode = 0 Then Exit Function
+    colSerial = GetTableColumnIndex(tbl, HDR_SERIAL)
+    If colRowId = 0 Or colTaskCode = 0 Or colSerial = 0 Then Exit Function
 
     For Each rowId In selectedRowIds.Keys
         expanded(CStr(rowId)) = True
@@ -85,6 +97,7 @@ Public Function ExpandSelectionWithAssociatedTasks(ByVal selectedRowIds As Objec
         If row Is Nothing Then GoTo NextSelected
 
         sourceCode = Trim$(CStr(row.Range.Cells(1, colTaskCode).Value))
+        sourceSerial = Trim$(CStr(row.Range.Cells(1, colSerial).Value))
         Set assocRows = GetAssociatedTaskRows(row, tbl)
 
         For Each assocRow In assocRows
@@ -94,7 +107,7 @@ Public Function ExpandSelectionWithAssociatedTasks(ByVal selectedRowIds As Objec
 
             expanded(assocId) = True
             assocCode = Trim$(CStr(assocRow.Range.Cells(1, colTaskCode).Value))
-            autoClaimed.Add sourceCode & " also claims " & assocCode
+            autoClaimed.Add sourceCode & " (S/N " & sourceSerial & ") also claims " & assocCode
 NextAssoc:
         Next assocRow
 NextSelected:
@@ -128,7 +141,7 @@ Public Function DescribeAssociatedClaims(ByVal autoClaimed As Collection) As Str
     maxLines = autoClaimed.Count
     If maxLines > 12 Then maxLines = 12
 
-    result = "Associated tasks will also be claimed:" & vbCrLf
+    result = "Associated tasks will also be claimed (same Serial only):" & vbCrLf
     For i = 1 To maxLines
         result = result & "• " & CStr(autoClaimed(i)) & vbCrLf
     Next i

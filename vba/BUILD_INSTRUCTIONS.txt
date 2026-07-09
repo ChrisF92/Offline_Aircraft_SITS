@@ -145,7 +145,8 @@ Step 8 — Work packages (Phase 4)
 Create:
 1. On the SITS view, tick one or more Selector checkboxes.
 2. Click **Create Work Package**.
-3. If associated `/1` (or same base+sequence) tasks exist, confirm the claim message.
+3. If associated `/1` tasks exist on the **same Serial**, confirm the claim message.
+   Same task code on a different Serial (e.g. the other engine) is not claimed.
 4. Enter ORN in format `####TAILDDMMYY` (e.g. `7034ZZ383081125`):
    - First 4 digits: any number
    - Middle: must match the aircraft tail number
@@ -182,6 +183,8 @@ What Phase 4 includes
 ---------------------
 - modWorkPackage — create / delete / close lifecycle
 - modAssociatedTasks — `/1` LinkKey auto-claim into WP
+  (LinkKey = BaseTaskCode|TaskSequence|Serial — same code on different
+  serials, e.g. each engine's WC/PMP/7200005, do not claim each other)
 - frmWorkPackage — manage open WPs (count, dropdown, task list, delete, close)
 - SITS buttons: Create Work Package, Manage Work Packages
 - ORN validation ####TAILDDMMYY with real-date check

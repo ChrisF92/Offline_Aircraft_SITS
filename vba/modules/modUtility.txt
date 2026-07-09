@@ -450,9 +450,16 @@ Public Function StripAssociatedSuffix(ByVal taskCode As String) As String
     End If
 End Function
 
+' Associated tasks share base Task Code + Sequence on the SAME Serial
+' (e.g. WC/PMP/2511002 and WC/PMP/2511002/1 on serial 2337014).
+' Same task code on different serials (e.g. each engine's WC/PMP/7200005)
+' must NOT claim each other — Serial is required in the key.
 Public Function BuildAssociatedLinkKey(ByVal taskCode As String, _
-                                       ByVal taskSequence As String) As String
-    BuildAssociatedLinkKey = StripAssociatedSuffix(taskCode) & "|" & Trim$(CStr(taskSequence))
+                                       ByVal taskSequence As String, _
+                                       ByVal serialNumber As String) As String
+    BuildAssociatedLinkKey = StripAssociatedSuffix(taskCode) & "|" & _
+                             Trim$(CStr(taskSequence)) & "|" & _
+                             UCase$(Trim$(CStr(serialNumber)))
 End Function
 
 Public Function IsDeferredFaultTaskCode(ByVal taskCode As String) As Boolean
