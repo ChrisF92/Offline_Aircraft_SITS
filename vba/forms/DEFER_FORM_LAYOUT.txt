@@ -44,5 +44,6 @@ SITS sheet macro:
 Rules:
   - Exactly one PT2/PT3 may be selected
   - PT2-H / PT3-H: enter absolute airframe HH due; life remaining = due − current HH
-  - PT2-D / PT3-D: enter date due; life remaining / due date set from that date
+  - PT2-D / PT3-D: enter date due; Life Remaining = days remaining (due − today);
+    Projected Due Date = the entered date
   - SNOW + authoriser required; written to Extension SNOW and Task Description comment

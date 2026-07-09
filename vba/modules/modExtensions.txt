@@ -818,6 +818,8 @@ Private Sub BumpBaselineLifeRemaining(ByVal sitsRow As ListRow, _
     Dim colDaysDue As Long
     Dim baseline As Variant
     Dim dueValue As Variant
+    Dim newDueDate As Date
+    Dim daysRemaining As Double
 
     colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
     colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
@@ -833,41 +835,26 @@ Private Sub BumpBaselineLifeRemaining(ByVal sitsRow As ListRow, _
         End If
 
         If LooksLikeAbsoluteDueDateValue(dueValue) Then
-            dueValue = DateAdd("d", CLng(incrementValue), CDate(dueValue))
-            If colDaysDue > 0 Then
-                sitsRow.Range.Cells(1, colDaysDue).Value = CDate(dueValue)
-                sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
-            End If
-            If colBaseDue > 0 Then
-                sitsRow.Range.Cells(1, colBaseDue).Value = CDate(dueValue)
-                sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
-            End If
-            SyncProjectedDueDate sitsRow, tbl, CDate(dueValue)
+            newDueDate = DateAdd("d", CLng(incrementValue), CDate(dueValue))
         ElseIf IsNumeric(dueValue) Then
-            ' Day-count remaining — keep as days, and advance Projected Due Date if present.
-            dueValue = CDbl(dueValue) + incrementValue
-            If colDaysDue > 0 Then
-                sitsRow.Range.Cells(1, colDaysDue).Value = CDbl(dueValue)
-                sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
-            End If
-            If colBaseDue > 0 Then
-                sitsRow.Range.Cells(1, colBaseDue).Value = CDbl(dueValue)
-                sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DECIMAL
-            End If
-            BumpProjectedDueDateByDays sitsRow, tbl, CLng(incrementValue)
+            daysRemaining = CDbl(dueValue) + incrementValue
+            newDueDate = DateAdd("d", CLng(daysRemaining), Date)
         Else
-            ' No existing due — treat increment as days remaining from today.
-            dueValue = DateAdd("d", CLng(incrementValue), Date)
-            If colDaysDue > 0 Then
-                sitsRow.Range.Cells(1, colDaysDue).Value = CDate(dueValue)
-                sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
-            End If
-            If colBaseDue > 0 Then
-                sitsRow.Range.Cells(1, colBaseDue).Value = CDate(dueValue)
-                sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
-            End If
-            SyncProjectedDueDate sitsRow, tbl, CDate(dueValue)
+            newDueDate = DateAdd("d", CLng(incrementValue), Date)
         End If
+
+        daysRemaining = CDbl(DateDiff("d", Date, newDueDate))
+        If daysRemaining < 0# Then daysRemaining = 0#
+
+        If colDaysDue > 0 Then
+            sitsRow.Range.Cells(1, colDaysDue).Value = daysRemaining
+            sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
+        End If
+        If colBaseDue > 0 Then
+            sitsRow.Range.Cells(1, colBaseDue).Value = newDueDate
+            sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
+        End If
+        SyncProjectedDueDate sitsRow, tbl, newDueDate
         Exit Sub
     End If
 
@@ -962,6 +949,7 @@ Private Sub SetDaysDueTarget(ByVal sitsRow As ListRow, _
     Dim colBaseHours As Long
     Dim colLRNumber As Long
     Dim colBaseNumber As Long
+    Dim daysRemaining As Long
 
     colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
     colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
@@ -970,11 +958,16 @@ Private Sub SetDaysDueTarget(ByVal sitsRow As ListRow, _
     colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
     colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
 
+    ' Life Remaining is days remaining (number). Absolute due date goes to Projected Due Date.
+    daysRemaining = CLng(DateDiff("d", Date, dueDate))
+    If daysRemaining < 0 Then daysRemaining = 0
+
     If colDaysDue > 0 Then
-        sitsRow.Range.Cells(1, colDaysDue).Value = dueDate
-        sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
+        sitsRow.Range.Cells(1, colDaysDue).Value = CDbl(daysRemaining)
+        sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
     End If
     If colBaseDue > 0 Then
+        ' Keep absolute due in baseline so RecalculateSITS can recompute days remaining.
         sitsRow.Range.Cells(1, colBaseDue).Value = dueDate
         sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
     End If

@@ -1302,6 +1302,7 @@ Private Sub ReforecastCompletedTask(ByVal sitsRow As ListRow, _
     Dim colCurNumber As Long
     Dim newLife As Double
     Dim dueDate As Date
+    Dim daysRemainingClose As Long
 
     intervalCode = GetSITSIntervalCode(sitsRow, tbl)
     actualInterval = GetSITSActualInterval(sitsRow, tbl)
@@ -1318,9 +1319,11 @@ Private Sub ReforecastCompletedTask(ByVal sitsRow As ListRow, _
 
     If intervalCode = TYPE_DD Then
         dueDate = DateAdd("d", CLng(CDbl(actualInterval)), closeDate)
+        daysRemainingClose = CLng(DateDiff("d", Date, dueDate))
+        If daysRemainingClose < 0 Then daysRemainingClose = 0
         If colDaysDue > 0 Then
-            sitsRow.Range.Cells(1, colDaysDue).Value = dueDate
-            sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
+            sitsRow.Range.Cells(1, colDaysDue).Value = CDbl(daysRemainingClose)
+            sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
         End If
         If colBaseDue > 0 Then
             sitsRow.Range.Cells(1, colBaseDue).Value = dueDate

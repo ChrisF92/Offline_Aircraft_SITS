@@ -589,8 +589,11 @@ Private Sub ApplyDDTaskRecalc(ByVal row As ListRow, _
     End If
 
     If LooksLikeAbsoluteDueDate(baselineDue) Then
-        row.Range.Cells(1, colDaysDue).Value = CDate(baselineDue)
-        row.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
+        ' Absolute due date stored in baseline — Life Remaining is days from today.
+        daysRemaining = CDbl(DateDiff("d", Date, CDate(baselineDue)))
+        If daysRemaining < 0# Then daysRemaining = 0#
+        row.Range.Cells(1, colDaysDue).Value = daysRemaining
+        row.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
     ElseIf IsNumeric(baselineDue) Then
         snapshotDate = GetConfigValue(CFG_SITS_SNAPSHOT_DATE, "")
         daysRemaining = CDbl(baselineDue)
@@ -1439,10 +1442,10 @@ Private Sub WriteSITSViewLifeRemaining(ByVal sourceRow As ListRow, _
         If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
             target.ClearContents
         ElseIf LooksLikeAbsoluteDueDate(value) Then
-            ' Absolute due date (not a small day-count). IsDate(30)=True in VBA,
-            ' so do not use IsDate alone.
-            target.Value = CDate(value)
-            target.NumberFormat = FORMAT_DATE
+            ' Legacy absolute date in Days When Due — show days remaining.
+            target.Value = CDbl(DateDiff("d", Date, CDate(value)))
+            If CDbl(target.Value) < 0# Then target.Value = 0#
+            target.NumberFormat = FORMAT_DECIMAL
         ElseIf IsNumeric(value) Then
             target.Value = CDbl(value)
             target.NumberFormat = FORMAT_DECIMAL
