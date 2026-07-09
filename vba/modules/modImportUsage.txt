@@ -264,9 +264,8 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
 
         intervalCode = CStr(rowData(0))
         taskCode = CStr(rowData(1))
-        resolvedFormat = ResolveUsageFormatType(intervalCode, taskCode, _
-            CStr(rowData(4)), CStr(rowData(2)))
-        valuePattern = UsageNumberFormatPattern(resolvedFormat, rowData(3))
+        resolvedFormat = StoredUsageFormatLabel(intervalCode)
+        valuePattern = UsageFormatPatternForInterval(intervalCode, rowData(3))
 
         Set newRow = tblBaseline.ListRows.Add
         With newRow.Range
@@ -421,10 +420,8 @@ Private Function BuildUsageImportRow(ByVal srcWs As Worksheet, _
 
         lifeUsed = srcWs.Cells(rowIndex, colMap("Life Used")).Value
         displayText = srcWs.Cells(rowIndex, colMap("Life Used")).Text
-        .FormatType = ResolveUsageFormatType(.IntervalCode, .TaskCode, _
-            DetectUsageFormat(lifeUsed, .IntervalCode, .TaskCode, .Description, displayText), _
-            .Description)
-        .BaselineValue = NormalizeUsageImportValue(lifeUsed, .FormatType, displayText)
+        .FormatType = StoredUsageFormatLabel(.IntervalCode)
+        .BaselineValue = CoerceImportedUsageValue(lifeUsed, displayText, .IntervalCode)
         .SerialValue = NormalizeSerialText( _
             srcWs.Cells(rowIndex, colMap("Top Serial")).Value, _
             srcWs.Cells(rowIndex, colMap("Top Serial")).Text)
