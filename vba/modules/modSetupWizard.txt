@@ -170,6 +170,7 @@ End Sub
 
 Private Sub RefreshDashboardAfterSetup()
     ' Do not rebuild layout after setup — preserve Master column widths / buttons.
+    ' EnsureDashboardActionButtons also removes Setup Wizard once setup is complete.
     EnsureDashboardActionButtons
     RefreshDashboardStatusCounts
 End Sub
