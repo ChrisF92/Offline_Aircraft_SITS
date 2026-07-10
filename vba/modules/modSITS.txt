@@ -1017,7 +1017,7 @@ Private Sub WriteSITSViewShell(ByVal ws As Worksheet, _
     ws.Range("B5").Value = forecastNumber
     ws.Range("B5").NumberFormat = FORMAT_GENERAL
 
-    ws.Range("A6").Value = "Tick tasks, then Create Work Package / Extend / Defer. Use Manage Work Packages to delete, remove tasks, or close open ORNs. Filter dropdowns on row 7 hide interval types."
+    ws.Range("A6").Value = "Tick tasks, then Create Work Package / Extend / Defer / Remove Task. Use Add Task to enter a new row. Manage Work Packages deletes, removes tasks, or closes open ORNs. Filter dropdowns on row 7 hide interval types."
     ws.Range("A6").Font.Size = 9
     ws.Range("A6").Font.Italic = True
 End Sub
@@ -1109,6 +1109,8 @@ Private Sub EnsureSITSViewActionButtons(ByVal ws As Worksheet)
     EnsureSheetButton ws, "Manage Work Packages", "RunManageWorkPackages", "H1", SITS_BTN_WIDTH + 30, SITS_BTN_HEIGHT
     EnsureSheetButton ws, "Extend", "RunExtendFromSelection", "D3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
     EnsureSheetButton ws, "Defer", "RunDeferFromSelection", "F3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
+    EnsureSheetButton ws, "Add Task", "RunAddSITSTask", "H3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
+    EnsureSheetButton ws, "Remove Task", "RunRemoveSITSTasks", "J3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
 End Sub
 
 Private Sub AddSITSViewActionButtons(ByVal ws As Worksheet)

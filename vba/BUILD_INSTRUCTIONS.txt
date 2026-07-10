@@ -62,6 +62,7 @@ Runtime modules:
   vba/modules/modSetupWizard.txt        modSetupWizard
   vba/modules/modUsageLog.txt           modUsageLog
   vba/modules/modSITS.txt               modSITS
+  vba/modules/modSITSEdit.txt           modSITSEdit
   vba/modules/modAssociatedTasks.txt    modAssociatedTasks
   vba/modules/modWorkPackage.txt        modWorkPackage
   vba/modules/modExtensions.txt         modExtensions
@@ -272,6 +273,24 @@ What Phase 5 includes
 - Remove single task from open work package (frmWorkPackage)
 - Audit: EXTENSION_APPLIED / DEFERRAL_APPLIED / WP_TASK_REMOVED
 
+Manual Add / Remove Task (SITS view)
+------------------------------------
+- modSITSEdit — Add Task / Remove Task entry points
+- SITS buttons (H3/J3): Add Task, Remove Task (ensured on Refresh View; layout preserved)
+- Add Task: sequential InputBox prompts for import-required fields
+  (Interval Type Code, Life Remaining, Task Code, Task Sequence,
+  Task Description, Serial, Actual Interval, Extension, End Item Serial).
+  End Item Serial defaults to the configured tail and must match it.
+  System-only columns (Selector, ORNs, completion fields, baselines,
+  SITS_RowID, Needs Manual Update, current usage, optional import extras)
+  are not prompted. Summary confirmation precedes insert; new rows appear
+  on the view only if they pass the current forecast filter.
+- Remove Task: uses existing Selector checkboxes. If none selected, prompts
+  to select first. Confirmation lists all selected tasks and warns the
+  delete is irreversible. IN WORK rows have no checkbox and cannot be
+  selected. Orphan tblWPTasks links for deleted RowIDs are cleaned up.
+- Audit: SITS_TASK_ADDED / SITS_TASKS_REMOVED
+
 What is NOT included yet
 ------------------------
 - Protected-sheet manual life-remaining edit form for zero-interval tasks
@@ -323,13 +342,13 @@ Sample files in repo root:
 
 Upgrading an existing Phase 0–4 workbook to Phase 5
 -----------------------------------------------------
-1. Import new module: modExtensions, and updated modules (modSITS, modWorkPackage,
-   CONFIG, Setup_CreateDashboard, Setup_RunAll).
+1. Import new modules: modExtensions, modSITSEdit, and updated modules (modSITS,
+   modWorkPackage, CONFIG, Setup_CreateDashboard, Setup_RunAll).
 2. Create frmExtend and frmDefer from the layout + code files.
 3. Update frmWorkPackage controls to include cmdRemoveTask (or recreate the form).
-4. Prefer **Ensure Missing Buttons** (and Refresh SITS) so new Extend / Defer
-   buttons appear without wiping your Master layout. Use **Rebuild Dashboard**
-   only if you want a full layout reset.
+4. Prefer **Ensure Missing Buttons** (and Refresh SITS) so new Extend / Defer /
+   Add Task / Remove Task buttons appear without wiping your Master layout.
+   Use **Rebuild Dashboard** only if you want a full layout reset.
 
 Troubleshooting
 ---------------
