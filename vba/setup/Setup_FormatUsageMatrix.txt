@@ -61,7 +61,6 @@ Public Sub ApplyUsageMatrixShell(ByVal ws As Worksheet, _
     ws.Cells.Clear
     On Error Resume Next
     ws.Range("A1").UnMerge
-    ws.FreezePanes = False
     On Error GoTo 0
 
     With ws.Range("A1")
@@ -85,7 +84,7 @@ Public Sub ApplyUsageMatrixShell(ByVal ws As Worksheet, _
         Next c
     End If
 
-    ' Freeze below format row so headers + B/F stay visible while scrolling sorties.
+    ' FreezePanes is a Window property, not Worksheet.
     On Error Resume Next
     ws.Activate
     ActiveWindow.FreezePanes = False
