@@ -38,7 +38,8 @@ Public Sub RefreshNewTotal()
 
     incrementValue = ParseUsageIncrement(rawUsage, FormatType, failReason)
     If IsEmpty(incrementValue) Then
-        NewBox.Value = ""
+        ' Incomplete typed time (e.g. "1:") — keep Current Total visible.
+        NewBox.Value = FormatUsageValueForDisplay(CurrentNumeric, FormatType)
         Exit Sub
     End If
 

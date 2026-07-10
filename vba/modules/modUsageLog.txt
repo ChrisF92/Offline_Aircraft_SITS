@@ -279,17 +279,20 @@ Public Function ParseUsageIncrement(ByVal rawIncrement As Variant, _
                                     ByVal formatType As String, _
                                     ByRef failReason As String) As Variant
     Dim parsedTime As Variant
+    Dim rawText As String
 
-    If IsEmpty(rawIncrement) Or Len(Trim$(CStr(rawIncrement))) = 0 Then
+    rawText = Trim$(CStr(rawIncrement))
+    If IsEmpty(rawIncrement) Or Len(rawText) = 0 Then
         failReason = "Increment cannot be blank."
         Exit Function
     End If
 
+    ' Option Compare Binary: Case values must match the UCase$ test expression.
     Select Case UCase$(Trim$(formatType))
-        Case FORMAT_TYPE_HOURS
-            parsedTime = ParseTimeUsageValue(rawIncrement, CStr(rawIncrement))
+        Case UCase$(FORMAT_TYPE_HOURS)
+            parsedTime = ParseTimeUsageValue(rawText, rawText)
             If IsEmpty(parsedTime) Then
-                failReason = "Enter flight/usage time as h:mm (e.g. 1:30)."
+                failReason = "Enter flight/usage time as h:mm (e.g. 1:30), or hours as a number (e.g. 1)."
                 Exit Function
             End If
             If CDbl(parsedTime) <= 0 Then
@@ -298,8 +301,8 @@ Public Function ParseUsageIncrement(ByVal rawIncrement As Variant, _
             End If
             ParseUsageIncrement = parsedTime
 
-        Case FORMAT_TYPE_MINUTES
-            parsedTime = ParseMinutesSecondsValue(rawIncrement, CStr(rawIncrement))
+        Case UCase$(FORMAT_TYPE_MINUTES)
+            parsedTime = ParseMinutesSecondsValue(rawText, rawText)
             If IsEmpty(parsedTime) Then
                 failReason = "Enter duration as m:ss (e.g. 1:30)."
                 Exit Function
@@ -311,15 +314,15 @@ Public Function ParseUsageIncrement(ByVal rawIncrement As Variant, _
             ParseUsageIncrement = parsedTime
 
         Case Else
-            If Not IsNumeric(rawIncrement) Then
+            If Not IsNumeric(rawText) Then
                 failReason = "Enter a numeric increment."
                 Exit Function
             End If
-            If CDbl(rawIncrement) <= 0 Then
+            If CDbl(rawText) <= 0 Then
                 failReason = "Increment must be greater than zero."
                 Exit Function
             End If
-            ParseUsageIncrement = CDbl(rawIncrement)
+            ParseUsageIncrement = CDbl(rawText)
     End Select
 End Function
 

@@ -580,20 +580,33 @@ Public Function ParseTimeUsageValue(ByVal rawVal As Variant, _
 
     s = Trim$(CStr(displayText))
     If Len(s) = 0 Or s = "#####" Then s = Trim$(CStr(rawVal))
+    If Len(s) = 0 Then Exit Function
 
     If InStr(s, ":") > 0 Then
         parts = Split(s, ":")
         If UBound(parts) >= 1 Then
-            If IsNumeric(parts(0)) And IsNumeric(parts(1)) Then
-                hoursPart = CDbl(parts(0))
-                minutesPart = CDbl(parts(1))
-                ParseTimeUsageValue = (hoursPart / 24#) + (minutesPart / 1440#)
-                Exit Function
+            If Len(Trim$(parts(0))) > 0 And Len(Trim$(parts(1))) > 0 Then
+                If IsNumeric(parts(0)) And IsNumeric(parts(1)) Then
+                    hoursPart = CDbl(parts(0))
+                    minutesPart = CDbl(parts(1))
+                    If minutesPart >= 0# And minutesPart < 60# Then
+                        ParseTimeUsageValue = (hoursPart / 24#) + (minutesPart / 1440#)
+                    End If
+                    Exit Function
+                End If
             End If
         End If
+        ' Incomplete/invalid h:mm (e.g. "1:") — do not fall through to CDbl("1:00").
+        Exit Function
     End If
 
-    If IsNumeric(rawVal) Then
+    If Not IsNumeric(s) Then Exit Function
+
+    ' Typed text without a colon means whole/fractional hours (1 or 1.5).
+    ' Numeric cell values are already Excel day-fractions.
+    If VarType(rawVal) = vbString Then
+        ParseTimeUsageValue = CDbl(s) / 24#
+    Else
         ParseTimeUsageValue = CDbl(rawVal)
     End If
 End Function
@@ -893,7 +906,7 @@ Public Function FormatUsageValueForDisplay(ByVal value As Variant, _
     Select Case UCase$(Trim$(formatType))
         Case UCase$(FORMAT_TYPE_HOURS)
             FormatUsageValueForDisplay = FormatElapsedHoursFromDayFraction(CDbl(value))
-        Case FORMAT_TYPE_MINUTES
+        Case UCase$(FORMAT_TYPE_MINUTES)
             FormatUsageValueForDisplay = FormatElapsedMinutesFromDayFraction(CDbl(value))
         Case Else
             If IsNumeric(value) And CDbl(value) = Fix(CDbl(value)) Then
@@ -1143,7 +1156,7 @@ Private Function IsCorruptUsageStoredValue(ByVal value As Variant, _
     If Not IsNumeric(value) Then Exit Function
 
     Select Case UCase$(Trim$(formatType))
-        Case FORMAT_TYPE_MINUTES
+        Case UCase$(FORMAT_TYPE_MINUTES)
             ' Normalised m:ss values are tiny day fractions; large numbers are corrupt.
             IsCorruptUsageStoredValue = (CDbl(value) >= 1#)
     End Select
