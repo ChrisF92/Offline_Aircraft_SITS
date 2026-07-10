@@ -1,0 +1,95 @@
+Option Explicit
+
+' ========================================================================
+' ONE-TIME SETUP — Usage sheet sortie matrix layout
+' ========================================================================
+' Module Name property: modSetupUsageMatrix
+'
+' Run Setup_FormatUsageMatrix once after pasting this module (and the
+' updated modUsageLog). Afterwards, RefreshUsageView / Log Sortie keep
+' the matrix data current without wiping freeze panes or column widths.
+' ========================================================================
+
+Public Sub Setup_FormatUsageMatrix(Optional ByVal silent As Boolean = False)
+    Dim ws As Worksheet
+
+    If Not silent Then
+        If MsgBox("Format the Usage sheet as a sortie matrix?" & vbCrLf & vbCrLf & _
+                  "Columns = interval types (Airframe, Engines, WARE)." & vbCrLf & _
+                  "Rows = B/F Totals, each logged sortie, then Current Totals." & vbCrLf & vbCrLf & _
+                  "Existing Usage sheet contents will be replaced.", _
+                  vbQuestion + vbYesNo, "Setup — Usage Matrix") <> vbYes Then Exit Sub
+    End If
+
+    If Not ValidateWorkbookStructure(showDialogs:=Not silent) Then Exit Sub
+
+    Set ws = GetWorksheet(SHEET_USAGE)
+    If ws Is Nothing Then Exit Sub
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+
+    ApplyUsageMatrixShell ws, resetWidths:=True
+    RefreshUsageView
+
+    SetExcelState "enable"
+    If Not silent Then
+        MsgBox "Usage sheet formatted as a sortie matrix." & vbCrLf & _
+               "Use Refresh Usage (or log a sortie) to update data.", _
+               vbInformation, "Setup — Usage Matrix"
+    End If
+    Exit Sub
+
+ErrorHandler:
+    SetExcelState "enable"
+    If Not silent Then
+        MsgBox "Usage matrix format error: " & Err.Number & " - " & Err.Description, _
+               vbCritical, "Setup — Usage Matrix"
+    End If
+End Sub
+
+' Shared shell used by one-time setup and by RefreshUsageView when missing.
+Public Sub ApplyUsageMatrixShell(ByVal ws As Worksheet, _
+                                 Optional ByVal resetWidths As Boolean = False)
+    Dim codes As Variant
+    Dim colCount As Long
+    Dim c As Long
+
+    codes = AllSortieUsageIntervalCodes()
+    colCount = UBound(codes) - LBound(codes) + 2  ' label col + intervals
+
+    ws.Cells.Clear
+    On Error Resume Next
+    ws.Range("A1").UnMerge
+    ws.FreezePanes = False
+    On Error GoTo 0
+
+    With ws.Range("A1")
+        .Value = "Usage — Sortie Matrix"
+        .Font.Size = 14
+        .Font.Bold = True
+        .Font.Color = COLOR_HEADER_BLUE
+    End With
+
+    ws.Range("A2").Value = "Tail:"
+    ws.Range("B2").Value = GetTailNumber()
+    ws.Range("A3").Value = "B/F Totals = baseline at import. Sortie rows = increments. Final row = current totals."
+    ws.Range("A3").Font.Size = 9
+    ws.Range("A3").Font.Italic = True
+    ws.Range("A3").Font.Color = RGB(89, 89, 89)
+
+    If resetWidths Then
+        ws.Columns(1).ColumnWidth = 18
+        For c = 2 To colCount
+            ws.Columns(c).ColumnWidth = 8
+        Next c
+    End If
+
+    ' Freeze below format row so headers + B/F stay visible while scrolling sorties.
+    On Error Resume Next
+    ws.Activate
+    ActiveWindow.FreezePanes = False
+    ws.Range("B8").Select
+    ActiveWindow.FreezePanes = True
+    On Error GoTo 0
+End Sub

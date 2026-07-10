@@ -86,6 +86,7 @@ Public Sub RefreshDashboardLayout()
     AddDashboardButton ws, "B21", "Ensure Missing Buttons", "EnsureDashboardActionButtons"
     AddDashboardButton ws, "C21", "Phase 0 Setup", "Setup_RunAll"
     AddDashboardButton ws, "B22", "Rebuild SITS Layout", "RebuildSITSViewLayout"
+    AddDashboardButton ws, "C22", "Format Usage Matrix", "Setup_FormatUsageMatrix"
 
     WriteSectionHeader ws, "B24", "Import Requirements"
     ws.Range("B25").Value = "SITS Long Forecast: 9 required columns (strict — abort if any missing)."
@@ -148,6 +149,7 @@ Public Sub EnsureDashboardActionButtons()
     EnsureDashboardButton ws, "B21", "Ensure Missing Buttons", "EnsureDashboardActionButtons"
     EnsureDashboardButton ws, "C21", "Phase 0 Setup", "Setup_RunAll"
     EnsureDashboardButton ws, "B22", "Rebuild SITS Layout", "RebuildSITSViewLayout"
+    EnsureDashboardButton ws, "C22", "Format Usage Matrix", "Setup_FormatUsageMatrix"
     SetExcelState "enable"
 End Sub
 

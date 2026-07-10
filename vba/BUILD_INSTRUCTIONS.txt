@@ -82,6 +82,7 @@ Setup modules (one-time use):
   vba/setup/Setup_CreateConfig.txt      modSetupConfig
   vba/setup/Setup_CreateNamedRanges.txt modSetupNames
   vba/setup/Setup_CreateDashboard.txt   modSetupDashboard
+  vba/setup/Setup_FormatUsageMatrix.txt modSetupUsageMatrix
   vba/setup/Setup_RunAll.txt            modSetupRunAll
 
 The macros you run still use their procedure names, e.g. Setup_CreateTables and
@@ -367,6 +368,13 @@ Upgrading an existing workbook for the Log Sortie form redesign (v2.3.0)
 4. Compile VBAProject.
 5. Ensure usage imports include any catalog codes you need to log
    (WARE IL/IR/HE/FT were missing from older sample exports).
+6. Usage sheet matrix (optional one-time):
+   - Insert setup module modSetupUsageMatrix from
+     vba/setup/Setup_FormatUsageMatrix.txt
+   - Replace modUsageLog with the matrix-aware RefreshUsageView
+   - Run **Setup_FormatUsageMatrix** (Dashboard developer button
+     "Format Usage Matrix", or macro). Afterwards Refresh Usage / Log Sortie
+     keep the matrix current.
 
 Upgrading an existing Phase 0–4 workbook to Phase 5
 -----------------------------------------------------

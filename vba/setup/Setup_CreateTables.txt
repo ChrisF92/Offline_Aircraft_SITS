@@ -244,7 +244,7 @@ Private Sub FormatUsageView()
     ws.Cells.Clear
 
     With ws.Range("A1")
-        .Value = "Usage — Current Totals & Sortie History"
+        .Value = "Usage — Sortie Matrix"
         .Font.Size = 14
         .Font.Bold = True
         .Font.Color = COLOR_HEADER_BLUE
@@ -252,12 +252,11 @@ Private Sub FormatUsageView()
 
     ws.Range("A2").Value = "Tail:"
     ws.Range("B2").Value = "(set during setup)"
-    ws.Range("A3").Value = "Run RefreshUsageView after setup, or log a sortie to refresh this sheet."
+    ws.Range("A3").Value = "Run Setup_FormatUsageMatrix (or Refresh Usage) after import to build the sortie matrix."
 
-    ' Sensible starter widths for master setup; AutoFit is not used on refresh.
-    ws.Columns("A").ColumnWidth = 14
-    ws.Columns("B").ColumnWidth = 18
-    ws.Columns("C").ColumnWidth = 12
+    ws.Columns("A").ColumnWidth = 18
+    ws.Columns("B").ColumnWidth = 8
+    ws.Columns("C").ColumnWidth = 8
 End Sub
 
 Private Sub FormatAuditView()

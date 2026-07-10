@@ -6,7 +6,11 @@ Option Explicit
 ' Sortie logging: append tblUsageLog rows and update tblUsageCurrent.
 ' ========================================================================
 
-Private Const USAGE_VIEW_START_ROW As Long = 5
+Private Const USAGE_TITLE_ROW As Long = 1
+Private Const USAGE_HEADER_ROW As Long = 5
+Private Const USAGE_FORMAT_ROW As Long = 6
+Private Const USAGE_BF_ROW As Long = 7
+Private Const USAGE_FIRST_SORTIE_ROW As Long = 8
 
 Public Sub ShowLogSortieForm()
     If Not ValidateSetupReady() Then Exit Sub
@@ -96,6 +100,373 @@ NextBaselineRow:
     currentValue = UsageValueAsDayFraction(GetCurrentUsageValue(code, taskCode), formatType)
     isAvailable = True
     ResolveSortieUsageCounter = True
+End Function
+
+Public Function GetBaselineUsageValue(ByVal intervalCode As String, _
+                                      ByVal taskCode As String) As Variant
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_BASELINE, showError:=False)
+    If ws Is Nothing Then Exit Function
+
+    Set tbl = GetTable(ws, TBL_USAGE_BASELINE, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), intervalCode, vbTextCompare) = 0 And _
+           StrComp(CStr(row.Range.Cells(1, 2).Value), taskCode, vbTextCompare) = 0 Then
+            GetBaselineUsageValue = row.Range.Cells(1, 4).Value
+            Exit Function
+        End If
+    Next row
+End Function
+
+Public Function UsageMatrixFormatLabel(ByVal intervalCode As String) As String
+    If IsHourUsageInterval(intervalCode) Then
+        UsageMatrixFormatLabel = "HH:MM"
+    Else
+        UsageMatrixFormatLabel = "No."
+    End If
+End Function
+
+Public Sub RefreshUsageView()
+    Dim ws As Worksheet
+    Dim codes As Variant
+    Dim code As String
+    Dim colIndex As Object
+    Dim formats() As String
+    Dim taskCodes() As String
+    Dim available() As Boolean
+    Dim i As Long
+    Dim n As Long
+    Dim col As Long
+    Dim taskCode As String
+    Dim formatType As String
+    Dim currentValue As Variant
+    Dim baselineValue As Variant
+    Dim isAvailable As Boolean
+    Dim lastCol As Long
+    Dim outputRow As Long
+    Dim totalsRow As Long
+    Dim sorties As Collection
+    Dim sortieItem As Variant
+    Dim increments As Object
+    Dim intervalKey As Variant
+
+    Set ws = GetWorksheet(SHEET_USAGE, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    codes = AllSortieUsageIntervalCodes()
+    n = UBound(codes) - LBound(codes) + 1
+    lastCol = n + 1
+
+    ReDim formats(1 To n)
+    ReDim taskCodes(1 To n)
+    ReDim available(1 To n)
+    Set colIndex = CreateObject("Scripting.Dictionary")
+
+    For i = 1 To n
+        code = UCase$(Trim$(CStr(codes(LBound(codes) + i - 1))))
+        colIndex(code) = i + 1
+        ResolveSortieUsageCounter code, taskCode, formatType, currentValue, isAvailable
+        taskCodes(i) = taskCode
+        formats(i) = formatType
+        available(i) = isAvailable
+    Next i
+
+    SetExcelState "disable"
+
+    EnsureUsageMatrixShellExists ws
+
+    ' Clear from header row down; keep title / tail / note rows.
+    ClearUsageMatrixDataArea ws, lastCol
+
+    ws.Range("B2").Value = GetTailNumber()
+
+    ' --- Header row: interval codes ---
+    ws.Cells(USAGE_HEADER_ROW, 1).Value = ""
+    For i = 1 To n
+        code = UCase$(Trim$(CStr(codes(LBound(codes) + i - 1))))
+        col = i + 1
+        With ws.Cells(USAGE_HEADER_ROW, col)
+            .Value = code
+            .Font.Bold = True
+            .Font.Color = vbWhite
+            .Interior.Color = COLOR_HEADER_BLUE
+            .HorizontalAlignment = xlCenter
+        End With
+    Next i
+    With ws.Cells(USAGE_HEADER_ROW, 1)
+        .Interior.Color = COLOR_HEADER_BLUE
+    End With
+
+    ' --- Format row ---
+    ws.Cells(USAGE_FORMAT_ROW, 1).Value = ""
+    For i = 1 To n
+        code = UCase$(Trim$(CStr(codes(LBound(codes) + i - 1))))
+        col = i + 1
+        With ws.Cells(USAGE_FORMAT_ROW, col)
+            .Value = UsageMatrixFormatLabel(code)
+            .Font.Size = 8
+            .Font.Italic = True
+            .HorizontalAlignment = xlCenter
+            .Interior.Color = COLOR_HEADER_GREY
+        End With
+    Next i
+    ws.Cells(USAGE_FORMAT_ROW, 1).Interior.Color = COLOR_HEADER_GREY
+
+    ' --- B/F Totals (baseline at import) ---
+    ws.Cells(USAGE_BF_ROW, 1).Value = "B/F Totals"
+    ws.Cells(USAGE_BF_ROW, 1).Font.Bold = True
+    For i = 1 To n
+        col = i + 1
+        If available(i) Then
+            baselineValue = GetBaselineUsageValue( _
+                UCase$(Trim$(CStr(codes(LBound(codes) + i - 1)))), taskCodes(i))
+            WriteUsageMatrixCell ws.Cells(USAGE_BF_ROW, col), baselineValue, formats(i)
+        End If
+    Next i
+
+    ' --- Sortie increment rows ---
+    outputRow = USAGE_FIRST_SORTIE_ROW
+    Set sorties = BuildSortieMatrixBatches()
+    For Each sortieItem In sorties
+        ws.Cells(outputRow, 1).Value = CDate(sortieItem(0))
+        ws.Cells(outputRow, 1).NumberFormat = FORMAT_DATE
+        If Len(Trim$(CStr(sortieItem(1)))) > 0 Then
+            ws.Cells(outputRow, 1).Value = Format$(CDate(sortieItem(0)), FORMAT_DATE) & _
+                                          " (" & Trim$(CStr(sortieItem(1))) & ")"
+            ws.Cells(outputRow, 1).NumberFormat = FORMAT_TEXT
+        End If
+
+        Set increments = sortieItem(2)
+        For Each intervalKey In increments.Keys
+            code = UCase$(Trim$(CStr(intervalKey)))
+            If colIndex.Exists(code) Then
+                col = CLng(colIndex(code))
+                i = col - 1
+                WriteUsageMatrixCell ws.Cells(outputRow, col), increments(intervalKey), formats(i)
+            End If
+        Next intervalKey
+
+        outputRow = outputRow + 1
+    Next sortieItem
+
+    ' --- Current Totals (final row) ---
+    totalsRow = outputRow
+    With ws.Cells(totalsRow, 1)
+        .Value = "Current Totals"
+        .Font.Bold = True
+    End With
+    For i = 1 To n
+        col = i + 1
+        code = UCase$(Trim$(CStr(codes(LBound(codes) + i - 1))))
+        If available(i) Then
+            currentValue = UsageValueAsDayFraction( _
+                GetCurrentUsageValue(code, taskCodes(i)), formats(i))
+            WriteUsageMatrixCell ws.Cells(totalsRow, col), currentValue, formats(i)
+        End If
+        ws.Cells(totalsRow, col).Font.Bold = True
+    Next i
+
+    With ws.Range(ws.Cells(totalsRow, 1), ws.Cells(totalsRow, lastCol))
+        .Font.Bold = True
+        .Interior.Color = COLOR_INPUT_HIGHLIGHT
+    End With
+
+    SetExcelState "enable"
+End Sub
+
+Private Sub EnsureUsageMatrixShellExists(ByVal ws As Worksheet)
+    Dim titleText As String
+
+    titleText = Trim$(CStr(ws.Range("A1").Value))
+    If Len(titleText) = 0 Or InStr(1, titleText, "Sortie Matrix", vbTextCompare) = 0 Then
+        ' Old list layout or blank — apply matrix shell without resetting widths
+        ' unless the sheet is empty (widths still sensible defaults).
+        ApplyUsageMatrixShellQuiet ws
+    Else
+        ws.Range("B2").Value = GetTailNumber()
+    End If
+End Sub
+
+Private Sub ApplyUsageMatrixShellQuiet(ByVal ws As Worksheet)
+    Dim codes As Variant
+    Dim colCount As Long
+    Dim c As Long
+    Dim resetWidths As Boolean
+
+    codes = AllSortieUsageIntervalCodes()
+    colCount = UBound(codes) - LBound(codes) + 2
+    resetWidths = (Len(Trim$(CStr(ws.Range("A1").Value))) = 0)
+
+    On Error Resume Next
+    ws.Range("A1").UnMerge
+    On Error GoTo 0
+
+    ' Preserve freeze panes if already set; only clear cells below title block
+    ' when converting — full clear happens via ClearUsageMatrixDataArea after.
+    If resetWidths Or InStr(1, CStr(ws.Range("A1").Value), "Sortie Matrix", vbTextCompare) = 0 Then
+        ws.Range("A1:Z4").Clear
+    End If
+
+    With ws.Range("A1")
+        .Value = "Usage — Sortie Matrix"
+        .Font.Size = 14
+        .Font.Bold = True
+        .Font.Color = COLOR_HEADER_BLUE
+    End With
+
+    ws.Range("A2").Value = "Tail:"
+    ws.Range("B2").Value = GetTailNumber()
+    ws.Range("A3").Value = "B/F Totals = baseline at import. Sortie rows = increments. Final row = current totals."
+    ws.Range("A3").Font.Size = 9
+    ws.Range("A3").Font.Italic = True
+    ws.Range("A3").Font.Color = RGB(89, 89, 89)
+
+    If resetWidths Then
+        ws.Columns(1).ColumnWidth = 18
+        For c = 2 To colCount
+            ws.Columns(c).ColumnWidth = 8
+        Next c
+    End If
+End Sub
+
+Private Sub ClearUsageMatrixDataArea(ByVal ws As Worksheet, ByVal lastCol As Long)
+    Dim lastRow As Long
+
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    If lastRow < USAGE_HEADER_ROW Then lastRow = USAGE_HEADER_ROW
+
+    On Error Resume Next
+    If ws.UsedRange.Rows.Count + ws.UsedRange.Row - 1 > lastRow Then
+        lastRow = ws.UsedRange.Rows.Count + ws.UsedRange.Row - 1
+    End If
+    On Error GoTo 0
+
+    If lastCol < 2 Then lastCol = 2
+    ws.Range(ws.Cells(USAGE_HEADER_ROW, 1), ws.Cells(lastRow, lastCol)).Clear
+End Sub
+
+Private Sub WriteUsageMatrixCell(ByVal target As Range, _
+                                 ByVal value As Variant, _
+                                 ByVal formatType As String)
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
+        target.Value = ""
+        Exit Sub
+    End If
+
+    WriteFormattedUsageValue target, value, formatType
+    target.HorizontalAlignment = xlCenter
+End Sub
+
+' Returns Collection of Array(sortieDate, sortieRef, incrementsDict)
+' incrementsDict: IntervalCode -> summed increment (day-fraction / number).
+Private Function BuildSortieMatrixBatches() As Collection
+    Dim result As New Collection
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim batchOrder As Collection
+    Dim batchMeta As Object
+    Dim batchIncrements As Object
+    Dim batchKey As String
+    Dim sortieDate As Variant
+    Dim sortieRef As String
+    Dim intervalCode As String
+    Dim incrementValue As Variant
+    Dim enteredAt As Variant
+    Dim sortKey As String
+    Dim increments As Object
+    Dim meta As Variant
+    Dim i As Long
+    Dim j As Long
+    Dim keys() As String
+    Dim tmpKey As String
+
+    Set batchOrder = New Collection
+    Set batchMeta = CreateObject("Scripting.Dictionary")
+    Set batchIncrements = CreateObject("Scripting.Dictionary")
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_LOG, showError:=False)
+    If ws Is Nothing Then
+        Set BuildSortieMatrixBatches = result
+        Exit Function
+    End If
+
+    Set tbl = GetTable(ws, TBL_USAGE_LOG, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then
+        Set BuildSortieMatrixBatches = result
+        Exit Function
+    End If
+
+    For Each row In tbl.ListRows
+        sortieDate = row.Range.Cells(1, 1).Value
+        If Not IsDate(sortieDate) Then GoTo NextLogRow
+
+        sortieRef = Trim$(CStr(row.Range.Cells(1, 2).Value))
+        intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, 3).Value)))
+        incrementValue = row.Range.Cells(1, 5).Value
+        enteredAt = row.Range.Cells(1, 7).Value
+
+        ' Group one CommitSortie batch: same date + ref + entered minute.
+        sortKey = Format$(CDate(sortieDate), "yyyymmdd") & "|" & UCase$(sortieRef) & "|"
+        If IsDate(enteredAt) Then
+            sortKey = sortKey & Format$(CDate(enteredAt), "yyyymmddhhnn")
+        Else
+            sortKey = sortKey & "000000000000"
+        End If
+        batchKey = sortKey
+
+        If Not batchMeta.Exists(batchKey) Then
+            batchMeta.Add batchKey, Array(CDate(sortieDate), sortieRef)
+            Set increments = CreateObject("Scripting.Dictionary")
+            Set batchIncrements(batchKey) = increments
+            batchOrder.Add batchKey
+        Else
+            Set increments = batchIncrements(batchKey)
+        End If
+
+        If Len(intervalCode) > 0 And IsNumeric(incrementValue) Then
+            If increments.Exists(intervalCode) Then
+                increments(intervalCode) = CDbl(increments(intervalCode)) + CDbl(incrementValue)
+            Else
+                increments(intervalCode) = CDbl(incrementValue)
+            End If
+        End If
+
+NextLogRow:
+    Next row
+
+    If batchOrder.Count = 0 Then
+        Set BuildSortieMatrixBatches = result
+        Exit Function
+    End If
+
+    ReDim keys(1 To batchOrder.Count)
+    For i = 1 To batchOrder.Count
+        keys(i) = CStr(batchOrder(i))
+    Next i
+
+    ' Sort batch keys ascending (date / ref / entered minute).
+    For i = 1 To UBound(keys) - 1
+        For j = i + 1 To UBound(keys)
+            If keys(j) < keys(i) Then
+                tmpKey = keys(i)
+                keys(i) = keys(j)
+                keys(j) = tmpKey
+            End If
+        Next j
+    Next i
+
+    For i = 1 To UBound(keys)
+        meta = batchMeta(keys(i))
+        result.Add Array(meta(0), meta(1), batchIncrements(keys(i)))
+    Next i
+
+    Set BuildSortieMatrixBatches = result
 End Function
 
 Public Function CommitSortie(ByVal sortieDate As Date, _
@@ -193,87 +564,6 @@ ErrorHandler:
         MsgBox "Sortie log error: " & Err.Number & " - " & Err.Description, vbCritical, APP_NAME
     End If
 End Function
-
-Public Sub RefreshUsageView()
-    Dim ws As Worksheet
-    Dim wsBaseline As Worksheet
-    Dim tblBaseline As ListObject
-    Dim row As ListRow
-    Dim outputRow As Long
-    Dim lastRow As Long
-    Dim intervalCode As String
-    Dim taskCode As String
-    Dim currentValue As Variant
-    Dim formatType As String
-
-    Set ws = GetWorksheet(SHEET_USAGE, showError:=False)
-    Set wsBaseline = GetWorksheet(SHEET_DATA_USAGE_BASELINE, showError:=False)
-    If ws Is Nothing Or wsBaseline Is Nothing Then Exit Sub
-
-    Set tblBaseline = GetTable(wsBaseline, TBL_USAGE_BASELINE, showError:=False)
-    If tblBaseline Is Nothing Then Exit Sub
-
-    SetExcelState "disable"
-
-    ' Preserve column widths / shell chrome — clear data area only.
-    EnsureUsageViewShellExists ws
-    ws.Range("B2").Value = GetTailNumber()
-
-    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
-    If lastRow < USAGE_VIEW_START_ROW Then lastRow = USAGE_VIEW_START_ROW
-    On Error Resume Next
-    If ws.UsedRange.Rows.Count + ws.UsedRange.Row - 1 > lastRow Then
-        lastRow = ws.UsedRange.Rows.Count + ws.UsedRange.Row - 1
-    End If
-    On Error GoTo 0
-    ws.Range(ws.Cells(USAGE_VIEW_START_ROW, 1), ws.Cells(lastRow, 3)).Clear
-
-    ws.Range("A" & USAGE_VIEW_START_ROW).Value = HDR_BASE_INTERVAL_CODE
-    ws.Range("B" & USAGE_VIEW_START_ROW).Value = HDR_CUR_CURRENT_VALUE
-    ws.Range("C" & USAGE_VIEW_START_ROW).Value = HDR_BASE_FORMAT
-
-    With ws.Range("A" & USAGE_VIEW_START_ROW & ":C" & USAGE_VIEW_START_ROW)
-        .Font.Bold = True
-        .Font.Color = vbWhite
-        .Interior.Color = COLOR_HEADER_BLUE
-    End With
-
-    outputRow = USAGE_VIEW_START_ROW + 1
-
-    If Not tblBaseline.DataBodyRange Is Nothing Then
-        For Each row In tblBaseline.ListRows
-            intervalCode = Trim$(CStr(row.Range.Cells(1, 1).Value))
-            taskCode = Trim$(CStr(row.Range.Cells(1, 2).Value))
-            formatType = StoredUsageFormatLabel(intervalCode)
-            currentValue = GetCurrentUsageValue(intervalCode, taskCode)
-
-            ws.Cells(outputRow, 1).Value = intervalCode
-            ws.Cells(outputRow, 2).Value = currentValue
-            ws.Cells(outputRow, 2).NumberFormat = UsageFormatPatternForInterval(intervalCode, currentValue)
-            ws.Cells(outputRow, 3).Value = formatType
-
-            outputRow = outputRow + 1
-        Next row
-    End If
-
-    ' Do not AutoFit — Master / developer column widths must survive refresh.
-    SetExcelState "enable"
-End Sub
-
-Private Sub EnsureUsageViewShellExists(ByVal ws As Worksheet)
-    If Len(Trim$(CStr(ws.Range("A1").Value))) > 0 Then Exit Sub
-
-    With ws.Range("A1")
-        .Value = "Usage — Current Totals"
-        .Font.Size = 14
-        .Font.Bold = True
-        .Font.Color = COLOR_HEADER_BLUE
-    End With
-
-    ws.Range("A2").Value = "Tail:"
-    ws.Range("B2").Value = GetTailNumber()
-    ws.Range("A3").Value = "Log sorties with RunLogSortie."
-End Sub
 
 Public Function ParseUsageIncrement(ByVal rawIncrement As Variant, _
                                     ByVal formatType As String, _
