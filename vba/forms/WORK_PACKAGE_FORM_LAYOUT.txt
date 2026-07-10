@@ -3,7 +3,7 @@ Work Package UserForm — Control Layout (frmWorkPackage)
 
 Create a UserForm in the VBA IDE named exactly: frmWorkPackage
 Set the form Caption to: Work Packages
-Suggested form size: Width ~520, Height ~420
+Suggested form size: Width ~560, Height ~440
 
 Then add these controls (Name property must match exactly):
 
@@ -14,24 +14,28 @@ txtOpenCount      TextBox        Read-only count (Locked = True in code)
 lblORN            Label          Open ORN:
 cboORN            ComboBox       Style = fmStyleDropDownList (dropdown only)
 lblTasks          Label          Tasks in selected work package:
-lstTasks          ListBox        ColumnCount = 2 (Task Code | Description)
+lstTasks          ListBox        ColumnCount = 3 (Task Code | Description | SITS_RowID hidden)
 cmdDelete         CommandButton  Delete
+cmdRemoveTask     CommandButton  Remove task
 cmdCloseWP        CommandButton  Close work package
 cmdCloseForm      CommandButton  Close form
 
 Button behaviour:
   - Delete / Close work package are enabled only when an ORN is selected
+  - Remove task is enabled when an ORN and a task are selected
   - Delete undoes the WP with no SITS reforecast
+  - Remove task releases one task from IN WORK (no reforecast); if the WP
+    becomes empty it is deleted
   - Close completes all tasks, reforecasts, writes Task Description comments
-  - After Delete/Close the form stays open and refreshes
+  - After Delete/Remove/Close the form stays open and refreshes
   - Close form unloads the UserForm
 
 Suggested positions (approximate):
   Row 1: lblOpenCount [12,12]  txtOpenCount [150,10] width 60
   Row 2: lblORN [12,42]  cboORN [150,40] width 220
   Row 3: lblTasks [12,72]
-  Row 4: lstTasks [12,92] size 480x220
-  Row 5: cmdDelete [12,330]  cmdCloseWP [140,330]  cmdCloseForm [360,330]
+  Row 4: lstTasks [12,92] size 520x220
+  Row 5: cmdDelete [12,330]  cmdRemoveTask [100,330]  cmdCloseWP [220,330]  cmdCloseForm [400,330]
 
 After creating controls, open the form's code window and paste the contents of:
   vba/forms/frmWorkPackage.txt

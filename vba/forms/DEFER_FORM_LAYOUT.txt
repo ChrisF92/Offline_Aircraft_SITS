@@ -1,0 +1,49 @@
+Defer UserForm — Control Layout (frmDefer)
+==========================================
+
+Create a UserForm in the VBA IDE named exactly: frmDefer
+Set the form Caption to: Defer Fault
+Suggested form size: Width ~480, Height ~300
+
+Then add these controls (Name property must match exactly):
+
+Control Name      Type           Caption / Notes
+----------------  -------------  ------------------------------------------
+lblTask           Label          Task code + description (set in code)
+lblInterval       Label          Interval Type Code (set in code)
+lblCurrent        Label          Current airframe HH for PT2/3-H (set in code)
+lblDue            Label          Airframe hours due / Date due (set in code)
+txtDue            TextBox        h:mm for PT2/3-H; dd/mm/yyyy for PT2/3-D
+lblDueHint        Label          Format hint (set in code)
+lblSNOW           Label          SNOW:
+txtSNOW           TextBox        Required authorisation reference
+lblAuthoriser     Label          Authoriser:
+txtAuthoriser     TextBox        Required name
+cmdApply          CommandButton  Apply deferral   (Default = True)
+cmdCancel         CommandButton  Cancel
+
+Note: form code reads TextBox.Text (not only .Value) so Enter on the
+Default Apply button still picks up the SNOW/authoriser just typed.
+
+Suggested positions (approximate):
+  Row 1: lblTask [12,12]
+  Row 2: lblInterval [12,36]
+  Row 3: lblCurrent [12,60]
+  Row 4: lblDue [12,92]  txtDue [180,90] width 140
+  Row 5: lblDueHint [12,118]
+  Row 6: lblSNOW [12,150]  txtSNOW [180,148] width 220
+  Row 7: lblAuthoriser [12,178]  txtAuthoriser [180,176] width 220
+  Row 8: cmdApply [12,220]  cmdCancel [150,220]
+
+After creating controls, open the form's code window and paste the contents of:
+  vba/forms/frmDefer.txt
+
+SITS sheet macro:
+  RunDeferFromSelection — Defer button
+
+Rules:
+  - Exactly one PT2/PT3 may be selected
+  - PT2-H / PT3-H: enter absolute airframe HH due; life remaining = due − current HH
+  - PT2-D / PT3-D: enter date due; Life Remaining = days remaining (due − today);
+    Projected Due Date = the entered date
+  - SNOW + authoriser required; written to Extension SNOW and Task Description comment

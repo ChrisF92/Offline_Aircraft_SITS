@@ -1,0 +1,127 @@
+Option Explicit
+
+' ========================================================================
+' EXTEND USERFORM — Offline Aircraft SITS v2 (Phase 5)
+' ========================================================================
+' Create this UserForm manually in the VBA IDE and paste this code.
+' See vba/forms/EXTEND_FORM_LAYOUT.txt for control names and layout.
+' ========================================================================
+
+Private mSelectedIds As Object
+Private mIntervalCode As String
+Private mActualInterval As Variant
+Private mFormatType As String
+
+Private Sub UserForm_Initialize()
+    Dim amountHint As String
+    Dim rows As Collection
+    Dim i As Long
+    Dim rowData As Variant
+    Dim metaOk As Boolean
+
+    Set mSelectedIds = GetPendingExtendSelection()
+    If mSelectedIds Is Nothing Then
+        MsgBox "No tasks were passed to the Extend form.", vbExclamation, APP_NAME
+        Unload Me
+        Exit Sub
+    End If
+
+    metaOk = GetExtendSelectionMeta(mSelectedIds, mIntervalCode, mActualInterval, _
+                                    mFormatType, amountHint)
+    If Not metaOk Then
+        MsgBox "Could not read selected task details.", vbExclamation, APP_NAME
+        Unload Me
+        Exit Sub
+    End If
+
+    lblInterval.Caption = "Interval: " & mIntervalCode & _
+                          "   Actual Interval: " & _
+                          FormatExtensionAmountForDisplay(mActualInterval, mIntervalCode)
+    lblAmountHint.Caption = amountHint
+    lblPctHint.Caption = "Warnings at >10% and >20% of Actual Interval (total including existing)."
+
+    lstTasks.Clear
+    lstTasks.ColumnCount = 3
+    lstTasks.ColumnWidths = "140 pt;260 pt;80 pt"
+
+    Set rows = GetExtendSelectionDisplayRows(mSelectedIds)
+    For i = 1 To rows.Count
+        rowData = rows(i)
+        lstTasks.AddItem CStr(rowData(0))
+        lstTasks.List(lstTasks.ListCount - 1, 1) = CStr(rowData(1))
+        lstTasks.List(lstTasks.ListCount - 1, 2) = CStr(rowData(3))
+    Next i
+
+    txtAmount.Value = ""
+    txtSNOW.Value = ""
+    txtAuthoriser.Value = ""
+    UpdateLivePercent
+End Sub
+
+Private Sub txtAmount_Change()
+    UpdateLivePercent
+End Sub
+
+Private Sub cmdApply_Click()
+    ' Use ControlText — Default/Enter can fire before TextBox.Value is committed.
+    If ApplyExtensionsToSelection(mSelectedIds, ControlText(txtAmount), ControlText(txtSNOW), _
+                                  ControlText(txtAuthoriser), True) Then
+        Unload Me
+    End If
+End Sub
+
+Private Sub cmdCancel_Click()
+    Unload Me
+End Sub
+
+' Prefer .Text while the control still has focus (Value may be stale on Enter).
+Private Function ControlText(ByVal ctl As Object) As String
+    Dim liveText As String
+    Dim committed As String
+
+    On Error Resume Next
+    liveText = CStr(ctl.Text)
+    If Err.Number <> 0 Then liveText = ""
+    Err.Clear
+    committed = CStr(ctl.Value)
+    On Error GoTo 0
+
+    If Len(Trim$(liveText)) > 0 Then
+        ControlText = Trim$(liveText)
+    Else
+        ControlText = Trim$(committed)
+    End If
+End Function
+
+Private Sub UpdateLivePercent()
+    Dim incrementValue As Variant
+    Dim totalPct As Double
+    Dim amountText As String
+
+    amountText = ControlText(txtAmount)
+    If Len(amountText) = 0 Then
+        lblLivePct.Caption = "Total extension %: —"
+        Exit Sub
+    End If
+
+    If mFormatType = FORMAT_TYPE_HOURS Then
+        incrementValue = ParseTimeUsageValue(amountText, amountText)
+    ElseIf IsNumeric(amountText) Then
+        incrementValue = CDbl(amountText)
+    End If
+
+    If IsEmpty(incrementValue) Or CDbl(incrementValue) <= 0# Then
+        lblLivePct.Caption = "Total extension %: (invalid amount)"
+        Exit Sub
+    End If
+
+    If IsEmpty(mActualInterval) Or CDbl(mActualInterval) <= 0# Then
+        lblLivePct.Caption = "Total extension %: (no Actual Interval)"
+        Exit Sub
+    End If
+
+    ' Preview uses this increment only; apply warnings use total including existing.
+    totalPct = CDbl(incrementValue) / CDbl(mActualInterval)
+    lblLivePct.Caption = "This increment ≈ " & Format$(totalPct * 100#, "0.0") & _
+                         "% of Actual Interval (warnings use total including existing)."
+End Sub

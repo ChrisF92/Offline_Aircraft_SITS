@@ -1,0 +1,43 @@
+Extend UserForm — Control Layout (frmExtend)
+============================================
+
+Create a UserForm in the VBA IDE named exactly: frmExtend
+Set the form Caption to: Extend Tasks
+Suggested form size: Width ~560, Height ~420
+
+Then add these controls (Name property must match exactly):
+
+Control Name      Type           Caption / Notes
+----------------  -------------  ------------------------------------------
+lblTasks          Label          Selected tasks (must share Interval Type + Actual Interval):
+lstTasks          ListBox        ColumnCount = 3 (Task Code | Description | Actual Interval)
+lblInterval       Label          Interval / Actual Interval summary (set in code)
+lblAmount         Label          Extension amount:
+txtAmount         TextBox        h:mm for HH/E1/E2; days for DD; number otherwise
+lblAmountHint     Label          Format hint (set in code)
+lblLivePct        Label          Live % preview (set in code)
+lblPctHint        Label          Authority tier hint (set in code)
+lblSNOW           Label          SNOW:
+txtSNOW           TextBox        Required authorisation reference
+lblAuthoriser     Label          Authoriser:
+txtAuthoriser     TextBox        Required name
+cmdApply          CommandButton  Apply extension   (Default = True)
+cmdCancel         CommandButton  Cancel
+
+Suggested positions (approximate):
+  Row 1: lblTasks [12,12]
+  Row 2: lstTasks [12,32] size 520x160
+  Row 3: lblInterval [12,200]
+  Row 4: lblAmount [12,228]  txtAmount [140,226] width 100
+  Row 5: lblAmountHint [12,254]
+  Row 6: lblLivePct [12,276]
+  Row 7: lblPctHint [12,296]
+  Row 8: lblSNOW [12,324]  txtSNOW [140,322] width 200
+  Row 9: lblAuthoriser [12,352]  txtAuthoriser [140,350] width 200
+  Row 10: cmdApply [12,382]  cmdCancel [160,382]
+
+After creating controls, open the form's code window and paste the contents of:
+  vba/forms/frmExtend.txt
+
+SITS sheet macro:
+  RunExtendFromSelection — Extend button

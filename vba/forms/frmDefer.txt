@@ -1,0 +1,81 @@
+Option Explicit
+
+' ========================================================================
+' DEFER USERFORM — Offline Aircraft SITS v2 (Phase 5)
+' ========================================================================
+' Create this UserForm manually in the VBA IDE and paste this code.
+' See vba/forms/DEFER_FORM_LAYOUT.txt for control names and layout.
+' ========================================================================
+
+Private mRowId As String
+Private mTaskCode As String
+Private mIsHoursFault As Boolean
+
+Private Sub UserForm_Initialize()
+    Dim taskDesc As String
+    Dim intervalCode As String
+    Dim dueHint As String
+    Dim currentHHDisplay As String
+
+    mRowId = GetPendingDeferRowId()
+    If Len(mRowId) = 0 Then
+        MsgBox "No deferred fault was passed to the Defer form.", vbExclamation, APP_NAME
+        Unload Me
+        Exit Sub
+    End If
+
+    If Not GetDeferSelectionMeta(mRowId, mTaskCode, taskDesc, intervalCode, _
+                                 mIsHoursFault, dueHint, currentHHDisplay) Then
+        MsgBox "Could not read selected deferred fault details.", vbExclamation, APP_NAME
+        Unload Me
+        Exit Sub
+    End If
+
+    lblTask.Caption = mTaskCode & " — " & taskDesc
+    lblInterval.Caption = "Interval Type Code: " & intervalCode
+
+    If mIsHoursFault Then
+        lblDue.Caption = "Airframe hours due (HH):"
+        lblDueHint.Caption = dueHint
+        lblCurrent.Caption = "Current airframe HH: " & currentHHDisplay
+    Else
+        lblDue.Caption = "Date due:"
+        lblDueHint.Caption = dueHint
+        lblCurrent.Caption = ""
+    End If
+
+    txtDue.Value = ""
+    txtSNOW.Value = ""
+    txtAuthoriser.Value = ""
+End Sub
+
+Private Sub cmdApply_Click()
+    ' Use ControlText — Default/Enter can fire before TextBox.Value is committed.
+    If ApplyDeferralToSelection(mRowId, ControlText(txtDue), ControlText(txtSNOW), _
+                                ControlText(txtAuthoriser), True) Then
+        Unload Me
+    End If
+End Sub
+
+Private Sub cmdCancel_Click()
+    Unload Me
+End Sub
+
+' Prefer .Text while the control still has focus (Value may be stale on Enter).
+Private Function ControlText(ByVal ctl As Object) As String
+    Dim liveText As String
+    Dim committed As String
+
+    On Error Resume Next
+    liveText = CStr(ctl.Text)
+    If Err.Number <> 0 Then liveText = ""
+    Err.Clear
+    committed = CStr(ctl.Value)
+    On Error GoTo 0
+
+    If Len(Trim$(liveText)) > 0 Then
+        ControlText = Trim$(liveText)
+    Else
+        ControlText = Trim$(committed)
+    End If
+End Function

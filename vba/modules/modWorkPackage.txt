@@ -373,6 +373,109 @@ ErrorHandler:
     If showDialogs Then MsgBox "Failed to delete work package: " & Err.Description, vbCritical, APP_NAME
 End Function
 
+Public Function RemoveTaskFromWorkPackage(ByVal orn As String, _
+                                          ByVal rowId As String, _
+                                          Optional ByVal showDialogs As Boolean = True) As Boolean
+    Const PROC_NAME As String = "RemoveTaskFromWorkPackage"
+
+    Dim tblSITS As ListObject
+    Dim sitsRow As ListRow
+    Dim rowIndex As Object
+    Dim taskIds As Collection
+    Dim released As Object
+    Dim taskCode As String
+    Dim failReason As String
+    Dim emptied As Boolean
+
+    RemoveTaskFromWorkPackage = False
+    orn = UCase$(Trim$(orn))
+    rowId = Trim$(rowId)
+    emptied = False
+
+    If Len(orn) = 0 Then
+        If showDialogs Then MsgBox "Select a work package first.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+    If Len(rowId) = 0 Then
+        If showDialogs Then MsgBox "Select a task to remove.", vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If Not OpenWorkPackageExists(orn) Then
+        If showDialogs Then MsgBox "Open work package not found: " & orn, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    Set tblSITS = GetSITSTable(True)
+    If tblSITS Is Nothing Then Exit Function
+    EnsureWorkPackageSITSColumns tblSITS
+    Set rowIndex = BuildSITSRowIdIndex(tblSITS)
+    Set sitsRow = ResolveSITSRowById(rowIndex, tblSITS, rowId)
+
+    taskCode = rowId
+    If Not sitsRow Is Nothing Then taskCode = GetSITSTaskCode(sitsRow, tblSITS)
+
+    If Not WPTaskRowExists(orn, rowId) Then
+        failReason = "Task " & taskCode & " is not in work package " & orn & "."
+        GoTo Failed
+    End If
+
+    If showDialogs Then
+        If MsgBox("Remove " & taskCode & " from work package " & orn & "?" & vbCrLf & vbCrLf & _
+                  "The task will leave IN WORK and become selectable again." & vbCrLf & _
+                  "SITS life remaining is not changed.", _
+                  vbQuestion + vbYesNo, APP_NAME) <> vbYes Then Exit Function
+    End If
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+    Application.StatusBar = "Removing task from work package…"
+
+    RemoveSingleWPTaskRow orn, rowId
+    If Not sitsRow Is Nothing Then
+        ClearTaskOpenORN sitsRow, tblSITS
+        ClearTaskSelector sitsRow, tblSITS
+    End If
+
+    Set released = CreateObject("Scripting.Dictionary")
+    released.CompareMode = 1
+    released(rowId) = True
+    RestoreSITSViewSelectorsForRowIds released
+
+    Set taskIds = CollectWPTaskRowIds(orn)
+    If taskIds Is Nothing Or taskIds.Count = 0 Then
+        emptied = True
+        MarkWorkPackageStatus orn, WP_STATUS_DELETED, False
+        LogAction "WP_TASK_REMOVED", orn, "Task=" & taskCode & "; WP emptied and deleted"
+    Else
+        LogAction "WP_TASK_REMOVED", orn, "Task=" & taskCode & "; Remaining=" & taskIds.Count
+    End If
+
+    RefreshDashboardStatusCounts
+    SetExcelState "enable"
+    Application.StatusBar = False
+
+    If showDialogs Then
+        If emptied Then
+            MsgBox "Removed " & taskCode & ". Work package " & orn & _
+                   " had no remaining tasks and was deleted.", vbInformation, APP_NAME
+        End If
+    End If
+
+    RemoveTaskFromWorkPackage = True
+    Exit Function
+
+Failed:
+    If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+    Exit Function
+
+ErrorHandler:
+    Application.StatusBar = False
+    SetExcelState "force-enable"
+    LogError PROC_NAME, Err.Number, Err.Description
+    If showDialogs Then MsgBox "Failed to remove task: " & Err.Description, vbCritical, APP_NAME
+End Function
+
 Public Function CloseWorkPackage(ByVal orn As String, _
                                  Optional ByVal showDialogs As Boolean = True) As Boolean
     Const PROC_NAME As String = "CloseWorkPackage"
@@ -391,10 +494,6 @@ Public Function CloseWorkPackage(ByVal orn As String, _
     Dim rowsToDelete As Collection
     Dim deleteRow As Variant
     Dim rowIndex As Object
-    Dim closedRowIds As Object
-    Dim deletedRowIds As Object
-    Dim deletedRowId As String
-    Dim colRowId As Long
 
     CloseWorkPackage = False
     orn = UCase$(Trim$(orn))
@@ -431,10 +530,6 @@ Public Function CloseWorkPackage(ByVal orn As String, _
     End If
 
     Set rowsToDelete = New Collection
-    Set closedRowIds = CreateObject("Scripting.Dictionary")
-    closedRowIds.CompareMode = 1
-    Set deletedRowIds = CreateObject("Scripting.Dictionary")
-    deletedRowIds.CompareMode = 1
 
     commentText = "ORN: " & orn & vbCrLf & _
                   "Closed: " & Format$(closeDate, FORMAT_DATE) & vbCrLf & _
@@ -445,15 +540,12 @@ Public Function CloseWorkPackage(ByVal orn As String, _
     SetExcelState "disable"
 
     Set rowIndex = BuildSITSRowIdIndex(tblSITS)
-    colRowId = GetTableColumnIndex(tblSITS, HDR_SITS_ROW_ID)
 
     For Each rowId In taskIds
         Set sitsRow = ResolveSITSRowById(rowIndex, tblSITS, CStr(rowId))
         If sitsRow Is Nothing Then GoTo NextCloseTask
 
         If IsDeferredFaultTaskCode(GetSITSTaskCode(sitsRow, tblSITS)) Then
-            deletedRowId = Trim$(CStr(sitsRow.Range.Cells(1, colRowId).Value))
-            If Len(deletedRowId) > 0 Then deletedRowIds(deletedRowId) = True
             rowsToDelete.Add sitsRow
             deletedFaults = deletedFaults + 1
             GoTo NextCloseTask
@@ -474,7 +566,6 @@ Public Function CloseWorkPackage(ByVal orn As String, _
 
         ClearTaskOpenORN sitsRow, tblSITS
         ClearTaskSelector sitsRow, tblSITS
-        closedRowIds(CStr(rowId)) = True
 NextCloseTask:
     Next rowId
 
@@ -489,9 +580,10 @@ NextCloseTask:
               "Reforecasted=" & reforecasted & "; Manual=" & manualCount & _
               "; DeletedFaults=" & deletedFaults
 
-    ' Targeted view update only — no full SITS rebuild / checkbox recreation.
-    Application.StatusBar = "Updating SITS view…"
-    ApplySITSViewAfterWorkPackageClose closedRowIds, deletedRowIds
+    ' Full rebuild so reforecasted life remaining re-sorts the view
+    ' (in-place updates left completed tasks in their old due-soon position).
+    Application.StatusBar = "Refreshing SITS view…"
+    RefreshSITSView
 
     Application.StatusBar = "Updating Dashboard…"
     RefreshDashboardStatusCounts
@@ -508,7 +600,7 @@ NextCloseTask:
             msg = msg & vbCrLf & vbCrLf & _
                   "Tasks requiring manual life remaining update (" & manualCount & "):" & vbCrLf & _
                   manualList & vbCrLf & _
-                  "These are highlighted amber on the SITS view and counted on the Dashboard."
+                  "These are highlighted light blue on the SITS view and counted on the Dashboard."
         End If
         MsgBox msg, vbInformation, APP_NAME
     End If
@@ -990,6 +1082,56 @@ Private Sub RemoveWPTaskRows(ByVal orn As String)
     Next i
 End Sub
 
+Private Sub RemoveSingleWPTaskRow(ByVal orn As String, ByVal rowId As String)
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colOrn As Long
+    Dim colRowId As Long
+    Dim i As Long
+
+    Set tbl = GetWPTasksTable(False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    colOrn = GetTableColumnIndex(tbl, HDR_WP_TASK_ORN)
+    colRowId = GetTableColumnIndex(tbl, HDR_WP_TASK_ROW_ID)
+    If colOrn = 0 Or colRowId = 0 Then Exit Sub
+
+    orn = UCase$(Trim$(orn))
+    rowId = Trim$(rowId)
+    For i = tbl.ListRows.Count To 1 Step -1
+        Set row = tbl.ListRows(i)
+        If StrComp(UCase$(Trim$(CStr(row.Range.Cells(1, colOrn).Value))), orn, vbTextCompare) = 0 And _
+           StrComp(Trim$(CStr(row.Range.Cells(1, colRowId).Value)), rowId, vbTextCompare) = 0 Then
+            row.Delete
+            Exit Sub
+        End If
+    Next i
+End Sub
+
+Private Function WPTaskRowExists(ByVal orn As String, ByVal rowId As String) As Boolean
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colOrn As Long
+    Dim colRowId As Long
+
+    Set tbl = GetWPTasksTable(False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    colOrn = GetTableColumnIndex(tbl, HDR_WP_TASK_ORN)
+    colRowId = GetTableColumnIndex(tbl, HDR_WP_TASK_ROW_ID)
+    If colOrn = 0 Or colRowId = 0 Then Exit Function
+
+    orn = UCase$(Trim$(orn))
+    rowId = Trim$(rowId)
+    For Each row In tbl.ListRows
+        If StrComp(UCase$(Trim$(CStr(row.Range.Cells(1, colOrn).Value))), orn, vbTextCompare) = 0 And _
+           StrComp(Trim$(CStr(row.Range.Cells(1, colRowId).Value)), rowId, vbTextCompare) = 0 Then
+            WPTaskRowExists = True
+            Exit Function
+        End If
+    Next row
+End Function
+
 Private Sub MarkWorkPackageStatus(ByVal orn As String, _
                                   ByVal statusValue As String, _
                                   ByVal setCompletedAt As Boolean)
@@ -1150,6 +1292,7 @@ Private Sub ReforecastCompletedTask(ByVal sitsRow As ListRow, _
     Dim colCurNumber As Long
     Dim newLife As Double
     Dim dueDate As Date
+    Dim daysRemainingClose As Long
 
     intervalCode = GetSITSIntervalCode(sitsRow, tbl)
     actualInterval = GetSITSActualInterval(sitsRow, tbl)
@@ -1166,14 +1309,16 @@ Private Sub ReforecastCompletedTask(ByVal sitsRow As ListRow, _
 
     If intervalCode = TYPE_DD Then
         dueDate = DateAdd("d", CLng(CDbl(actualInterval)), closeDate)
+        daysRemainingClose = CLng(DateDiff("d", Date, dueDate))
         If colDaysDue > 0 Then
-            sitsRow.Range.Cells(1, colDaysDue).Value = dueDate
-            sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DATE
+            sitsRow.Range.Cells(1, colDaysDue).Value = CDbl(daysRemainingClose)
+            sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
         End If
         If colBaseDue > 0 Then
             sitsRow.Range.Cells(1, colBaseDue).Value = dueDate
             sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
         End If
+        SyncProjectedDueDate sitsRow, tbl, dueDate
         If colLRHours > 0 Then sitsRow.Range.Cells(1, colLRHours).ClearContents
         If colLRNumber > 0 Then sitsRow.Range.Cells(1, colLRNumber).ClearContents
         If colCurHours > 0 Then sitsRow.Range.Cells(1, colCurHours).ClearContents

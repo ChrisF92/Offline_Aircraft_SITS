@@ -908,13 +908,18 @@ Public Function FormatElapsedHoursFromDayFraction(ByVal dayFraction As Double) A
     Dim totalMinutes As Long
     Dim hours As Long
     Dim minutes As Long
+    Dim negative As Boolean
 
     totalMinutes = CLng(Round(dayFraction * 24# * 60#, 0))
-    If totalMinutes < 0 Then totalMinutes = 0
+    If totalMinutes < 0 Then
+        negative = True
+        totalMinutes = Abs(totalMinutes)
+    End If
 
     hours = totalMinutes \ 60
     minutes = totalMinutes Mod 60
     FormatElapsedHoursFromDayFraction = CStr(hours) & ":" & Format$(minutes, "00")
+    If negative Then FormatElapsedHoursFromDayFraction = "-" & FormatElapsedHoursFromDayFraction
 End Function
 
 ' Elapsed minutes:seconds for display — supports totals above 59:59.
@@ -1003,6 +1008,7 @@ Public Sub ApplySITSTableFormats()
     ApplyColumnFormat tbl, HDR_PROJECTED_DUE_DATE, FORMAT_DATE
     ApplyColumnFormat tbl, HDR_BASELINE_LR_HOURS, FORMAT_TIME_HOURS
     ApplyColumnFormat tbl, HDR_BASELINE_LR_NUMBER, FORMAT_DECIMAL
+    ' Baseline may hold absolute DD due dates; Days When Due is days remaining.
     ApplyColumnFormat tbl, HDR_BASELINE_DAYS_DUE, FORMAT_GENERAL
     ApplyColumnFormat tbl, HDR_NUMBER_LIFE_REMAINING, FORMAT_DECIMAL
     ApplyColumnFormat tbl, HDR_DAYS_WHEN_DUE, FORMAT_DECIMAL

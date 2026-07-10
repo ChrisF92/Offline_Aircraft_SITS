@@ -1,7 +1,7 @@
 Option Explicit
 
 ' ========================================================================
-' WORK PACKAGE USERFORM — Offline Aircraft SITS v2 (Phase 4)
+' WORK PACKAGE USERFORM — Offline Aircraft SITS v2 (Phase 4/5)
 ' ========================================================================
 ' Create this UserForm manually in the VBA IDE and paste this code.
 ' See vba/forms/WORK_PACKAGE_FORM_LAYOUT.txt for control names and layout.
@@ -16,6 +16,10 @@ Private Sub cboORN_Change()
     UpdateActionButtons
 End Sub
 
+Private Sub lstTasks_Click()
+    UpdateActionButtons
+End Sub
+
 Private Sub cmdDelete_Click()
     Dim orn As String
 
@@ -23,6 +27,19 @@ Private Sub cmdDelete_Click()
     If Len(orn) = 0 Then Exit Sub
 
     If DeleteWorkPackage(orn, True) Then
+        RefreshForm
+    End If
+End Sub
+
+Private Sub cmdRemoveTask_Click()
+    Dim orn As String
+    Dim rowId As String
+
+    orn = SelectedORN()
+    rowId = SelectedTaskRowId()
+    If Len(orn) = 0 Or Len(rowId) = 0 Then Exit Sub
+
+    If RemoveTaskFromWorkPackage(orn, rowId, True) Then
         RefreshForm
     End If
 End Sub
@@ -82,8 +99,8 @@ Private Sub PopulateTaskList()
     Dim rowData As Variant
 
     lstTasks.Clear
-    lstTasks.ColumnCount = 2
-    lstTasks.ColumnWidths = "160 pt;320 pt"
+    lstTasks.ColumnCount = 3
+    lstTasks.ColumnWidths = "160 pt;280 pt;0 pt"
 
     orn = SelectedORN()
     If Len(orn) = 0 Then Exit Sub
@@ -93,18 +110,27 @@ Private Sub PopulateTaskList()
         rowData = tasks(i)
         lstTasks.AddItem CStr(rowData(0))
         lstTasks.List(lstTasks.ListCount - 1, 1) = CStr(rowData(1))
+        lstTasks.List(lstTasks.ListCount - 1, 2) = CStr(rowData(2))
     Next i
 End Sub
 
 Private Sub UpdateActionButtons()
-    Dim hasSelection As Boolean
+    Dim hasOrn As Boolean
+    Dim hasTask As Boolean
 
-    hasSelection = (Len(SelectedORN()) > 0)
-    cmdDelete.Enabled = hasSelection
-    cmdCloseWP.Enabled = hasSelection
+    hasOrn = (Len(SelectedORN()) > 0)
+    hasTask = (Len(SelectedTaskRowId()) > 0)
+    cmdDelete.Enabled = hasOrn
+    cmdCloseWP.Enabled = hasOrn
+    cmdRemoveTask.Enabled = hasOrn And hasTask
 End Sub
 
 Private Function SelectedORN() As String
     If cboORN.ListIndex < 0 Then Exit Function
     SelectedORN = Trim$(CStr(cboORN.Value))
+End Function
+
+Private Function SelectedTaskRowId() As String
+    If lstTasks.ListIndex < 0 Then Exit Function
+    SelectedTaskRowId = Trim$(CStr(lstTasks.List(lstTasks.ListIndex, 2)))
 End Function
