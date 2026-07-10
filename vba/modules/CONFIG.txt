@@ -85,6 +85,7 @@ Public Const HDR_SNAPSHOT_FORMAT As String = "Format"
 
 Public Const HDR_LOG_SORTIE_DATE As String = "SortieDate"
 Public Const HDR_LOG_SORTIE_REF As String = "SortieRef"
+Public Const HDR_USAGE_MATRIX_HUMS As String = "HUMS Op No"
 Public Const HDR_LOG_INTERVAL_CODE As String = "IntervalCode"
 Public Const HDR_LOG_TASK_CODE As String = "TaskCode"
 Public Const HDR_LOG_INCREMENT As String = "Increment"

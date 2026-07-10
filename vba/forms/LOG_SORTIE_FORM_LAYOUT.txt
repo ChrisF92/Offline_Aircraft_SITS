@@ -30,7 +30,7 @@ Control Name       Type            Caption / Notes
 lblDate            Label           Sortie date:
 txtSortieDate      TextBox         Default set in code (dd/mm/yyyy)
 lblHumsOp          Label           HUMS Op Number:
-txtHumsOpNumber    TextBox         Optional — stored as SortieRef in tblUsageLog
+txtHumsOpNumber    TextBox         Required — stored as SortieRef in tblUsageLog; shown on Usage matrix
 fraAirframe        Frame           Usage Airframe   (rows added at runtime)
 fraEngines         Frame           Usage Engines    (rows added at runtime)
 fraWare            Frame           Usage WARE       (rows added at runtime)

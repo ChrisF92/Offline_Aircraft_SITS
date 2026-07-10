@@ -142,7 +142,7 @@ Step 5 — Create an aircraft workbook
 Step 6 — Log sorties
 ---------------------
 1. Click **Log Sortie** on the Dashboard (or macro RunLogSortie).
-2. Enter sortie date and optional HUMS Op Number.
+2. Enter sortie date and required HUMS Op Number.
 3. In each group (Airframe / Engines / WARE), enter Usage for counters that
    changed on the sortie. Current Total and New Total are read-only.
    - Hours counters (DA, MX, XJ, HH, E1, E2, OH): enter h:mm (e.g. 1:30)
@@ -375,6 +375,16 @@ Upgrading an existing workbook for the Log Sortie form redesign (v2.3.0)
    - Run **Setup_FormatUsageMatrix** (Dashboard developer button
      "Format Usage Matrix", or macro). Afterwards Refresh Usage / Log Sortie
      keep the matrix current.
+
+Upgrading for HUMS Op No on the Usage matrix
+--------------------------------------------
+1. Replace modules: CONFIG, modUsageLog, Setup_FormatUsageMatrix,
+   Setup_CreateDashboard; update frmLogSortie from vba/forms/frmLogSortie.txt.
+2. Compile VBAProject.
+3. Run **Refresh Usage** (or Format Usage Matrix once) so the trailing
+   **HUMS Op No** column appears. Sortie dates stay in column A; HUMS is
+   no longer embedded in the date cell.
+4. Log Sortie now requires HUMS Op Number before submit.
 
 Upgrading an existing Phase 0–4 workbook to Phase 5
 -----------------------------------------------------

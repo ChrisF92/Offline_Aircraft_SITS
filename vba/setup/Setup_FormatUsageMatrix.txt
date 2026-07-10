@@ -15,7 +15,7 @@ Public Sub Setup_FormatUsageMatrix(Optional ByVal silent As Boolean = False)
 
     If Not silent Then
         If MsgBox("Format the Usage sheet as a sortie matrix?" & vbCrLf & vbCrLf & _
-                  "Columns = interval types (Airframe, Engines, WARE)." & vbCrLf & _
+                  "Columns = interval types (Airframe, Engines, WARE), plus HUMS Op No." & vbCrLf & _
                   "Rows = B/F Totals, each logged sortie, then Current Totals." & vbCrLf & vbCrLf & _
                   "Existing Usage sheet contents will be replaced.", _
                   vbQuestion + vbYesNo, "Setup — Usage Matrix") <> vbYes Then Exit Sub
@@ -56,7 +56,7 @@ Public Sub ApplyUsageMatrixShell(ByVal ws As Worksheet, _
     Dim c As Long
 
     codes = AllSortieUsageIntervalCodes()
-    colCount = UBound(codes) - LBound(codes) + 2  ' label col + intervals
+    colCount = UBound(codes) - LBound(codes) + 3  ' label + intervals + HUMS
 
     ws.Cells.Clear
     On Error Resume Next
@@ -72,16 +72,17 @@ Public Sub ApplyUsageMatrixShell(ByVal ws As Worksheet, _
 
     ws.Range("A2").Value = "Tail:"
     ws.Range("B2").Value = GetTailNumber()
-    ws.Range("A3").Value = "B/F Totals = baseline at import. Sortie rows = increments. Final row = current totals."
+    ws.Range("A3").Value = "B/F Totals = baseline at import. Sortie rows = increments. Final row = current totals. Last column = HUMS Op No."
     ws.Range("A3").Font.Size = 9
     ws.Range("A3").Font.Italic = True
     ws.Range("A3").Font.Color = RGB(89, 89, 89)
 
     If resetWidths Then
         ws.Columns(1).ColumnWidth = 18
-        For c = 2 To colCount
+        For c = 2 To colCount - 1
             ws.Columns(c).ColumnWidth = 8
         Next c
+        ws.Columns(colCount).ColumnWidth = 14
     End If
 
     ' FreezePanes is a Window property, not Worksheet.

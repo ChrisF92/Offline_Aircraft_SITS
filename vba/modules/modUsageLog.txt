@@ -160,7 +160,7 @@ Public Sub RefreshUsageView()
 
     codes = AllSortieUsageIntervalCodes()
     n = UBound(codes) - LBound(codes) + 1
-    lastCol = n + 1
+    lastCol = n + 2  ' label + interval columns + HUMS Op No
 
     ReDim formats(1 To n)
     ReDim taskCodes(1 To n)
@@ -185,7 +185,7 @@ Public Sub RefreshUsageView()
 
     ws.Range("B2").Value = GetTailNumber()
 
-    ' --- Header row: interval codes ---
+    ' --- Header row: interval codes + HUMS ---
     ws.Cells(USAGE_HEADER_ROW, 1).Value = ""
     For i = 1 To n
         code = UCase$(Trim$(CStr(codes(LBound(codes) + i - 1))))
@@ -200,6 +200,13 @@ Public Sub RefreshUsageView()
     Next i
     With ws.Cells(USAGE_HEADER_ROW, 1)
         .Interior.Color = COLOR_HEADER_BLUE
+    End With
+    With ws.Cells(USAGE_HEADER_ROW, lastCol)
+        .Value = HDR_USAGE_MATRIX_HUMS
+        .Font.Bold = True
+        .Font.Color = vbWhite
+        .Interior.Color = COLOR_HEADER_BLUE
+        .HorizontalAlignment = xlCenter
     End With
 
     ' --- Format row ---
@@ -216,6 +223,13 @@ Public Sub RefreshUsageView()
         End With
     Next i
     ws.Cells(USAGE_FORMAT_ROW, 1).Interior.Color = COLOR_HEADER_GREY
+    With ws.Cells(USAGE_FORMAT_ROW, lastCol)
+        .Value = "Text"
+        .Font.Size = 8
+        .Font.Italic = True
+        .HorizontalAlignment = xlCenter
+        .Interior.Color = COLOR_HEADER_GREY
+    End With
 
     ' --- B/F Totals (baseline at import) ---
     ws.Cells(USAGE_BF_ROW, 1).Value = "B/F Totals"
@@ -235,11 +249,6 @@ Public Sub RefreshUsageView()
     For Each sortieItem In sorties
         ws.Cells(outputRow, 1).Value = CDate(sortieItem(0))
         ws.Cells(outputRow, 1).NumberFormat = FORMAT_DATE
-        If Len(Trim$(CStr(sortieItem(1)))) > 0 Then
-            ws.Cells(outputRow, 1).Value = Format$(CDate(sortieItem(0)), FORMAT_DATE) & _
-                                          " (" & Trim$(CStr(sortieItem(1))) & ")"
-            ws.Cells(outputRow, 1).NumberFormat = FORMAT_TEXT
-        End If
 
         Set increments = sortieItem(2)
         For Each intervalKey In increments.Keys
@@ -250,6 +259,12 @@ Public Sub RefreshUsageView()
                 WriteUsageMatrixCell ws.Cells(outputRow, col), increments(intervalKey), formats(i)
             End If
         Next intervalKey
+
+        With ws.Cells(outputRow, lastCol)
+            .Value = Trim$(CStr(sortieItem(1)))
+            .NumberFormat = FORMAT_TEXT
+            .HorizontalAlignment = xlCenter
+        End With
 
         outputRow = outputRow + 1
     Next sortieItem
@@ -299,7 +314,7 @@ Private Sub ApplyUsageMatrixShellQuiet(ByVal ws As Worksheet)
     Dim resetWidths As Boolean
 
     codes = AllSortieUsageIntervalCodes()
-    colCount = UBound(codes) - LBound(codes) + 2
+    colCount = UBound(codes) - LBound(codes) + 3  ' label + intervals + HUMS
     resetWidths = (Len(Trim$(CStr(ws.Range("A1").Value))) = 0)
 
     On Error Resume Next
@@ -321,16 +336,17 @@ Private Sub ApplyUsageMatrixShellQuiet(ByVal ws As Worksheet)
 
     ws.Range("A2").Value = "Tail:"
     ws.Range("B2").Value = GetTailNumber()
-    ws.Range("A3").Value = "B/F Totals = baseline at import. Sortie rows = increments. Final row = current totals."
+    ws.Range("A3").Value = "B/F Totals = baseline at import. Sortie rows = increments. Final row = current totals. Last column = HUMS Op No."
     ws.Range("A3").Font.Size = 9
     ws.Range("A3").Font.Italic = True
     ws.Range("A3").Font.Color = RGB(89, 89, 89)
 
     If resetWidths Then
         ws.Columns(1).ColumnWidth = 18
-        For c = 2 To colCount
+        For c = 2 To colCount - 1
             ws.Columns(c).ColumnWidth = 8
         Next c
+        ws.Columns(colCount).ColumnWidth = 14
     End If
 End Sub
 
@@ -489,6 +505,10 @@ Public Function CommitSortie(ByVal sortieDate As Date, _
     CommitSortie = False
 
     If Not ValidateSetupReady() Then Exit Function
+    If Len(Trim$(sortieRef)) = 0 Then
+        If showDialogs Then MsgBox "HUMS Op Number is required.", vbExclamation, APP_NAME
+        Exit Function
+    End If
     If pending Is Nothing Or pending.Count = 0 Then
         If showDialogs Then MsgBox "Enter at least one usage value before submitting.", vbExclamation, APP_NAME
         Exit Function
