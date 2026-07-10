@@ -6,6 +6,7 @@ Option Explicit
 ' RefreshDashboardLayout fully rebuilds the sheet (master setup / explicit
 ' Rebuild). EnsureDashboardActionButtons only adds missing buttons so
 ' developer placement and column widths survive day-to-day use.
+' Setup Wizard is shown only until aircraft setup completes (kept on master).
 ' ========================================================================
 
 Private Const BTN_WIDTH As Double = 150
@@ -64,7 +65,9 @@ Public Sub RefreshDashboardLayout()
 
     WriteSectionHeader ws, "B11", "User Actions"
     PrepareButtonRows ws
-    AddDashboardButton ws, "B12", "Setup Wizard", "RunSetupWizard"
+    If ShouldShowSetupWizardButton() Then
+        AddDashboardButton ws, "B12", "Setup Wizard", "RunSetupWizard"
+    End If
     AddDashboardButton ws, "C12", "Log Sortie", "RunLogSortie"
     AddDashboardButton ws, "B13", "Import SITS", "RunImportSITSFromFile"
     AddDashboardButton ws, "C13", "Refresh Usage", "RefreshUsageView"
@@ -134,7 +137,7 @@ Public Sub EnsureDashboardActionButtons()
     If ws Is Nothing Then Exit Sub
 
     SetExcelState "disable"
-    EnsureDashboardButton ws, "B12", "Setup Wizard", "RunSetupWizard"
+    SyncSetupWizardButton ws
     EnsureDashboardButton ws, "C12", "Log Sortie", "RunLogSortie"
     EnsureDashboardButton ws, "B13", "Import SITS", "RunImportSITSFromFile"
     EnsureDashboardButton ws, "C13", "Refresh Usage", "RefreshUsageView"
@@ -170,6 +173,19 @@ Private Sub WriteWorkbookStatusLine(ByVal ws As Worksheet)
     End With
 End Sub
 
+' Setup Wizard stays on the master template and unfinished aircraft copies only.
+Private Function ShouldShowSetupWizardButton() As Boolean
+    ShouldShowSetupWizardButton = (Not IsSetupComplete()) Or IsMasterTemplate()
+End Function
+
+Private Sub SyncSetupWizardButton(ByVal ws As Worksheet)
+    If ShouldShowSetupWizardButton() Then
+        EnsureDashboardButton ws, "B12", "Setup Wizard", "RunSetupWizard"
+    Else
+        RemoveDashboardButtonForMacro ws, "RunSetupWizard"
+    End If
+End Sub
+
 Private Sub AddDashboardButton(ByVal ws As Worksheet, ByVal anchorCell As String, _
                                ByVal caption As String, ByVal macroName As String)
     Dim anchor As Range
@@ -186,6 +202,23 @@ Private Sub EnsureDashboardButton(ByVal ws As Worksheet, ByVal anchorCell As Str
                                   ByVal caption As String, ByVal macroName As String)
     If DashboardHasButtonForMacro(ws, macroName) Then Exit Sub
     AddDashboardButton ws, anchorCell, caption, macroName
+End Sub
+
+Private Sub RemoveDashboardButtonForMacro(ByVal ws As Worksheet, ByVal macroName As String)
+    Dim btn As Button
+    Dim actionName As String
+    Dim bangPos As Long
+
+    On Error Resume Next
+    For Each btn In ws.Buttons
+        actionName = Trim$(CStr(btn.OnAction))
+        bangPos = InStrRev(actionName, "!")
+        If bangPos > 0 Then actionName = Mid$(actionName, bangPos + 1)
+        If StrComp(actionName, macroName, vbTextCompare) = 0 Then
+            btn.Delete
+        End If
+    Next btn
+    On Error GoTo 0
 End Sub
 
 Private Function DashboardHasButtonForMacro(ByVal ws As Worksheet, ByVal macroName As String) As Boolean
