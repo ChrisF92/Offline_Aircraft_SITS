@@ -376,6 +376,16 @@ Upgrading an existing workbook for the Log Sortie form redesign (v2.3.0)
      "Format Usage Matrix", or macro). Afterwards Refresh Usage / Log Sortie
      keep the matrix current.
 
+Upgrading for HUMS Op No on the Usage matrix
+--------------------------------------------
+1. Replace modules: CONFIG, modUsageLog, Setup_FormatUsageMatrix,
+   Setup_CreateDashboard; update frmLogSortie from vba/forms/frmLogSortie.txt.
+2. Compile VBAProject.
+3. Run **Refresh Usage** (or Format Usage Matrix once) so the trailing
+   **HUMS Op No** column appears. Sortie dates stay in column A; HUMS is
+   no longer embedded in the date cell.
+4. Log Sortie now requires HUMS Op Number before submit.
+
 Upgrading an existing Phase 0–4 workbook to Phase 5
 -----------------------------------------------------
 1. Import new modules: modExtensions, modSITSEdit, and updated modules (modSITS,
