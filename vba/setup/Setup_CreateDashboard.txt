@@ -94,7 +94,7 @@ Public Sub RefreshDashboardLayout()
     ws.Range("B27").Value = "Engine usage must include SM and SN (WC/STARTS/ECU)."
     ws.Range("B28").Value = "ORN format: ####TAILDDMMYY (e.g. 7034ZZ383081125)."
     ws.Range("B29").Value = "Extend: same Interval Type + Actual Interval. Defer: one PT2/PT3 at a time."
-    ws.Range("B30").Value = "Log Sortie: enter Usage only (Current/New Total are calculated). HUMS Op Number optional."
+    ws.Range("B30").Value = "Log Sortie: enter Usage only (Current/New Total are calculated). HUMS Op Number required."
     ws.Range("B31").Value = "WARE counters IL/IR/HE/FT appear on the form once present in the usage import."
     ws.Range("B32").Value = "Layout tip: tweak column widths / button positions on the Master; refresh does not reset them."
 

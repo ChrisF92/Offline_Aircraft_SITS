@@ -37,17 +37,27 @@ End Sub
 
 Private Sub cmdSubmit_Click()
     Dim sortieDate As Date
+    Dim humsOpNumber As String
     Dim pending As Object
     Dim failReason As String
 
     If Not TryParseSortieDate(sortieDate) Then Exit Sub
+
+    humsOpNumber = Trim$(txtHumsOpNumber.Value)
+    If Len(humsOpNumber) = 0 Then
+        MsgBox "HUMS Op Number is required.", vbExclamation, APP_NAME
+        On Error Resume Next
+        txtHumsOpNumber.SetFocus
+        On Error GoTo 0
+        Exit Sub
+    End If
 
     If Not BuildPendingIncrements(pending, failReason) Then
         MsgBox failReason, vbExclamation, APP_NAME
         Exit Sub
     End If
 
-    If CommitSortie(sortieDate, Trim$(txtHumsOpNumber.Value), pending, True) Then
+    If CommitSortie(sortieDate, humsOpNumber, pending, True) Then
         Set mRows = Nothing
         Unload Me
     End If

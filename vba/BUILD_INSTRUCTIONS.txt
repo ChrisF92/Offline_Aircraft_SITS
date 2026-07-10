@@ -142,7 +142,7 @@ Step 5 — Create an aircraft workbook
 Step 6 — Log sorties
 ---------------------
 1. Click **Log Sortie** on the Dashboard (or macro RunLogSortie).
-2. Enter sortie date and optional HUMS Op Number.
+2. Enter sortie date and required HUMS Op Number.
 3. In each group (Airframe / Engines / WARE), enter Usage for counters that
    changed on the sortie. Current Total and New Total are read-only.
    - Hours counters (DA, MX, XJ, HH, E1, E2, OH): enter h:mm (e.g. 1:30)
