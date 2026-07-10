@@ -1,0 +1,55 @@
+Option Explicit
+
+' ========================================================================
+' SORTIE USAGE ROW — WithEvents helper for frmLogSortie
+' ========================================================================
+' Insert > Class Module, Name = clsSortieUsageRow, paste this code.
+' Holds one interval row: Current (locked) | Usage (editable) | New (locked).
+' ========================================================================
+
+Public IntervalCode As String
+Public TaskCode As String
+Public FormatType As String
+Public CurrentNumeric As Double
+Public IsAvailable As Boolean
+
+Public CurrentBox As MSForms.TextBox
+Public NewBox As MSForms.TextBox
+Public WithEvents UsageBox As MSForms.TextBox
+
+Public Sub RefreshNewTotal()
+    Dim rawUsage As String
+    Dim incrementValue As Variant
+    Dim failReason As String
+    Dim newValue As Double
+
+    If NewBox Is Nothing Then Exit Sub
+
+    If Not IsAvailable Then
+        NewBox.Value = ""
+        Exit Sub
+    End If
+
+    rawUsage = Trim$(CStr(UsageBox.Value))
+    If Len(rawUsage) = 0 Then
+        NewBox.Value = FormatUsageValueForDisplay(CurrentNumeric, FormatType)
+        Exit Sub
+    End If
+
+    incrementValue = ParseUsageIncrement(rawUsage, FormatType, failReason)
+    If IsEmpty(incrementValue) Then
+        NewBox.Value = ""
+        Exit Sub
+    End If
+
+    newValue = CDbl(CurrentNumeric) + CDbl(incrementValue)
+    NewBox.Value = FormatUsageValueForDisplay(newValue, FormatType)
+End Sub
+
+Private Sub UsageBox_Change()
+    RefreshNewTotal
+End Sub
+
+Private Sub UsageBox_Exit(ByVal Cancel As MSForms.ReturnBoolean)
+    RefreshNewTotal
+End Sub

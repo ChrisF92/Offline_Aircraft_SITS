@@ -3,43 +3,88 @@ Log Sortie UserForm — Control Layout (frmLogSortie)
 
 Create a UserForm in the VBA IDE named exactly: frmLogSortie
 Set the form Caption to: Log Sortie
+Suggested form size: Width ~ 820, Height ~ 560
 
-Then add these controls (Name property must match exactly):
+Also create a Class Module named exactly: clsSortieUsageRow
+Paste vba/forms/clsSortieUsageRow.txt into that class module.
 
-Control Name      Type           Caption / Notes
-----------------  -------------  ------------------------------------------
-lblDate           Label          Sortie date:
-txtSortieDate     TextBox        Default set in code (dd/mm/yyyy)
-lblRef            Label          Sortie ref:
-txtSortieRef      TextBox        Optional sortie reference
-lblCounters       Label          Usage counters (Interval | Current | Format):
-lstCounters       ListBox        Width ~420, Height ~180, MultiSelect fmMultiSelectSingle
-lblSelected       Label          (blank — selection hint set in code)
-lblIncrement      Label          Increment:
-txtIncrement      TextBox        h:mm for Hours, m:ss for Minutes, number otherwise
-cmdAdd            CommandButton  Add to sortie
-lblPending        Label          Pending increments:
-lstPending        ListBox        Width ~420, Height ~80
-cmdRemove         CommandButton  Remove selected
-cmdSubmit         CommandButton  Log sortie        (Default = True)
-cmdCancel         CommandButton  Cancel
+Why this layout
+---------------
+There are ~39 sortie counters across Airframe / Engines / WARE. Building every
+textbox by hand is brittle. The recommended approach used here:
 
-The counter list shows three visible columns:
-  Interval Code | Current Value | Format
-(Task code is stored in a hidden fourth column for data integrity.)
+  1. Static shell controls only (date, HUMS Op Number, three frames, buttons)
+  2. Runtime-built rows inside each frame: Current Total | Usage | New Total
+  3. Only the Usage column is editable (highlighted)
+  4. Current Total comes from tblUsageCurrent; New Total = Current + Usage
+  5. Blank Usage rows are ignored on submit
+  6. Counters not yet imported show Current = (n/a) with Usage locked
 
-Suggested positions (approximate):
-  Row 1: lblDate [10,10]  txtSortieDate [90,8]  lblRef [220,10]  txtSortieRef [290,8]
-  Row 2: lblCounters [10,40]
-  Row 3: lstCounters [10,58] size 420x180
-  Row 4: lblSelected [10,245]
-  Row 5: lblIncrement [10,268]  txtIncrement [90,266]  cmdAdd [200,264]
-  Row 6: lblPending [10,300]
-  Row 7: lstPending [10,318] size 420x80
-  Row 8: cmdRemove [10,408]  cmdSubmit [250,408]  cmdCancel [340,408]
+Three side-by-side frames keep the form usable without a long vertical scroll
+of 39 stacked rows, while preserving the three groups you specified.
 
-After creating controls, open the form's code window and paste the contents of:
-  vba/forms/frmLogSortie.txt
+Static controls (Name property must match exactly)
+--------------------------------------------------
+Control Name       Type            Caption / Notes
+-----------------  --------------  ------------------------------------------
+lblDate            Label           Sortie date:
+txtSortieDate      TextBox         Default set in code (dd/mm/yyyy)
+lblHumsOp          Label           HUMS Op Number:
+txtHumsOpNumber    TextBox         Optional — stored as SortieRef in tblUsageLog
+fraAirframe        Frame           Usage Airframe   (rows added at runtime)
+fraEngines         Frame           Usage Engines    (rows added at runtime)
+fraWare            Frame           Usage WARE       (rows added at runtime)
+lblHint            Label           Hours: h:mm   Counts/seconds: number   Blank = no change
+cmdSubmit          CommandButton   Log sortie       (Default = True)
+cmdCancel          CommandButton   Cancel
+
+Suggested positions (approximate)
+---------------------------------
+Form Width 820, Height 560
+
+Row 1:
+  lblDate          Left=12  Top=12
+  txtSortieDate    Left=90  Top=10  Width=80
+  lblHumsOp        Left=190 Top=12
+  txtHumsOpNumber  Left=300 Top=10  Width=120
+
+Group frames (side by side):
+  fraAirframe      Left=12  Top=42  Width=260 Height=430
+  fraEngines       Left=280 Top=42  Width=260 Height=430
+  fraWare          Left=548 Top=42  Width=260 Height=430
+
+  Set each frame's ScrollBars = 2 (fmScrollBarsVertical) in the Properties
+  window if desired; code also sets ScrollHeight after building rows.
+
+Bottom:
+  lblHint          Left=12  Top=480 Width=520
+  cmdSubmit        Left=620 Top=478
+  cmdCancel        Left=720 Top=478
+
+Interval codes shown (CONFIG catalog — display order)
+-----------------------------------------------------
+Usage Airframe:
+  DA, MX, XJ, AU, F3, F4, RL, SL, HH, LF, RS, F1, F2, F5, OS, OT
+
+Usage Engines:
+  E1, SM, 1S, 1T, 3T, 1G, 1E, E2, SN, 2S, 2T, 4T, 2G, 2E
+
+Usage WARE:
+  RF, LR, RR, IL, IR, HE, FT, LP, OH
+
+Hour-format counters (enter h:mm): DA, MX, XJ, HH, E1, E2, OH
+OEI second totals (enter decimal number): 1E, 1G, 2E, 2G
+All other listed counters: number
+
+Missing from older imports (IL, IR, HE, FT, and any other catalog code not
+present in tblUsageBaseline) still appear on the form but Usage is locked
+until the counter is imported.
+
+After creating controls
+-----------------------
+1. Paste vba/forms/frmLogSortie.txt into the form's code window
+2. Ensure class module clsSortieUsageRow exists (see above)
+3. Compile (Debug > Compile VBAProject)
 
 Dashboard macro: assign ShowLogSortieForm or RunLogSortie to a button.
 

@@ -67,6 +67,12 @@ Runtime modules:
   vba/modules/modWorkPackage.txt        modWorkPackage
   vba/modules/modExtensions.txt         modExtensions
 
+Class modules (Insert > Class Module):
+
+  File                                  Class Name
+  ------------------------------------  ------------------
+  vba/forms/clsSortieUsageRow.txt       clsSortieUsageRow
+
 Setup modules (one-time use):
 
   File                                  Module Name
@@ -87,10 +93,13 @@ ThisWorkbook code:
 
 Step 3 — Create UserForms
 -------------------------
-Log Sortie (Phase 2):
+Log Sortie:
 1. Insert > UserForm, Name = frmLogSortie
-2. Add controls per vba/forms/LOG_SORTIE_FORM_LAYOUT.txt
-3. Paste vba/forms/frmLogSortie.txt into the form code module
+2. Add static shell controls per vba/forms/LOG_SORTIE_FORM_LAYOUT.txt
+   (date, HUMS Op Number, three frames, buttons — counter rows are built at runtime)
+3. Insert > Class Module, Name = clsSortieUsageRow
+   Paste vba/forms/clsSortieUsageRow.txt
+4. Paste vba/forms/frmLogSortie.txt into the form code module
 
 Work Packages (Phase 4/5):
 1. Insert > UserForm, Name = frmWorkPackage
@@ -129,22 +138,26 @@ Step 5 — Create an aircraft workbook
 4. Enter tail number and import SITS Long Forecast, airframe usage, and engine usage.
 5. Confirm — populates tblSITS, tblUsageBaseline, tblUsageCurrent.
 
-Step 6 — Log sorties (Phase 2)
-------------------------------
+Step 6 — Log sorties
+---------------------
 1. Click **Log Sortie** on the Dashboard (or macro RunLogSortie).
-2. Enter sortie date and optional sortie reference.
-3. Select a usage counter from the baseline list, enter increment, click Add.
-- Hours counters: enter h:mm (e.g. 1:30) — stored as [h]:mm
-- OEI second totals (1E/1G/2E/2G): enter decimal seconds (e.g. 3.38) — stored as Number
-- Other m:ss elapsed counters: enter m:ss — stored as [m]:ss
-- Number counters: enter a positive number
-4. Add all increments for the sortie, then click Log sortie.
+2. Enter sortie date and optional HUMS Op Number.
+3. In each group (Airframe / Engines / WARE), enter Usage for counters that
+   changed on the sortie. Current Total and New Total are read-only.
+   - Hours counters (DA, MX, XJ, HH, E1, E2, OH): enter h:mm (e.g. 1:30)
+   - OEI second totals (1E/1G/2E/2G): enter decimal seconds (e.g. 3.38)
+   - Number counters: enter a positive number
+   - Leave Usage blank for counters with no change
+4. Click Log sortie.
 
-Each logged increment:
+Each entered usage value:
   - Appends a row to tblUsageLog
   - Updates tblUsageCurrent
   - Refreshes the Usage sheet view
-  - Recalculates and refreshes the SITS view (Phase 3)
+  - Recalculates and refreshes the SITS view
+
+Catalog codes not yet present in the usage baseline appear as (n/a) with
+Usage locked until imported (e.g. WARE IL/IR/HE/FT on older exports).
 
 Step 7 — SITS view and refresh (Phase 3)
 ------------------------------------------
@@ -339,6 +352,21 @@ Sample files in repo root:
   20260706-Long Forecast_ZZ382.xlsx   — SITS export sample (tail ZZ382)
   ZZ383 Item Usage.xlsx               — Airframe usage sample
   ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)
+
+Upgrading an existing workbook for the Log Sortie form redesign (v2.3.0)
+------------------------------------------------------------------------
+1. Replace modules: CONFIG, modUtility, modUsageLog, modSITSEdit,
+   Setup_CreateDashboard (and paste updated BUILD notes as needed).
+2. Insert > Class Module, Name = clsSortieUsageRow; paste
+   vba/forms/clsSortieUsageRow.txt.
+3. Recreate or update frmLogSortie:
+   - Remove old list/pending controls (lstCounters, lstPending, etc.)
+   - Add static shell per LOG_SORTIE_FORM_LAYOUT.txt
+     (txtHumsOpNumber replaces txtSortieRef; add fraAirframe/fraEngines/fraWare)
+   - Paste vba/forms/frmLogSortie.txt
+4. Compile VBAProject.
+5. Ensure usage imports include any catalog codes you need to log
+   (WARE IL/IR/HE/FT were missing from older sample exports).
 
 Upgrading an existing Phase 0–4 workbook to Phase 5
 -----------------------------------------------------

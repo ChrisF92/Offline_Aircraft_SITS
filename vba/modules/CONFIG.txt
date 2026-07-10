@@ -9,7 +9,7 @@ Option Explicit
 
 ' --- Workbook identity ---
 Public Const APP_NAME As String = "Offline Aircraft SITS"
-Public Const APP_VERSION As String = "2.2.0"
+Public Const APP_VERSION As String = "2.3.0"
 Public Const AIRCRAFT_TYPE As String = "Wildcat"
 
 ' --- Visible sheets ---
@@ -136,6 +136,69 @@ Public Const TYPE_E1 As String = "E1"
 Public Const TYPE_E2 As String = "E2"
 Public Const TYPE_SM As String = "SM"
 Public Const TYPE_SN As String = "SN"
+Public Const TYPE_DA As String = "DA"
+Public Const TYPE_MX As String = "MX"
+Public Const TYPE_XJ As String = "XJ"
+Public Const TYPE_OH As String = "OH"
+' WARE counters that may be absent from older usage exports
+Public Const TYPE_RF As String = "RF"
+Public Const TYPE_LR As String = "LR"
+Public Const TYPE_RR As String = "RR"
+Public Const TYPE_IL As String = "IL"
+Public Const TYPE_IR As String = "IR"
+Public Const TYPE_HE As String = "HE"
+Public Const TYPE_FT As String = "FT"
+Public Const TYPE_LP As String = "LP"
+
+' --- Sortie form groups (display order) ---
+' Airframe / Engines / WARE. Only Usage is entered; Current and New Total are derived.
+Public Function SortieUsageAirframeCodes() As Variant
+    SortieUsageAirframeCodes = Array( _
+        "DA", "MX", "XJ", "AU", "F3", "F4", "RL", "SL", _
+        "HH", "LF", "RS", "F1", "F2", "F5", "OS", "OT" _
+    )
+End Function
+
+Public Function SortieUsageEngineCodes() As Variant
+    SortieUsageEngineCodes = Array( _
+        "E1", "SM", "1S", "1T", "3T", "1G", "1E", _
+        "E2", "SN", "2S", "2T", "4T", "2G", "2E" _
+    )
+End Function
+
+Public Function SortieUsageWareCodes() As Variant
+    SortieUsageWareCodes = Array( _
+        "RF", "LR", "RR", "IL", "IR", "HE", "FT", "LP", "OH" _
+    )
+End Function
+
+Public Function AllSortieUsageIntervalCodes() As Variant
+    Dim airframe As Variant
+    Dim engines As Variant
+    Dim ware As Variant
+    Dim result() As String
+    Dim i As Long
+    Dim n As Long
+
+    airframe = SortieUsageAirframeCodes()
+    engines = SortieUsageEngineCodes()
+    ware = SortieUsageWareCodes()
+
+    n = UBound(airframe) + UBound(engines) + UBound(ware) + 3
+    ReDim result(0 To n - 1)
+
+    For i = 0 To UBound(airframe)
+        result(i) = CStr(airframe(i))
+    Next i
+    For i = 0 To UBound(engines)
+        result(UBound(airframe) + 1 + i) = CStr(engines(i))
+    Next i
+    For i = 0 To UBound(ware)
+        result(UBound(airframe) + UBound(engines) + 2 + i) = CStr(ware(i))
+    Next i
+
+    AllSortieUsageIntervalCodes = result
+End Function
 
 ' --- Deferred fault task codes ---
 Public Const FAULT_PT2_D As String = "PT2-D"

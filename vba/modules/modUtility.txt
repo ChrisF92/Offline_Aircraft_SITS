@@ -633,8 +633,9 @@ Public Function DetectUsageFormat(ByVal sampleValue As Variant, _
 End Function
 
 Public Function IsHourUsageInterval(ByVal intervalCode As String) As Boolean
+    ' Hour / elapsed-time counters stored as Excel day-fraction with [h]:mm.
     Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_HH, TYPE_E1, TYPE_E2, "MX", "OH", "XJ", "DA", "HRS", "AF"
+        Case TYPE_HH, TYPE_E1, TYPE_E2, TYPE_MX, TYPE_OH, TYPE_XJ, TYPE_DA, "HRS", "AF"
             IsHourUsageInterval = True
     End Select
 End Function

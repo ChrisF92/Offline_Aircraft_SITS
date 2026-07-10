@@ -2,6 +2,6 @@
 
 Offline Aircraft SITS v2 — Wildcat single-aircraft Excel workbook (VBA).
 
-Current phase: **Phase 5 — Extensions / deferrals**
+Current phase: **Usage / Log Sortie form redesign** (v2.3.0)
 
 See `vba/BUILD_INSTRUCTIONS.txt` for build and upgrade steps.

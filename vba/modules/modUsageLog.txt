@@ -18,25 +18,85 @@ Public Sub RunLogSortie()
     ShowLogSortieForm
 End Sub
 
-Public Sub PopulateSortieCounterList(ByVal lst As MSForms.ListBox)
-    Dim entries As Collection
-    Dim item As Variant
-    Dim rowData As Variant
+' Resolve the baseline/current counter used on the Log Sortie form for one
+' interval code. Prefers an Airframe-sourced row when duplicates exist (e.g. OS).
+Public Function ResolveSortieUsageCounter(ByVal intervalCode As String, _
+                                          ByRef taskCode As String, _
+                                          ByRef formatType As String, _
+                                          ByRef currentValue As Variant, _
+                                          ByRef isAvailable As Boolean) As Boolean
+    Dim wsBaseline As Worksheet
+    Dim tblBaseline As ListObject
+    Dim row As ListRow
+    Dim code As String
+    Dim sourceName As String
+    Dim candidateTask As String
+    Dim candidateFormat As String
+    Dim airframeTask As String
+    Dim airframeFormat As String
+    Dim foundAny As Boolean
+    Dim foundAirframe As Boolean
 
-    Set entries = BuildUsageCounterEntries()
+    ResolveSortieUsageCounter = False
+    taskCode = ""
+    formatType = ""
+    currentValue = Empty
+    isAvailable = False
 
-    lst.Clear
-    lst.ColumnCount = 4
-    lst.ColumnWidths = "55 pt;90 pt;55 pt;0 pt"
+    code = UCase$(Trim$(intervalCode))
+    If Len(code) = 0 Then Exit Function
 
-    For Each item In entries
-        rowData = item
-        lst.AddItem rowData(0)
-        lst.List(lst.ListCount - 1, 1) = rowData(1)
-        lst.List(lst.ListCount - 1, 2) = rowData(2)
-        lst.List(lst.ListCount - 1, 3) = rowData(3)
-    Next item
-End Sub
+    Set wsBaseline = GetWorksheet(SHEET_DATA_USAGE_BASELINE, showError:=False)
+    If wsBaseline Is Nothing Then Exit Function
+
+    Set tblBaseline = GetTable(wsBaseline, TBL_USAGE_BASELINE, showError:=False)
+    If tblBaseline Is Nothing Or tblBaseline.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tblBaseline.ListRows
+        If StrComp(UCase$(Trim$(CStr(row.Range.Cells(1, 1).Value))), code, vbBinaryCompare) <> 0 Then
+            GoTo NextBaselineRow
+        End If
+
+        candidateTask = Trim$(CStr(row.Range.Cells(1, 2).Value))
+        candidateFormat = ResolveUsageFormatType(code, candidateTask, _
+            Trim$(CStr(row.Range.Cells(1, 5).Value)), _
+            Trim$(CStr(row.Range.Cells(1, 3).Value)))
+        sourceName = Trim$(CStr(row.Range.Cells(1, 6).Value))
+
+        If Not foundAny Then
+            taskCode = candidateTask
+            formatType = candidateFormat
+            foundAny = True
+        End If
+
+        If StrComp(sourceName, "Airframe", vbTextCompare) = 0 Then
+            airframeTask = candidateTask
+            airframeFormat = candidateFormat
+            foundAirframe = True
+            Exit For
+        End If
+
+NextBaselineRow:
+    Next row
+
+    If Not foundAny Then
+        ' Known sortie counter not yet imported — still show on the form.
+        formatType = StoredUsageFormatLabel(code)
+        currentValue = 0
+        ResolveSortieUsageCounter = True
+        isAvailable = False
+        Exit Function
+    End If
+
+    If foundAirframe Then
+        taskCode = airframeTask
+        formatType = airframeFormat
+    End If
+
+    currentValue = UsageValueAsDayFraction(GetCurrentUsageValue(code, taskCode), formatType)
+    isAvailable = True
+    ResolveSortieUsageCounter = True
+End Function
 
 Public Function CommitSortie(ByVal sortieDate As Date, _
                              ByVal sortieRef As String, _
@@ -59,7 +119,7 @@ Public Function CommitSortie(ByVal sortieDate As Date, _
 
     If Not ValidateSetupReady() Then Exit Function
     If pending Is Nothing Or pending.Count = 0 Then
-        If showDialogs Then MsgBox "Add at least one usage increment before submitting.", vbExclamation, APP_NAME
+        If showDialogs Then MsgBox "Enter at least one usage value before submitting.", vbExclamation, APP_NAME
         Exit Function
     End If
 
@@ -85,7 +145,8 @@ Public Function CommitSortie(ByVal sortieDate As Date, _
 
         formatType = GetUsageFormatType(intervalCode, taskCode)
         If Len(formatType) = 0 Then
-            failReason = "Usage counter not found in baseline: " & intervalCode
+            failReason = "Usage counter not found in baseline: " & intervalCode & _
+                         ". Import usage that includes this interval type, then try again."
             GoTo ValidationFailed
         End If
         formatType = ResolveUsageFormatType(intervalCode, taskCode, formatType)
@@ -316,47 +377,6 @@ Public Function GetUsageFormatType(ByVal intervalCode As String, _
             Exit Function
         End If
     Next row
-End Function
-
-Private Function BuildUsageCounterEntries() As Collection
-    Dim result As New Collection
-    Dim ws As Worksheet
-    Dim tbl As ListObject
-    Dim row As ListRow
-    Dim intervalCode As String
-    Dim taskCode As String
-    Dim formatType As String
-    Dim currentValue As Variant
-
-    Set ws = GetWorksheet(SHEET_DATA_USAGE_BASELINE, showError:=False)
-    If ws Is Nothing Then
-        Set BuildUsageCounterEntries = result
-        Exit Function
-    End If
-
-    Set tbl = GetTable(ws, TBL_USAGE_BASELINE, showError:=False)
-    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then
-        Set BuildUsageCounterEntries = result
-        Exit Function
-    End If
-
-    For Each row In tbl.ListRows
-        intervalCode = Trim$(CStr(row.Range.Cells(1, 1).Value))
-        taskCode = Trim$(CStr(row.Range.Cells(1, 2).Value))
-        formatType = ResolveUsageFormatType(intervalCode, taskCode, _
-            Trim$(CStr(row.Range.Cells(1, 5).Value)), _
-            Trim$(CStr(row.Range.Cells(1, 3).Value)))
-        currentValue = GetCurrentUsageValue(intervalCode, taskCode)
-
-        result.Add Array( _
-            intervalCode, _
-            FormatUsageValueForDisplay(UsageValueAsDayFraction(currentValue, formatType), formatType), _
-            formatType, _
-            taskCode _
-        )
-    Next row
-
-    Set BuildUsageCounterEntries = result
 End Function
 
 Private Sub AppendUsageLogRow(ByVal sortieDate As Date, _

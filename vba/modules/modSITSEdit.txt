@@ -493,10 +493,7 @@ Private Function ValidateScalarIntervalText(ByVal intervalCode As String, _
 End Function
 
 Private Function UsesHourFormatForManualEntry(ByVal intervalCode As String) As Boolean
-    Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            UsesHourFormatForManualEntry = True
-    End Select
+    UsesHourFormatForManualEntry = IsHourUsageInterval(intervalCode)
 End Function
 
 Private Function LifeRemainingPromptHint(ByVal intervalCode As String) As String

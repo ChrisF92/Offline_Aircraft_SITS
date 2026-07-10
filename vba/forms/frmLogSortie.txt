@@ -1,129 +1,242 @@
 Option Explicit
 
 ' ========================================================================
-' LOG SORTIE USERFORM — Offline Aircraft SITS v2 (Phase 2)
+' LOG SORTIE USERFORM — Offline Aircraft SITS v2
 ' ========================================================================
 ' Create this UserForm manually in the VBA IDE and paste this code.
 ' See vba/forms/LOG_SORTIE_FORM_LAYOUT.txt for control names and layout.
+'
+' Approach for the large counter set:
+'   - Static shell: date, HUMS Op Number, three group frames, Submit/Cancel
+'   - Rows are created at runtime (Current | Usage | New Total)
+'   - Only Usage is editable; New Total = Current + Usage
+'   - Blank Usage rows are skipped on submit
 ' ========================================================================
 
-Private mPending As Collection
+Private Const ROW_HEIGHT As Single = 18
+Private Const ROW_TOP0 As Single = 32
+Private Const COL_CODE_LEFT As Single = 6
+Private Const COL_CURRENT_LEFT As Single = 36
+Private Const COL_USAGE_LEFT As Single = 108
+Private Const COL_NEW_LEFT As Single = 180
+Private Const COL_WIDTH As Single = 68
+Private Const CODE_WIDTH As Single = 28
+
+Private mRows As Collection
 
 Private Sub UserForm_Initialize()
-    Set mPending = New Collection
+    Set mRows = New Collection
     txtSortieDate.Value = Format$(Date, FORMAT_DATE)
-    txtSortieRef.Value = ""
-    PopulateSortieCounterList lstCounters
-    RefreshPendingList
-    UpdateSelectionLabel
+    txtHumsOpNumber.Value = ""
+    BuildAllGroups
 End Sub
 
-Private Sub lstCounters_Click()
-    UpdateSelectionLabel
-End Sub
-
-Private Sub cmdAdd_Click()
-    Dim selectedIndex As Long
-    Dim intervalCode As String
-    Dim taskCode As String
-    Dim formatType As String
-    Dim incrementValue As Variant
-    Dim failReason As String
-    Dim i As Long
-    Dim rowData As Variant
-
-    selectedIndex = lstCounters.ListIndex
-    If selectedIndex < 0 Then
-        MsgBox "Select a usage counter from the list.", vbExclamation, APP_NAME
-        Exit Sub
-    End If
-
-    intervalCode = lstCounters.List(selectedIndex, 0)
-    taskCode = lstCounters.List(selectedIndex, 3)
-    formatType = lstCounters.List(selectedIndex, 2)
-
-    incrementValue = ParseUsageIncrement(txtIncrement.Value, formatType, failReason)
-    If IsEmpty(incrementValue) Then
-        MsgBox failReason, vbExclamation, APP_NAME
-        txtIncrement.SetFocus
-        Exit Sub
-    End If
-
-    For i = mPending.Count To 1 Step -1
-        rowData = mPending(i)
-        If StrComp(CStr(rowData(0)), intervalCode, vbTextCompare) = 0 And _
-           StrComp(CStr(rowData(1)), taskCode, vbTextCompare) = 0 Then
-            mPending.Remove i
-            Exit For
-        End If
-    Next i
-
-    mPending.Add Array(intervalCode, taskCode, incrementValue, formatType)
-    txtIncrement.Value = ""
-    RefreshPendingList
-End Sub
-
-Private Sub cmdRemove_Click()
-    If lstPending.ListIndex < 0 Then
-        MsgBox "Select a pending increment to remove.", vbExclamation, APP_NAME
-        Exit Sub
-    End If
-
-    mPending.Remove lstPending.ListIndex + 1
-    RefreshPendingList
+Private Sub UserForm_QueryClose(Cancel As Integer, CloseMode As Integer)
+    Set mRows = Nothing
 End Sub
 
 Private Sub cmdSubmit_Click()
     Dim sortieDate As Date
-    Dim cleanPending As Object
-    Dim i As Long
-    Dim rowData As Variant
+    Dim pending As Object
+    Dim failReason As String
 
     If Not TryParseSortieDate(sortieDate) Then Exit Sub
 
-    Set cleanPending = CreateObject("Scripting.Dictionary")
-    For i = 1 To mPending.Count
-        rowData = mPending(i)
-        cleanPending(CStr(rowData(0)) & "|" & CStr(rowData(1))) = rowData(2)
-    Next i
+    If Not BuildPendingIncrements(pending, failReason) Then
+        MsgBox failReason, vbExclamation, APP_NAME
+        Exit Sub
+    End If
 
-    If CommitSortie(sortieDate, Trim$(txtSortieRef.Value), cleanPending, True) Then
+    If CommitSortie(sortieDate, Trim$(txtHumsOpNumber.Value), pending, True) Then
+        Set mRows = Nothing
         Unload Me
     End If
 End Sub
 
 Private Sub cmdCancel_Click()
+    Set mRows = Nothing
     Unload Me
 End Sub
 
-Private Sub UpdateSelectionLabel()
-    Dim selectedIndex As Long
-
-    selectedIndex = lstCounters.ListIndex
-    If selectedIndex < 0 Then
-        lblSelected.Caption = "Select a counter, enter increment, then click Add."
-        Exit Sub
-    End If
-
-    lblSelected.Caption = lstCounters.List(selectedIndex, 0) & _
-                          "  current " & lstCounters.List(selectedIndex, 1) & _
-                          "  (" & lstCounters.List(selectedIndex, 2) & ")"
+Private Sub BuildAllGroups()
+    BuildGroupFrame fraAirframe, "Usage Airframe", SortieUsageAirframeCodes()
+    BuildGroupFrame fraEngines, "Usage Engines", SortieUsageEngineCodes()
+    BuildGroupFrame fraWare, "Usage WARE", SortieUsageWareCodes()
 End Sub
 
-Private Sub RefreshPendingList()
+Private Sub BuildGroupFrame(ByVal fra As MSForms.Frame, _
+                            ByVal titleText As String, _
+                            ByVal codes As Variant)
     Dim i As Long
-    Dim rowData As Variant
-    Dim displayLine As String
+    Dim code As String
+    Dim topPos As Single
+    Dim rowHelper As clsSortieUsageRow
+    Dim taskCode As String
+    Dim formatType As String
+    Dim currentValue As Variant
+    Dim isAvailable As Boolean
+    Dim lbl As MSForms.Label
+    Dim txtCurrent As MSForms.TextBox
+    Dim txtUsage As MSForms.TextBox
+    Dim txtNew As MSForms.TextBox
 
-    lstPending.Clear
+    ClearFrameControls fra
+    fra.Caption = titleText
 
-    For i = 1 To mPending.Count
-        rowData = mPending(i)
-        displayLine = CStr(rowData(0)) & "  +" & _
-                      FormatUsageValueForDisplay(rowData(2), CStr(rowData(3)))
-        lstPending.AddItem displayLine
+    AddColumnHeader fra, "Current Total", COL_CURRENT_LEFT
+    AddColumnHeader fra, "Usage", COL_USAGE_LEFT
+    AddColumnHeader fra, "New Total", COL_NEW_LEFT
+
+    topPos = ROW_TOP0
+    For i = LBound(codes) To UBound(codes)
+        code = UCase$(Trim$(CStr(codes(i))))
+        ResolveSortieUsageCounter code, taskCode, formatType, currentValue, isAvailable
+
+        Set lbl = fra.Controls.Add("Forms.Label.1", "lblCode_" & code, True)
+        With lbl
+            .Left = COL_CODE_LEFT
+            .Top = topPos + 2
+            .Width = CODE_WIDTH
+            .Height = 14
+            .Caption = code
+            .Font.Bold = True
+        End With
+
+        Set txtCurrent = fra.Controls.Add("Forms.TextBox.1", "txtCurrent_" & code, True)
+        StyleReadOnlyBox txtCurrent, COL_CURRENT_LEFT, topPos
+        If isAvailable Then
+            txtCurrent.Value = FormatUsageValueForDisplay(currentValue, formatType)
+        Else
+            txtCurrent.Value = "(n/a)"
+            txtCurrent.ForeColor = RGB(128, 128, 128)
+        End If
+
+        Set txtUsage = fra.Controls.Add("Forms.TextBox.1", "txtUsage_" & code, True)
+        With txtUsage
+            .Left = COL_USAGE_LEFT
+            .Top = topPos
+            .Width = COL_WIDTH
+            .Height = 16
+            .Value = ""
+            .BackColor = COLOR_INPUT_HIGHLIGHT
+            .Enabled = isAvailable
+            .Locked = Not isAvailable
+        End With
+
+        Set txtNew = fra.Controls.Add("Forms.TextBox.1", "txtNew_" & code, True)
+        StyleReadOnlyBox txtNew, COL_NEW_LEFT, topPos
+        If isAvailable Then
+            txtNew.Value = txtCurrent.Value
+        Else
+            txtNew.Value = ""
+        End If
+
+        Set rowHelper = New clsSortieUsageRow
+        rowHelper.IntervalCode = code
+        rowHelper.TaskCode = taskCode
+        rowHelper.FormatType = formatType
+        rowHelper.IsAvailable = isAvailable
+        If isAvailable And Not IsEmpty(currentValue) Then
+            rowHelper.CurrentNumeric = CDbl(currentValue)
+        Else
+            rowHelper.CurrentNumeric = 0#
+        End If
+        Set rowHelper.CurrentBox = txtCurrent
+        Set rowHelper.UsageBox = txtUsage
+        Set rowHelper.NewBox = txtNew
+        mRows.Add rowHelper, code
+
+        topPos = topPos + ROW_HEIGHT
+    Next i
+
+    fra.ScrollBars = fmScrollBarsVertical
+    fra.ScrollHeight = topPos + 8
+End Sub
+
+Private Sub ClearFrameControls(ByVal fra As MSForms.Frame)
+    Dim i As Long
+
+    For i = fra.Controls.Count - 1 To 0 Step -1
+        fra.Controls.Remove fra.Controls(i).Name
     Next i
 End Sub
+
+Private Sub AddColumnHeader(ByVal fra As MSForms.Frame, _
+                            ByVal captionText As String, _
+                            ByVal leftPos As Single)
+    Dim lbl As MSForms.Label
+
+    Set lbl = fra.Controls.Add("Forms.Label.1", "hdr_" & Replace(captionText, " ", "_"), True)
+    With lbl
+        .Left = leftPos
+        .Top = 12
+        .Width = COL_WIDTH
+        .Height = 14
+        .Caption = captionText
+        .Font.Bold = True
+        .Font.Size = 8
+    End With
+End Sub
+
+Private Sub StyleReadOnlyBox(ByVal txt As MSForms.TextBox, _
+                             ByVal leftPos As Single, _
+                             ByVal topPos As Single)
+    With txt
+        .Left = leftPos
+        .Top = topPos
+        .Width = COL_WIDTH
+        .Height = 16
+        .Locked = True
+        .TabStop = False
+        .BackColor = RGB(240, 240, 240)
+    End With
+End Sub
+
+Private Function BuildPendingIncrements(ByRef pending As Object, _
+                                        ByRef failReason As String) As Boolean
+    Dim rowHelper As clsSortieUsageRow
+    Dim rawUsage As String
+    Dim incrementValue As Variant
+    Dim parseFail As String
+    Dim mergeKey As String
+
+    Set pending = CreateObject("Scripting.Dictionary")
+    failReason = ""
+
+    For Each rowHelper In mRows
+        If Not rowHelper.IsAvailable Then GoTo NextRow
+
+        rawUsage = Trim$(CStr(rowHelper.UsageBox.Value))
+        If Len(rawUsage) = 0 Then GoTo NextRow
+
+        If Len(Trim$(rowHelper.TaskCode)) = 0 Then
+            failReason = "Interval " & rowHelper.IntervalCode & _
+                         " is not in the usage baseline. Import it before logging."
+            Exit Function
+        End If
+
+        incrementValue = ParseUsageIncrement(rawUsage, rowHelper.FormatType, parseFail)
+        If IsEmpty(incrementValue) Then
+            failReason = rowHelper.IntervalCode & ": " & parseFail
+            On Error Resume Next
+            rowHelper.UsageBox.SetFocus
+            On Error GoTo 0
+            Exit Function
+        End If
+
+        mergeKey = rowHelper.IntervalCode & "|" & rowHelper.TaskCode
+        pending(mergeKey) = incrementValue
+
+NextRow:
+    Next rowHelper
+
+    If pending.Count = 0 Then
+        failReason = "Enter at least one usage value before submitting."
+        Exit Function
+    End If
+
+    BuildPendingIncrements = True
+End Function
 
 Private Function TryParseSortieDate(ByRef sortieDate As Date) As Boolean
     Dim entered As String
