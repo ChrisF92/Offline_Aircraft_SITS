@@ -437,6 +437,12 @@ VBA name shadowing ("expects an array" on a function call)
 All worksheets stuck hidden
   -> Click Repair Visibility on the Dashboard, or run RepairSetupSheetVisibility.
 
+Phase 0 Setup fails when data sheets are hidden (error during "Building sheets")
+  -> Fixed in modUtility / Setup_RunAll: setup now unhides all worksheets before
+     deleting/rebuilding. Re-import those modules if an older build still fails.
+  -> Workaround on an old build: Repair Visibility (or unhide all sheets), then
+     run Phase 0 Setup again.
+
 Serial numbers show as 1.11E+12 or lose leading zeros
   -> Re-import SITS/usage after updating modUtility, or click Repair Formats.
   -> Serial columns are stored as text (@) using the source cell display text.

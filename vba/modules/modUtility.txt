@@ -310,6 +310,14 @@ Public Function PromptOverwriteConfirm(ByVal dataDescription As String) As Boole
                                "Confirm Overwrite") = vbYes)
 End Function
 
+Public Sub UnhideAllWorksheets()
+    Dim ws As Worksheet
+
+    For Each ws In ThisWorkbook.Worksheets
+        ws.Visible = xlSheetVisible
+    Next ws
+End Sub
+
 Public Sub DeleteSheetIfExists(ByVal sheetName As String)
     Dim ws As Worksheet
 
@@ -321,15 +329,40 @@ Public Sub DeleteSheetIfExists(ByVal sheetName As String)
     On Error GoTo 0
 
     If Not ws Is Nothing Then
+        ' Excel also forbids deleting the last *visible* sheet while others
+        ' remain hidden — ensure another sheet is visible first.
+        EnsureAnotherSheetVisibleBeforeDelete ws
         Application.DisplayAlerts = False
         ws.Delete
         Application.DisplayAlerts = True
     End If
 End Sub
 
+' Excel forbids deleting the last visible sheet. Unhide a sibling first.
+Private Sub EnsureAnotherSheetVisibleBeforeDelete(ByVal wsToDelete As Worksheet)
+    Dim ws As Worksheet
+
+    For Each ws In ThisWorkbook.Worksheets
+        If Not ws Is wsToDelete Then
+            If ws.Visible = xlSheetVisible Then Exit Sub
+        End If
+    Next ws
+
+    For Each ws In ThisWorkbook.Worksheets
+        If Not ws Is wsToDelete Then
+            ws.Visible = xlSheetVisible
+            Exit Sub
+        End If
+    Next ws
+End Sub
+
 ' Excel requires at least one worksheet — delete extras, clear the last one.
 Public Sub PrepareWorkbookForSetup()
     Application.DisplayAlerts = False
+
+    ' Hidden data sheets from a prior Phase 0 run block deletes: Excel will not
+    ' remove the last visible sheet while any others remain hidden.
+    UnhideAllWorksheets
 
     Do While ThisWorkbook.Worksheets.Count > 1
         ThisWorkbook.Worksheets(1).Delete
@@ -396,12 +429,8 @@ Public Sub FinalizeSetupSheetLayout()
     ' Phase 0: unhide everything first, then hide data sheets with xlSheetHidden only
     ' (not xlSheetVeryHidden — that is hard to recover from if something goes wrong).
 
-    Dim ws As Worksheet
-
     ' Recover from any hidden state left by a partial or earlier failed run.
-    For Each ws In ThisWorkbook.Worksheets
-        ws.Visible = xlSheetVisible
-    Next ws
+    UnhideAllWorksheets
 
     ThisWorkbook.Worksheets(SHEET_DASHBOARD).Tab.Color = COLOR_TAB_VISIBLE
     ThisWorkbook.Worksheets(SHEET_SITS).Tab.Color = COLOR_TAB_VISIBLE
@@ -432,11 +461,7 @@ End Sub
 
 ' Run manually from VBA if sheets are stuck hidden after a failed setup.
 Public Sub RepairSetupSheetVisibility()
-    Dim ws As Worksheet
-
-    For Each ws In ThisWorkbook.Worksheets
-        ws.Visible = xlSheetVisible
-    Next ws
+    UnhideAllWorksheets
 
     On Error Resume Next
     ThisWorkbook.Worksheets(SHEET_DASHBOARD).Activate
