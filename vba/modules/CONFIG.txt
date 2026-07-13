@@ -9,7 +9,7 @@ Option Explicit
 
 ' --- Workbook identity ---
 Public Const APP_NAME As String = "Offline Aircraft SITS"
-Public Const APP_VERSION As String = "2.3.0"
+Public Const APP_VERSION As String = "2.3.1"
 Public Const AIRCRAFT_TYPE As String = "Wildcat"
 
 ' --- Visible sheets ---
@@ -129,6 +129,7 @@ Public Const CFG_SITS_SNAPSHOT_DATE As String = "SITSSnapshotDate"
 Public Const CFG_FORECAST_HOURS As String = "ForecastHours"
 Public Const CFG_FORECAST_DAYS As String = "ForecastDays"
 Public Const CFG_FORECAST_NUMBER As String = "ForecastNumber"
+Public Const CFG_SHOW_DEV_TOOLS As String = "ShowDevTools"
 
 ' --- Interval type codes ---
 Public Const TYPE_HH As String = "HH"
@@ -160,6 +161,8 @@ Public Const FAULT_PT3_H As String = "PT3-H"
 ' --- Named ranges ---
 Public Const NAMED_OPEN_WP_COUNT As String = "Open_WP_Count"
 Public Const NAMED_MANUAL_UPDATE_COUNT As String = "Manual_Update_Count"
+Public Const NAMED_WARNING_COUNT As String = "Warning_Period_Count"
+Public Const NAMED_OVERDUE_COUNT As String = "Overdue_Count"
 ' Legacy names retained for older workbooks during upgrade
 Public Const NAMED_ACTIVE_WP As String = "Active_WP"
 Public Const NAMED_EXTENSION_SNOW As String = "Extension_SNOW"

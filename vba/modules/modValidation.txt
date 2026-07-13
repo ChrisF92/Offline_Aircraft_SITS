@@ -80,6 +80,12 @@ Private Sub ValidateRequiredNamedRanges(ByRef issues As Collection)
     If Not NamedRangeExists(NAMED_MANUAL_UPDATE_COUNT) Then
         issues.Add "Missing named range: " & NAMED_MANUAL_UPDATE_COUNT
     End If
+    If Not NamedRangeExists(NAMED_WARNING_COUNT) Then
+        issues.Add "Missing named range: " & NAMED_WARNING_COUNT
+    End If
+    If Not NamedRangeExists(NAMED_OVERDUE_COUNT) Then
+        issues.Add "Missing named range: " & NAMED_OVERDUE_COUNT
+    End If
 End Sub
 
 Public Function ValidateSetupReady() As Boolean

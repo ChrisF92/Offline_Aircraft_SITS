@@ -2092,6 +2092,50 @@ Private Function TryGetWarningLifeValue(ByVal sourceRow As ListRow, _
     End Select
 End Function
 
+' Dashboard status counts — same amber/pink rules as SITS view highlighting.
+' Manual-update tasks are excluded from both counts (same priority as the view).
+Public Function CountWarningPeriodTasks() As Long
+    CountWarningPeriodTasks = CountSITSTasksByWarnColor(COLOR_WARN_AMBER)
+End Function
+
+Public Function CountOverdueTasks() As Long
+    CountOverdueTasks = CountSITSTasksByWarnColor(COLOR_WARN_PINK)
+End Function
+
+Private Function CountSITSTasksByWarnColor(ByVal targetColor As Long) As Long
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+    Dim colInterval As Long
+    Dim colManualFlag As Long
+    Dim intervalCode As String
+    Dim warnHoursFraction As Double
+    Dim warnDays As Long
+    Dim warnColor As Long
+    Dim count As Long
+
+    Set ws = GetWorksheet(SHEET_DATA_SITS, showError:=False)
+    If ws Is Nothing Then Exit Function
+    Set tbl = GetTable(ws, TBL_SITS, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    colInterval = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)
+    colManualFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
+    If colInterval = 0 Then Exit Function
+
+    warnHoursFraction = ParseWarnHoursSetting()
+    warnDays = CLng(NzSITSNumber(GetConfigValue(CFG_WARN_DAYS, 7)))
+
+    For Each row In tbl.ListRows
+        intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, colInterval).Value)))
+        warnColor = ResolveSITSViewWarningColor(intervalCode, warnHoursFraction, warnDays, _
+                                               row, colManualFlag)
+        If warnColor = targetColor Then count = count + 1
+    Next row
+
+    CountSITSTasksByWarnColor = count
+End Function
+
 Private Function LookupUsageValueByInterval(ByVal intervalCode As String, _
                                             ByRef formatType As String) As Variant
     Dim lookup As Object
