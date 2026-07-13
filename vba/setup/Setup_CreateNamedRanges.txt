@@ -16,9 +16,13 @@ Public Sub Setup_CreateNamedRanges(Optional ByVal silent As Boolean = False)
     DeleteNamedRangeIfExists NAMED_EXTENSION_SNOW
     DeleteNamedRangeIfExists NAMED_OPEN_WP_COUNT
     DeleteNamedRangeIfExists NAMED_MANUAL_UPDATE_COUNT
+    DeleteNamedRangeIfExists NAMED_WARNING_COUNT
+    DeleteNamedRangeIfExists NAMED_OVERDUE_COUNT
 
     ThisWorkbook.Names.Add Name:=NAMED_OPEN_WP_COUNT, RefersTo:="=" & SHEET_DASHBOARD & "!$C$8"
     ThisWorkbook.Names.Add Name:=NAMED_MANUAL_UPDATE_COUNT, RefersTo:="=" & SHEET_DASHBOARD & "!$C$9"
+    ThisWorkbook.Names.Add Name:=NAMED_WARNING_COUNT, RefersTo:="=" & SHEET_DASHBOARD & "!$C$10"
+    ThisWorkbook.Names.Add Name:=NAMED_OVERDUE_COUNT, RefersTo:="=" & SHEET_DASHBOARD & "!$C$11"
 
     SetExcelState "enable"
     If Not silent Then MsgBox "Named ranges created.", vbInformation, "Setup — Names"

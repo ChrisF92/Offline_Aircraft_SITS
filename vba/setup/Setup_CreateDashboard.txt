@@ -6,12 +6,24 @@ Option Explicit
 ' RefreshDashboardLayout fully rebuilds the sheet (master setup / explicit
 ' Rebuild). EnsureDashboardActionButtons only adds missing buttons so
 ' developer placement and column widths survive day-to-day use.
-' Setup Wizard is shown only until aircraft setup completes (kept on master).
+'
+' Pre-setup / master: only Setup Wizard is shown under User Actions.
+' After setup: Log Sortie, Work Packages, View Audit Log, Extend, Defer.
+' Import SITS and Refresh Usage live under Developer Tools.
+'
+' Developer Tools are hidden by default. Run EnableDevTools (Alt+F8) to
+' show the whole section; HideDevTools (or the button) to hide it again.
 ' ========================================================================
 
-Private Const BTN_WIDTH As Double = 150
-Private Const BTN_HEIGHT As Double = 24
-Private Const BTN_COL_GAP As Double = 10
+Private Const BTN_WIDTH As Double = 140
+Private Const BTN_HEIGHT As Double = 26
+Private Const BTN_COL_GAP As Double = 12
+Private Const BTN_ROW_HEIGHT As Double = 32
+
+Private Const USER_BTN_START_ROW As Long = 14
+Private Const DEV_HEADER_ROW As Long = 18
+Private Const DEV_HELP_ROW As Long = 19
+Private Const DEV_BTN_START_ROW As Long = 20
 
 Public Sub Setup_CreateDashboard(Optional ByVal silent As Boolean = False)
     If Not silent Then
@@ -32,9 +44,9 @@ Public Sub RefreshDashboardLayout()
     RemoveDashboardButtons ws
     ws.Cells.Clear
     ws.Columns("A").ColumnWidth = 2
-    ws.Columns("B").ColumnWidth = 28
-    ws.Columns("C").ColumnWidth = 24
-    ws.Columns("D").ColumnWidth = 40
+    ws.Columns("B").ColumnWidth = 32
+    ws.Columns("C").ColumnWidth = 18
+    ws.Columns("D").ColumnWidth = 28
 
     With ws.Range("B2")
         .Value = APP_NAME
@@ -52,6 +64,7 @@ Public Sub RefreshDashboardLayout()
         "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_TAIL_NUMBER & """,tblConfig[Setting],0)),"""" )"
     WriteLabelValue ws, "B7", "Setup Complete:", _
         "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_SETUP_COMPLETE & """,tblConfig[Setting],0)),FALSE)"
+
     WriteLabel ws, "B8", "Open work packages:"
     ws.Range("C8").Value = CountOpenWorkPackages()
     ws.Range("C8").NumberFormat = FORMAT_INTEGER
@@ -63,43 +76,25 @@ Public Sub RefreshDashboardLayout()
     ws.Range("C9").Interior.Color = COLOR_MANUAL_BLUE
     SetCellCommentText ws.Range("C9"), BuildManualUpdateDashboardComment()
 
-    WriteSectionHeader ws, "B11", "User Actions"
-    PrepareButtonRows ws
-    If ShouldShowSetupWizardButton() Then
-        AddDashboardButton ws, "B12", "Setup Wizard", "RunSetupWizard"
+    WriteLabel ws, "B10", "Tasks in warning period:"
+    ws.Range("C10").Value = CountWarningPeriodTasks()
+    ws.Range("C10").NumberFormat = FORMAT_INTEGER
+    ws.Range("C10").Interior.Color = COLOR_WARN_AMBER
+
+    WriteLabel ws, "B11", "Tasks overdue:"
+    ws.Range("C11").Value = CountOverdueTasks()
+    ws.Range("C11").NumberFormat = FORMAT_INTEGER
+    ws.Range("C11").Interior.Color = COLOR_WARN_PINK
+
+    CenterStatusValueCells ws
+
+    WriteSectionHeader ws, "B13", "User Actions"
+    PrepareUserButtonRows ws
+    SyncUserActionButtons ws, forceAdd:=True
+
+    If AreDevToolsEnabled() Then
+        ShowDashboardDevToolsSection ws, forceAdd:=True
     End If
-    AddDashboardButton ws, "C12", "Log Sortie", "RunLogSortie"
-    AddDashboardButton ws, "B13", "Import SITS", "RunImportSITSFromFile"
-    AddDashboardButton ws, "C13", "Refresh Usage", "RefreshUsageView"
-    AddDashboardButton ws, "B14", "Work Packages", "RunManageWorkPackages"
-    AddDashboardButton ws, "C14", "View Audit Log", "ViewAuditLog"
-    AddDashboardButton ws, "B15", "Extend", "RunExtendFromSelection"
-    AddDashboardButton ws, "C15", "Defer", "RunDeferFromSelection"
-
-    WriteSectionHeader ws, "B17", "Developer Tools"
-    ws.Range("B18").Value = "Rebuild macros after pasting updated VBA modules. Rebuild Dashboard resets layout; Ensure Missing Buttons only adds new ones."
-    ws.Range("B18").Font.Italic = True
-    ws.Range("B18").Font.Size = 9
-    ws.Range("B18").Font.Color = RGB(89, 89, 89)
-
-    AddDashboardButton ws, "B19", "Repair Formats", "RepairWorkbookFormats"
-    AddDashboardButton ws, "C19", "Repair Visibility", "RepairSetupSheetVisibility"
-    AddDashboardButton ws, "B20", "Validate Structure", "RunValidateWorkbookStructure"
-    AddDashboardButton ws, "C20", "Rebuild Dashboard", "RefreshDashboardLayout"
-    AddDashboardButton ws, "B21", "Ensure Missing Buttons", "EnsureDashboardActionButtons"
-    AddDashboardButton ws, "C21", "Phase 0 Setup", "Setup_RunAll"
-    AddDashboardButton ws, "B22", "Rebuild SITS Layout", "RebuildSITSViewLayout"
-    AddDashboardButton ws, "C22", "Format Usage Matrix", "Setup_FormatUsageMatrix"
-
-    WriteSectionHeader ws, "B24", "Import Requirements"
-    ws.Range("B25").Value = "SITS Long Forecast: 9 required columns (strict — abort if any missing)."
-    ws.Range("B26").Value = "Usage exports: Interval Type, Task Code, Life Used, Top Serial."
-    ws.Range("B27").Value = "Engine usage must include SM and SN (WC/STARTS/ECU)."
-    ws.Range("B28").Value = "ORN format: ####TAILDDMMYY (e.g. 7034ZZ383081125)."
-    ws.Range("B29").Value = "Extend: same Interval Type + Actual Interval. Defer: one PT2/PT3 at a time."
-    ws.Range("B30").Value = "Log Sortie: enter Usage only (Current/New Total are calculated). HUMS Op Number required."
-    ws.Range("B31").Value = "WARE counters IL/IR/HE/FT appear on the form once present in the usage import."
-    ws.Range("B32").Value = "Layout tip: tweak column widths / button positions on the Master; refresh does not reset them."
 
     ws.Activate
     ws.Range("B2").Select
@@ -125,6 +120,16 @@ Public Sub RefreshDashboardStatusCounts()
 
     commentText = BuildManualUpdateDashboardComment()
     SetCellCommentText ws.Range("C9"), commentText
+
+    ws.Range("C10").Value = CountWarningPeriodTasks()
+    ws.Range("C10").NumberFormat = FORMAT_INTEGER
+    ws.Range("C10").Interior.Color = COLOR_WARN_AMBER
+
+    ws.Range("C11").Value = CountOverdueTasks()
+    ws.Range("C11").NumberFormat = FORMAT_INTEGER
+    ws.Range("C11").Interior.Color = COLOR_WARN_PINK
+
+    CenterStatusValueCells ws
     WriteWorkbookStatusLine ws
     On Error GoTo 0
 End Sub
@@ -137,24 +142,51 @@ Public Sub EnsureDashboardActionButtons()
     If ws Is Nothing Then Exit Sub
 
     SetExcelState "disable"
-    SyncSetupWizardButton ws
-    EnsureDashboardButton ws, "C12", "Log Sortie", "RunLogSortie"
-    EnsureDashboardButton ws, "B13", "Import SITS", "RunImportSITSFromFile"
-    EnsureDashboardButton ws, "C13", "Refresh Usage", "RefreshUsageView"
-    EnsureDashboardButton ws, "B14", "Work Packages", "RunManageWorkPackages"
-    EnsureDashboardButton ws, "C14", "View Audit Log", "ViewAuditLog"
-    EnsureDashboardButton ws, "B15", "Extend", "RunExtendFromSelection"
-    EnsureDashboardButton ws, "C15", "Defer", "RunDeferFromSelection"
-    EnsureDashboardButton ws, "B19", "Repair Formats", "RepairWorkbookFormats"
-    EnsureDashboardButton ws, "C19", "Repair Visibility", "RepairSetupSheetVisibility"
-    EnsureDashboardButton ws, "B20", "Validate Structure", "RunValidateWorkbookStructure"
-    EnsureDashboardButton ws, "C20", "Rebuild Dashboard", "RefreshDashboardLayout"
-    EnsureDashboardButton ws, "B21", "Ensure Missing Buttons", "EnsureDashboardActionButtons"
-    EnsureDashboardButton ws, "C21", "Phase 0 Setup", "Setup_RunAll"
-    EnsureDashboardButton ws, "B22", "Rebuild SITS Layout", "RebuildSITSViewLayout"
-    EnsureDashboardButton ws, "C22", "Format Usage Matrix", "Setup_FormatUsageMatrix"
+    PrepareUserButtonRows ws
+    SyncUserActionButtons ws, forceAdd:=False
+    If AreDevToolsEnabled() Then
+        ShowDashboardDevToolsSection ws, forceAdd:=False
+    Else
+        HideDashboardDevToolsSection ws
+    End If
     SetExcelState "enable"
 End Sub
+
+' Alt+F8 → EnableDevTools — reveals the whole Developer Tools section.
+Public Sub EnableDevTools()
+    Dim ws As Worksheet
+
+    SetConfigValue CFG_SHOW_DEV_TOOLS, True
+    Set ws = GetWorksheet(SHEET_DASHBOARD, showError:=False)
+    If ws Is Nothing Then
+        MsgBox "Dashboard sheet not found.", vbExclamation, APP_NAME
+        Exit Sub
+    End If
+
+    SetExcelState "disable"
+    ShowDashboardDevToolsSection ws, forceAdd:=True
+    SetExcelState "enable"
+    MsgBox "Developer Tools are now visible on the Dashboard." & vbCrLf & _
+           "Run HideDevTools (or click Hide Dev Tools) to hide them again.", _
+           vbInformation, APP_NAME
+End Sub
+
+' Alt+F8 → HideDevTools — or use the button inside Developer Tools.
+Public Sub HideDevTools()
+    Dim ws As Worksheet
+
+    SetConfigValue CFG_SHOW_DEV_TOOLS, False
+    Set ws = GetWorksheet(SHEET_DASHBOARD, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    SetExcelState "disable"
+    HideDashboardDevToolsSection ws
+    SetExcelState "enable"
+End Sub
+
+Public Function AreDevToolsEnabled() As Boolean
+    AreDevToolsEnabled = CBool(GetConfigValue(CFG_SHOW_DEV_TOOLS, False))
+End Function
 
 Private Sub WriteWorkbookStatusLine(ByVal ws As Worksheet)
     With ws.Range("B4")
@@ -173,35 +205,139 @@ Private Sub WriteWorkbookStatusLine(ByVal ws As Worksheet)
     End With
 End Sub
 
-' Setup Wizard stays on the master template and unfinished aircraft copies only.
-Private Function ShouldShowSetupWizardButton() As Boolean
-    ShouldShowSetupWizardButton = (Not IsSetupComplete()) Or IsMasterTemplate()
+' Before Setup Wizard completes (and on the master), only Setup Wizard is shown.
+Private Function IsPreSetupUserMode() As Boolean
+    IsPreSetupUserMode = (Not IsSetupComplete()) Or IsMasterTemplate()
 End Function
 
-Private Sub SyncSetupWizardButton(ByVal ws As Worksheet)
-    If ShouldShowSetupWizardButton() Then
-        EnsureDashboardButton ws, "B12", "Setup Wizard", "RunSetupWizard"
+Private Sub SyncUserActionButtons(ByVal ws As Worksheet, ByVal forceAdd As Boolean)
+    If IsPreSetupUserMode() Then
+        RemoveDashboardButtonForMacro ws, "RunLogSortie"
+        RemoveDashboardButtonForMacro ws, "RunManageWorkPackages"
+        RemoveDashboardButtonForMacro ws, "ViewAuditLog"
+        RemoveDashboardButtonForMacro ws, "RunExtendFromSelection"
+        RemoveDashboardButtonForMacro ws, "RunDeferFromSelection"
+
+        If forceAdd Then
+            AddDashboardButtonAt ws, USER_BTN_START_ROW, 0, "Setup Wizard", "RunSetupWizard"
+        Else
+            EnsureDashboardButtonAt ws, USER_BTN_START_ROW, 0, "Setup Wizard", "RunSetupWizard"
+        End If
     Else
         RemoveDashboardButtonForMacro ws, "RunSetupWizard"
+
+        If forceAdd Then
+            AddDashboardButtonAt ws, USER_BTN_START_ROW, 0, "Log Sortie", "RunLogSortie"
+            AddDashboardButtonAt ws, USER_BTN_START_ROW, 1, "Work Packages", "RunManageWorkPackages"
+            AddDashboardButtonAt ws, USER_BTN_START_ROW + 1, 0, "View Audit Log", "ViewAuditLog"
+            AddDashboardButtonAt ws, USER_BTN_START_ROW + 1, 1, "Extend", "RunExtendFromSelection"
+            AddDashboardButtonAt ws, USER_BTN_START_ROW + 2, 0, "Defer", "RunDeferFromSelection"
+        Else
+            EnsureDashboardButtonAt ws, USER_BTN_START_ROW, 0, "Log Sortie", "RunLogSortie"
+            EnsureDashboardButtonAt ws, USER_BTN_START_ROW, 1, "Work Packages", "RunManageWorkPackages"
+            EnsureDashboardButtonAt ws, USER_BTN_START_ROW + 1, 0, "View Audit Log", "ViewAuditLog"
+            EnsureDashboardButtonAt ws, USER_BTN_START_ROW + 1, 1, "Extend", "RunExtendFromSelection"
+            EnsureDashboardButtonAt ws, USER_BTN_START_ROW + 2, 0, "Defer", "RunDeferFromSelection"
+        End If
+    End If
+
+    ' Import SITS / Refresh Usage are developer-only — remove leftovers when tools are hidden.
+    If Not AreDevToolsEnabled() Then
+        RemoveDashboardButtonForMacro ws, "RunImportSITSFromFile"
+        RemoveDashboardButtonForMacro ws, "RefreshUsageView"
     End If
 End Sub
 
-Private Sub AddDashboardButton(ByVal ws As Worksheet, ByVal anchorCell As String, _
-                               ByVal caption As String, ByVal macroName As String)
+Private Sub ShowDashboardDevToolsSection(ByVal ws As Worksheet, ByVal forceAdd As Boolean)
+    WriteSectionHeader ws, "B" & DEV_HEADER_ROW, "Developer Tools"
+    With ws.Range("B" & DEV_HELP_ROW)
+        .Value = "Rebuild macros after pasting updated VBA modules. Rebuild Dashboard resets layout; " & _
+                 "Ensure Missing Buttons only adds new ones. Run HideDevTools to hide this section."
+        .Font.Italic = True
+        .Font.Size = 9
+        .Font.Color = RGB(89, 89, 89)
+    End With
+
+    PrepareDevButtonRows ws
+
+    If forceAdd Then
+        RemoveDevToolButtons ws
+        AddDevToolButtons ws
+    Else
+        EnsureDevToolButtons ws
+    End If
+End Sub
+
+Private Sub HideDashboardDevToolsSection(ByVal ws As Worksheet)
+    RemoveDevToolButtons ws
+    On Error Resume Next
+    ws.Range("B" & DEV_HEADER_ROW & ":D" & (DEV_BTN_START_ROW + 5)).ClearContents
+    ws.Range("B" & DEV_HEADER_ROW & ":D" & (DEV_BTN_START_ROW + 5)).ClearComments
+    On Error GoTo 0
+End Sub
+
+Private Sub AddDevToolButtons(ByVal ws As Worksheet)
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW, 0, "Import SITS", "RunImportSITSFromFile"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW, 1, "Refresh Usage", "RefreshUsageView"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 1, 0, "Repair Formats", "RepairWorkbookFormats"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 1, 1, "Repair Visibility", "RepairSetupSheetVisibility"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 2, 0, "Validate Structure", "RunValidateWorkbookStructure"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 2, 1, "Rebuild Dashboard", "RefreshDashboardLayout"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 0, "Ensure Missing Buttons", "EnsureDashboardActionButtons"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 1, "Phase 0 Setup", "Setup_RunAll"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 0, "Rebuild SITS Layout", "RebuildSITSViewLayout"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 1, "Format Usage Matrix", "Setup_FormatUsageMatrix"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 0, "Hide Dev Tools", "HideDevTools"
+End Sub
+
+Private Sub EnsureDevToolButtons(ByVal ws As Worksheet)
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW, 0, "Import SITS", "RunImportSITSFromFile"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW, 1, "Refresh Usage", "RefreshUsageView"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 1, 0, "Repair Formats", "RepairWorkbookFormats"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 1, 1, "Repair Visibility", "RepairSetupSheetVisibility"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 2, 0, "Validate Structure", "RunValidateWorkbookStructure"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 2, 1, "Rebuild Dashboard", "RefreshDashboardLayout"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 0, "Ensure Missing Buttons", "EnsureDashboardActionButtons"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 1, "Phase 0 Setup", "Setup_RunAll"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 0, "Rebuild SITS Layout", "RebuildSITSViewLayout"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 1, "Format Usage Matrix", "Setup_FormatUsageMatrix"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 0, "Hide Dev Tools", "HideDevTools"
+End Sub
+
+Private Sub RemoveDevToolButtons(ByVal ws As Worksheet)
+    RemoveDashboardButtonForMacro ws, "RunImportSITSFromFile"
+    RemoveDashboardButtonForMacro ws, "RefreshUsageView"
+    RemoveDashboardButtonForMacro ws, "RepairWorkbookFormats"
+    RemoveDashboardButtonForMacro ws, "RepairSetupSheetVisibility"
+    RemoveDashboardButtonForMacro ws, "RunValidateWorkbookStructure"
+    RemoveDashboardButtonForMacro ws, "RefreshDashboardLayout"
+    RemoveDashboardButtonForMacro ws, "EnsureDashboardActionButtons"
+    RemoveDashboardButtonForMacro ws, "Setup_RunAll"
+    RemoveDashboardButtonForMacro ws, "RebuildSITSViewLayout"
+    RemoveDashboardButtonForMacro ws, "Setup_FormatUsageMatrix"
+    RemoveDashboardButtonForMacro ws, "HideDevTools"
+End Sub
+
+Private Sub AddDashboardButtonAt(ByVal ws As Worksheet, ByVal rowNum As Long, _
+                                 ByVal colIndex As Long, ByVal caption As String, _
+                                 ByVal macroName As String)
     Dim anchor As Range
     Dim btn As Button
+    Dim leftPos As Double
 
-    Set anchor = ws.Range(anchorCell)
-    Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, BTN_WIDTH, BTN_HEIGHT)
+    Set anchor = ws.Range("B" & rowNum)
+    leftPos = anchor.Left + (colIndex * (BTN_WIDTH + BTN_COL_GAP))
+    Set btn = ws.Buttons.Add(leftPos, anchor.Top, BTN_WIDTH, BTN_HEIGHT)
     btn.OnAction = macroName
     btn.Caption = caption
     btn.Placement = xlFreeFloating
 End Sub
 
-Private Sub EnsureDashboardButton(ByVal ws As Worksheet, ByVal anchorCell As String, _
-                                  ByVal caption As String, ByVal macroName As String)
+Private Sub EnsureDashboardButtonAt(ByVal ws As Worksheet, ByVal rowNum As Long, _
+                                    ByVal colIndex As Long, ByVal caption As String, _
+                                    ByVal macroName As String)
     If DashboardHasButtonForMacro(ws, macroName) Then Exit Sub
-    AddDashboardButton ws, anchorCell, caption, macroName
+    AddDashboardButtonAt ws, rowNum, colIndex, caption, macroName
 End Sub
 
 Private Sub RemoveDashboardButtonForMacro(ByVal ws As Worksheet, ByVal macroName As String)
@@ -240,9 +376,12 @@ Private Function DashboardHasButtonForMacro(ByVal ws As Worksheet, ByVal macroNa
     On Error GoTo 0
 End Function
 
-Private Sub PrepareButtonRows(ByVal ws As Worksheet)
-    ws.Rows("12:15").RowHeight = 22
-    ws.Rows("19:22").RowHeight = 22
+Private Sub PrepareUserButtonRows(ByVal ws As Worksheet)
+    ws.Rows(USER_BTN_START_ROW & ":" & (USER_BTN_START_ROW + 2)).RowHeight = BTN_ROW_HEIGHT
+End Sub
+
+Private Sub PrepareDevButtonRows(ByVal ws As Worksheet)
+    ws.Rows(DEV_BTN_START_ROW & ":" & (DEV_BTN_START_ROW + 5)).RowHeight = BTN_ROW_HEIGHT
 End Sub
 
 Private Sub RemoveDashboardButtons(ByVal ws As Worksheet)
@@ -259,6 +398,13 @@ Private Sub RemoveDashboardButtons(ByVal ws As Worksheet)
         End If
     Next shp
     On Error GoTo 0
+End Sub
+
+Private Sub CenterStatusValueCells(ByVal ws As Worksheet)
+    With ws.Range("C6:C11")
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+    End With
 End Sub
 
 Private Sub WriteSectionHeader(ByVal ws As Worksheet, ByVal cellAddress As String, ByVal title As String)

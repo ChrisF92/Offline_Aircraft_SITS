@@ -218,14 +218,22 @@ Manage:
      correct due-soon position (e.g. 25:00 no longer sits above sooner jobs)
 7. Form stays open and refreshes after Delete/Remove/Close.
 
-Dashboard (Phase 4/5):
+Dashboard (Phase 4/5 / v2.3.1):
   Open work packages count
   Tasks needing manual update count
-  User Actions include Work Packages, Extend, Defer
+  Tasks in warning period count (amber — same rules as SITS view)
+  Tasks overdue count (pink — same rules as SITS view)
+  Status values in C6:C11 are centred
+  Pre-setup / master: only **Setup Wizard** under User Actions
+  After setup: Log Sortie, Work Packages, View Audit Log, Extend, Defer (two columns)
+  Import SITS and Refresh Usage moved to Developer Tools
 
-Developer Tools:
-  Repair Formats, Repair Visibility, Validate Structure, Rebuild Dashboard,
-  Ensure Missing Buttons, Phase 0 Setup, Rebuild SITS Layout
+Developer Tools (hidden by default):
+  Alt+F8 → **EnableDevTools** to show the whole section; **HideDevTools** (or the
+  Hide Dev Tools button) to hide it again.
+  Import SITS, Refresh Usage, Repair Formats, Repair Visibility, Validate Structure,
+  Rebuild Dashboard, Ensure Missing Buttons, Phase 0 Setup, Rebuild SITS Layout,
+  Format Usage Matrix, Hide Dev Tools
 
 Step 9 — Extensions and deferrals (Phase 5)
 -------------------------------------------
@@ -375,6 +383,20 @@ Upgrading an existing workbook for the Log Sortie form redesign (v2.3.0)
    - Run **Setup_FormatUsageMatrix** (Dashboard developer button
      "Format Usage Matrix", or macro). Afterwards Refresh Usage / Log Sortie
      keep the matrix current.
+
+Upgrading for Dashboard status counts and Dev Tools (v2.3.1)
+------------------------------------------------------------
+1. Replace modules: CONFIG, modSITS, modValidation, Setup_CreateConfig,
+   Setup_CreateNamedRanges, Setup_CreateDashboard (modSetupDashboard).
+2. Compile VBAProject.
+3. Run **Setup_CreateNamedRanges** (or Phase 0 Setup) so Warning_Period_Count
+   and Overdue_Count exist.
+4. Run **Rebuild Dashboard** for the new layout (centred status values,
+   warning/overdue counts, two-column user buttons, Import Requirements
+   removed). Developer Tools stay hidden until you run **EnableDevTools**
+   via Alt+F8.
+5. Optional: set ShowDevTools in tblConfig, or just use EnableDevTools /
+   HideDevTools — EnableDevTools writes the config flag automatically.
 
 Upgrading for HUMS Op No on the Usage matrix
 --------------------------------------------
