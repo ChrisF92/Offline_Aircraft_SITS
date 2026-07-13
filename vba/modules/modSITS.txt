@@ -10,7 +10,8 @@ Option Explicit
 ' Layout ownership: column widths, row heights, and action-button placement
 ' are set once during master setup (or RebuildSITSViewLayout). Day-to-day
 ' RefreshSITSView rewrites data only, tidies shell chrome, and adds any
-' missing action buttons (uniform size; existing placement preserved).
+' missing action buttons at default anchors — never moves or resizes
+' buttons the developer has already placed.
 ' ========================================================================
 
 Private Const SITS_VIEW_HEADER_ROW As Long = 7
@@ -51,7 +52,7 @@ Public Sub RebuildSITSViewLayout()
     EnsureSITSViewShellExists ws
     TidySITSViewShellChrome ws
     ApplySITSViewDefaultColumnWidths ws
-    EnsureSITSViewActionButtons ws
+    EnsureSITSViewActionButtons ws, normaliseExisting:=True
     SetExcelState "enable"
 End Sub
 
@@ -1252,16 +1253,18 @@ Private Sub ClearSITSViewControls(ByVal ws As Worksheet)
 End Sub
 
 ' Add any missing SITS action buttons at default anchors; never move existing ones.
-' Existing buttons keep Left/Top but are normalised to a uniform size + caption.
-Private Sub EnsureSITSViewActionButtons(ByVal ws As Worksheet)
-    EnsureSheetButton ws, "Refresh View", "RunRefreshSITS", "D1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Create Work Package", "RunCreateWorkPackage", "F1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Manage Work Packages", "RunManageWorkPackages", "H1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Horizon", "RunHorizonSettings", "J1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Extend", "RunExtendFromSelection", "D3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Defer", "RunDeferFromSelection", "F3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Add Task", "RunAddSITSTask", "H3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Remove Task", "RunRemoveSITSTasks", "J3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
+' When normaliseExisting:=True (Phase 0 / Rebuild SITS Layout only), also force
+' uniform caption + size on buttons that are already present.
+Private Sub EnsureSITSViewActionButtons(ByVal ws As Worksheet, _
+                                        Optional ByVal normaliseExisting As Boolean = False)
+    EnsureSheetButton ws, "Refresh View", "RunRefreshSITS", "D1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Create Work Package", "RunCreateWorkPackage", "F1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Manage Work Packages", "RunManageWorkPackages", "H1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Horizon", "RunHorizonSettings", "J1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Extend", "RunExtendFromSelection", "D3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Defer", "RunDeferFromSelection", "F3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Add Task", "RunAddSITSTask", "H3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Remove Task", "RunRemoveSITSTasks", "J3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
 End Sub
 
 Private Sub AddSITSViewActionButtons(ByVal ws As Worksheet)
@@ -1293,16 +1296,19 @@ End Function
 
 Private Sub EnsureSheetButton(ByVal ws As Worksheet, ByVal caption As String, _
                               ByVal macroName As String, ByVal anchorCell As String, _
-                              ByVal btnWidth As Double, ByVal btnHeight As Double)
+                              ByVal btnWidth As Double, ByVal btnHeight As Double, _
+                              Optional ByVal normaliseExisting As Boolean = False)
     Dim btn As Button
     Dim anchor As Range
 
     Set btn = FindSheetButtonForMacro(ws, macroName)
     If Not btn Is Nothing Then
-        ' Keep developer placement; only normalise caption and size.
-        btn.Caption = caption
-        btn.Width = btnWidth
-        btn.Height = btnHeight
+        If normaliseExisting Then
+            ' Phase 0 / Rebuild only — keep Left/Top, force uniform caption + size.
+            btn.Caption = caption
+            btn.Width = btnWidth
+            btn.Height = btnHeight
+        End If
         Exit Sub
     End If
 

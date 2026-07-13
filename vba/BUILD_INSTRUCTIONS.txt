@@ -176,7 +176,8 @@ Step 7 — SITS view and refresh (Phase 3)
    - Current values are summarised on row 3 (read-only); edit only via Horizon
 3. Use **Refresh View** / **Create Work Package** / **Manage Work Packages** /
    **Horizon** / **Extend** / **Defer** buttons on the SITS sheet (missing
-   buttons are added by RefreshSITS; sizes are kept uniform).
+   buttons are added by RefreshSITS; existing size and placement are left alone).
+   Uniform button sizing is applied only by Phase 0 setup / **Rebuild SITS Layout**.
 4. Use the **AutoFilter** dropdowns on the header row (row 7) to show/hide interval
    types (e.g. hide AU, OP) or other columns — standard Excel filtering.
 5. Life remaining highlighting:
