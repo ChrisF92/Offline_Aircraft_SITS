@@ -14,6 +14,10 @@ Public Sub Setup_CreateSheets()
     SetExcelState "disable"
     Application.DisplayAlerts = False
 
+    ' Prior Phase 0 runs leave data sheets hidden. Unhide before teardown so
+    ' Excel will allow deleting every sheet except the last one.
+    UnhideAllWorksheets
+
     If ThisWorkbook.Worksheets.Count = 1 Then
         ReuseSheetAs SHEET_DASHBOARD
     Else
