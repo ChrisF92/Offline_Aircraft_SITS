@@ -223,13 +223,15 @@ Private Sub FormatSITSView()
 
     ws.Range("A2").Value = "Tail:"
     ws.Range("B2").Value = "(set during setup)"
-    ws.Range("A3").Value = "Forecast hours (HH/E1/E2):"
-    ws.Range("B3").Value = 50
-    ws.Range("A4").Value = "Forecast days (DD):"
-    ws.Range("B4").Value = 90
-    ws.Range("A5").Value = "Forecast number (other):"
-    ws.Range("B5").Value = 500
-    ws.Range("A6").Value = "Use filter dropdowns on row 7 to hide interval types. Check tasks to select for future work packages."
+    ws.Range("A3").Value = "Horizon: 50h / 90d / 500   (use Horizon button — 0 = show all)"
+    ws.Range("A3").Font.Size = 9
+    ws.Range("A3").Font.Color = RGB(89, 89, 89)
+    ws.Range("A4").ClearContents
+    ws.Range("A5").ClearContents
+    ws.Range("A6").ClearContents
+    ws.Range("B3").ClearContents
+    ws.Range("B4").ClearContents
+    ws.Range("B5").ClearContents
 
     ' Default widths for master scaffolding only — later tweaks survive refresh.
     On Error Resume Next

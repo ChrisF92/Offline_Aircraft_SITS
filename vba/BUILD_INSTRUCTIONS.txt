@@ -118,6 +118,11 @@ Defer (Phase 5):
 2. Add controls per vba/forms/DEFER_FORM_LAYOUT.txt
 3. Paste vba/forms/frmDefer.txt into the form code module
 
+Horizon (forecast filter):
+1. Insert > UserForm, Name = frmHorizon
+2. Add controls per vba/forms/HORIZON_FORM_LAYOUT.txt
+3. Paste vba/forms/frmHorizon.txt into the form code module
+
 Step 4 — Run Phase 0 setup (master template — once)
 ---------------------------------------------------
 Required before running setup (compile-time dependencies):
@@ -163,13 +168,15 @@ Usage locked until imported (e.g. WARE IL/IR/HE/FT on older exports).
 Step 7 — SITS view and refresh (Phase 3)
 ------------------------------------------
 1. Open the **SITS** sheet after setup or import.
-2. Set **Forecast hours** (B3), **Forecast days** (B4), and **Forecast number** (B5) to filter the view:
+2. Click **Horizon** and set forecast hours / days / number to filter the view:
    - HH/E1/E2 tasks: shown only if life remaining is within the hour threshold
    - DD tasks: shown only if due within the day threshold
    - Other number-based interval types (starts, cycles, etc.): shown only if life remaining is within the number threshold
-   - Set any forecast to 0 to show all tasks of that type
+   - Set any value to 0 to show all tasks of that type
+   - Current values are summarised on row 3 (read-only); edit only via Horizon
 3. Use **Refresh View** / **Create Work Package** / **Manage Work Packages** /
-   **Extend** / **Defer** buttons on the SITS sheet (recreated by RefreshSITS).
+   **Horizon** / **Extend** / **Defer** buttons on the SITS sheet (missing
+   buttons are added by RefreshSITS; sizes are kept uniform).
 4. Use the **AutoFilter** dropdowns on the header row (row 7) to show/hide interval
    types (e.g. hide AU, OP) or other columns — standard Excel filtering.
 5. Life remaining highlighting:
@@ -285,15 +292,16 @@ What Phase 5 includes
 - modExtensions — Extend / Defer apply lifecycle
 - frmExtend — multi-task extension with amount + SNOW + authoriser
 - frmDefer — single PT2/PT3 deferral with HH due or date due
-- SITS buttons: Extend, Defer
+- SITS buttons: Extend, Defer, Horizon (uniform width)
 - Dashboard buttons: Extend, Defer
+- frmHorizon — forecast hours / days / number filter dialog
 - Same Interval Type + Actual Interval validation for Extend
 - Authority warnings at >10% / >20% total Extension of Actual Interval
 - Extension amount added to existing Extension; baseline LR bumped
 - Deferral life remaining from absolute HH due or date due
 - Task Description cell comments for SNOW + authoriser
 - Remove single task from open work package (frmWorkPackage)
-- Audit: EXTENSION_APPLIED / DEFERRAL_APPLIED / WP_TASK_REMOVED
+- Audit: EXTENSION_APPLIED / DEFERRAL_APPLIED / WP_TASK_REMOVED / SITS_HORIZON_SET
 
 Manual Add / Remove Task (SITS view)
 ------------------------------------
@@ -317,7 +325,6 @@ What is NOT included yet
 ------------------------
 - Protected-sheet manual life-remaining edit form for zero-interval tasks
 - Sortie correction / reversal UI (CorrectedFrom column reserved)
-- Forecast settings UserForm (values editable on SITS sheet B3/B4/B5 for now)
 
 SITS life remaining model (Phase 3)
 -----------------------------------
@@ -412,18 +419,20 @@ Upgrading an existing Phase 0–4 workbook to Phase 5
 -----------------------------------------------------
 1. Import new modules: modExtensions, modSITSEdit, and updated modules (modSITS,
    modWorkPackage, CONFIG, Setup_CreateDashboard, Setup_RunAll).
-2. Create frmExtend and frmDefer from the layout + code files.
+2. Create frmExtend, frmDefer, and frmHorizon from the layout + code files.
 3. Update frmWorkPackage controls to include cmdRemoveTask (or recreate the form).
 4. Prefer **Ensure Missing Buttons** (and Refresh SITS) so new Extend / Defer /
-   Add Task / Remove Task buttons appear without wiping your Master layout.
-   Use **Rebuild Dashboard** only if you want a full layout reset.
+   Add Task / Remove Task / Horizon buttons appear without wiping your Master layout.
+   Use **Rebuild Dashboard** / **Rebuild SITS Layout** only if you want a full layout reset.
+   Refresh SITS also removes the old row-6 instruction text and migrates any leftover
+   B3/B4/B5 forecast cells into config.
 
 Troubleshooting
 ---------------
 "Expected variable or procedure, not module"
   -> Setup module Name must be modSetupRunAll etc., not Setup_RunAll.
 
-"Variable not defined: frmLogSortie" / "frmWorkPackage" / "frmExtend" / "frmDefer"
+"Variable not defined: frmLogSortie" / "frmWorkPackage" / "frmExtend" / "frmDefer" / "frmHorizon"
   -> Create the UserForm in the IDE. The form object must exist even though
      the code is stored as a .txt file in the repo.
 
