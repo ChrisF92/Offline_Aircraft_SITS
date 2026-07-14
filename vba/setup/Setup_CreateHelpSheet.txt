@@ -1,7 +1,7 @@
 Option Explicit
 
 ' ========================================================================
-' ONE-TIME SETUP — Help / user guide sheet
+' HELP SHEET — Operator guide (rebuild anytime from Dev Tools)
 ' ========================================================================
 ' Module Name property: modSetupHelp
 '
@@ -20,7 +20,7 @@ Public Sub Setup_CreateHelpSheet(Optional ByVal silent As Boolean = False)
         If MsgBox("Build the Help sheet with operator guidance for " & _
                   APP_NAME & " v" & APP_VERSION & "?" & vbCrLf & vbCrLf & _
                   "Existing Help sheet contents will be replaced.", _
-                  vbQuestion + vbYesNo, "Setup — Help Sheet") <> vbYes Then Exit Sub
+                  vbQuestion + vbYesNo, "Rebuild Help Sheet") <> vbYes Then Exit Sub
     End If
 
     On Error GoTo ErrorHandler
@@ -41,7 +41,7 @@ Public Sub Setup_CreateHelpSheet(Optional ByVal silent As Boolean = False)
     On Error GoTo ErrorHandler
 
     If Not silent Then
-        ' Standalone upgrade: place Help after Audit Log without a full Phase 0 reorder.
+        ' Place Help after Audit Log among visible tabs.
         PlaceHelpSheetAmongVisibleTabs
     End If
 
@@ -52,7 +52,7 @@ Public Sub Setup_CreateHelpSheet(Optional ByVal silent As Boolean = False)
     If Not silent Then
         MsgBox "Help sheet built successfully." & vbCrLf & vbCrLf & _
                "Open it from the Dashboard (View Help) or the Help tab.", _
-               vbInformation, "Setup — Help Sheet"
+               vbInformation, "Rebuild Help Sheet"
         ViewHelp
     End If
     Exit Sub
@@ -64,9 +64,9 @@ ErrorHandler:
     SetExcelState "enable"
     If Not silent Then
         ForceResumeWorkbookProtection
-        MsgBox "Help sheet setup failed." & vbCrLf & vbCrLf & _
+        MsgBox "Help sheet rebuild failed." & vbCrLf & vbCrLf & _
                "Error " & errNum & ": " & errDesc, _
-               vbCritical, "Setup — Help Sheet"
+               vbCritical, "Rebuild Help Sheet"
     Else
         Err.Raise errNum, "Setup_CreateHelpSheet", errDesc
     End If
@@ -140,13 +140,15 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     r = 5
     WriteHelpSection ws, r, "Quick start"
     WriteHelpRow ws, r, "1. Master template", _
-        "Build once with Phase 0 Setup (Setup_RunAll). Polish layout on the Master. Do not enter a tail number on the Master."
+        "Start from a polished Master workbook (no tail). Do not enter a tail number on the Master."
     WriteHelpRow ws, r, "2. Aircraft copy", _
         "File > Save As > <TAIL>_SITS_v2.xlsm (e.g. ZZ383_SITS_v2.xlsm)."
     WriteHelpRow ws, r, "3. Setup Wizard", _
         "On the Dashboard, run Setup Wizard. Enter the tail and import SITS Long Forecast, airframe usage, and engine usage."
     WriteHelpRow ws, r, "4. Day-to-day", _
         "Use Dashboard and SITS buttons: Log Sortie, Work Packages, Horizon, Extend, Defer, Add/Remove Task."
+    WriteHelpRow ws, r, "5. Reset data", _
+        "Dev Tools → Reset to Master clears aircraft data while keeping layout. Then Save As / Setup Wizard again as needed."
 
     WriteHelpSection ws, r, "Dashboard"
     WriteHelpRow ws, r, "Aircraft Status", _
@@ -239,8 +241,10 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpSection ws, r, "Reset to Master"
     WriteHelpRow ws, r, "What it does", _
         "Clears SITS, usage, work packages, sortie log, audit, and usage snapshot data; reseeds empty-master config. Keeps column widths, colours, and button placement."
-    WriteHelpRow ws, r, "When to use Phase 0 instead", _
-        "Only when you intentionally want a full scaffold / formatting rebuild (Setup_RunAll)."
+    WriteHelpRow ws, r, "When to use", _
+        "Return an aircraft workbook to an empty Master, or wipe data before re-running Setup Wizard on a fresh copy."
+    WriteHelpRow ws, r, "Layout rebuilds", _
+        "Layout-only tools (Rebuild Dashboard / Rebuild SITS Layout / Format Usage Matrix / Rebuild Help) do not clear aircraft data."
 
     WriteHelpSection ws, r, "Import reminders"
     WriteHelpRow ws, r, "SITS Long Forecast", _
@@ -254,7 +258,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
 
     r = r + 1
     With ws.Range("B" & r)
-        .Value = "This Help sheet is rebuilt by Setup_CreateHelpSheet (Phase 0 Setup or Dev Tools → Rebuild Help Sheet)."
+        .Value = "This Help sheet is rebuilt by Setup_CreateHelpSheet (Dev Tools → Rebuild Help Sheet)."
         .Font.Italic = True
         .Font.Size = 9
         .Font.Color = RGB(89, 89, 89)

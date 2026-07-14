@@ -1,7 +1,7 @@
-Offline Aircraft SITS v2 — Build Instructions (Phase 5)
-=========================================================
+Offline Aircraft SITS v2 — Build Instructions (v2.3.8)
+======================================================
 
-You build the .xlsm workbook locally from the .txt VBA sources in this folder.
+You maintain the .xlsm workbook locally from the .txt VBA sources in this folder.
 
 Prerequisites
 -------------
@@ -12,43 +12,39 @@ Prerequisites
 
 Overview — master template workflow
 -------------------------------------
-1. Build the **master template once** (Phase 0 setup — no aircraft tail).
-2. Save as `Wildcat_SITS_Master.xlsm` (or similar).
-3. **Polish layout on the Master in Excel** (column widths, button positions on
+1. Start from a polished **master template** (no aircraft tail).
+2. **Polish layout on the Master in Excel** (column widths, button positions on
    Dashboard / SITS / Usage / Audit Log / Help). Day-to-day refresh does **not** reset
    these — only explicit Rebuild macros do.
-4. For each aircraft: **File > Save As** a copy (e.g. `ZZ383_SITS_v2.xlsm`).
-5. On the aircraft copy, run **Setup Wizard** to declare the tail and import data.
-6. Use **Dashboard / SITS buttons** for day-to-day actions (log sorties, work packages,
+3. For each aircraft: **File > Save As** a copy (e.g. `ZZ383_SITS_v2.xlsm`).
+4. On the aircraft copy, run **Setup Wizard** to declare the tail and import data.
+5. Use **Dashboard / SITS buttons** for day-to-day actions (log sorties, work packages,
    extensions, deferrals, etc.).
+6. To wipe aircraft data later: Dev Tools → **Reset to Master** (layout preserved).
+
+There is no Phase 0 / blank-workbook scaffold builder anymore. New Masters come from
+an existing Master (or a Reset to Master copy). Layout tools rebuild presentation only.
 
 Layout ownership
 ----------------
-- **Setup / Rebuild** (once): default column widths, shell labels, and buttons.
+- **Rebuild** (explicit): default column widths, shell labels, and buttons.
 - **Refresh** (day-to-day): data and status only — preserves widths and button
   placement; adds any *missing* action buttons at default anchors.
-- **Rebuild Dashboard** / **Rebuild SITS Layout**: explicit full/default layout
-  reset when you intentionally want scaffolding again.
-- **Ensure Missing Buttons**: adds new Dashboard buttons without moving existing ones.
+- **Rebuild Dashboard** / **Rebuild SITS Layout**: full/default layout reset when
+  you intentionally want scaffolding again.
+- **Ensure Missing Buttons**: adds new Dashboard buttons without moving existing ones;
+  also removes the retired **Phase 0 Setup** button if still present.
 - **Reset to Master**: clears aircraft data back to empty-master config while
-  preserving all formatting (counterpart to Phase 0 Setup).
+  preserving all formatting.
 
-Step 1 — Create a new workbook
-------------------------------
-1. Open Excel and create a blank workbook.
-2. Save As > Excel Macro-Enabled Workbook (.xlsm)
-   Example for master: Wildcat_SITS_Master.xlsm
-
-Step 2 — Import VBA modules (order recommended)
------------------------------------------------
+VBA modules (paste / replace)
+-----------------------------
 Open the VBA editor (Alt+F11). For each file below, insert a new standard module
-(Insert > Module), set the module Name property exactly as shown, and paste the
-file contents.
+(Insert > Module) if missing, set the module Name property exactly as shown, and
+paste the file contents.
 
-IMPORTANT: The module Name must match the Attribute VB_Name line at the top of
-each file. Module names must NOT be the same as a macro you call from another
-module (e.g. do not name a module "Setup_CreateTables" — that causes a compile
-error "Expected variable or procedure, not module").
+IMPORTANT: Module names must NOT be the same as a macro you call from another
+module (e.g. do not name a module "Setup_CreateTables").
 
 Runtime modules:
 
@@ -68,6 +64,7 @@ Runtime modules:
   vba/modules/modAssociatedTasks.txt    modAssociatedTasks
   vba/modules/modWorkPackage.txt        modWorkPackage
   vba/modules/modExtensions.txt         modExtensions
+  vba/modules/modReset.txt              modReset
 
 Class modules (Insert > Class Module):
 
@@ -75,80 +72,53 @@ Class modules (Insert > Class Module):
   ------------------------------------  ------------------
   vba/forms/clsSortieUsageRow.txt       clsSortieUsageRow
 
-Setup modules (one-time use):
+Layout / maintenance modules (vba/setup/ — not one-time scaffold):
 
   File                                  Module Name
   ------------------------------------  -------------
-  vba/setup/Setup_CreateSheets.txt      modSetupSheets
-  vba/setup/Setup_CreateTables.txt      modSetupTables
   vba/setup/Setup_CreateConfig.txt      modSetupConfig
   vba/setup/Setup_CreateNamedRanges.txt modSetupNames
   vba/setup/Setup_CreateDashboard.txt   modSetupDashboard
   vba/setup/Setup_FormatUsageMatrix.txt modSetupUsageMatrix
   vba/setup/Setup_CreateHelpSheet.txt   modSetupHelp
-  vba/setup/Setup_RunAll.txt            modSetupRunAll
 
-The macros you run still use their procedure names, e.g. Setup_CreateTables and
-Setup_RunAll — only the module container names differ.
+Retired (delete from the VBA project if still present):
+  - modSetupSheets / Setup_CreateSheets
+  - modSetupTables / Setup_CreateTables
+  - modSetupRunAll / Setup_RunAll
 
 ThisWorkbook code:
 
   vba/modules/ThisWorkbook.txt        -> Paste into ThisWorkbook object (not a module)
 
-Step 3 — Create UserForms
--------------------------
+UserForms
+---------
 Log Sortie:
 1. Insert > UserForm, Name = frmLogSortie
 2. Add static shell controls per vba/forms/LOG_SORTIE_FORM_LAYOUT.txt
-   (date, HUMS Op Number, three frames, buttons — counter rows are built at runtime)
 3. Insert > Class Module, Name = clsSortieUsageRow
    Paste vba/forms/clsSortieUsageRow.txt
 4. Paste vba/forms/frmLogSortie.txt into the form code module
 
-Work Packages (Phase 4/5):
+Work Packages:
 1. Insert > UserForm, Name = frmWorkPackage
 2. Add controls per vba/forms/WORK_PACKAGE_FORM_LAYOUT.txt
-   (includes Remove task button)
 3. Paste vba/forms/frmWorkPackage.txt into the form code module
 
-Extend (Phase 5):
-1. Insert > UserForm, Name = frmExtend
-2. Add controls per vba/forms/EXTEND_FORM_LAYOUT.txt
-3. Paste vba/forms/frmExtend.txt into the form code module
+Extend / Defer / Horizon:
+1. Create frmExtend, frmDefer, frmHorizon from the matching LAYOUT + code files
 
-Defer (Phase 5):
-1. Insert > UserForm, Name = frmDefer
-2. Add controls per vba/forms/DEFER_FORM_LAYOUT.txt
-3. Paste vba/forms/frmDefer.txt into the form code module
-
-Horizon (forecast filter):
-1. Insert > UserForm, Name = frmHorizon
-2. Add controls per vba/forms/HORIZON_FORM_LAYOUT.txt
-3. Paste vba/forms/frmHorizon.txt into the form code module
-
-Step 4 — Run Phase 0 setup (master template — once)
----------------------------------------------------
-Required before running setup (compile-time dependencies):
-  CONFIG, modUtility, modValidation
-
-Import modAuditTrail / modWorkPackage / modAssociatedTasks / modExtensions
-before normal use.
-
-1. Run **Setup_RunAll** (Dashboard dev button or macro in modSetupRunAll).
-2. Do **not** enter a tail number — the master template is aircraft-neutral.
-3. Run **Validate Structure** on the Dashboard to confirm structure.
-4. Save as your master copy (e.g. Wildcat_SITS_Master.xlsm).
-
-Step 5 — Create an aircraft workbook
-------------------------------------
+Aircraft setup (Setup Wizard)
+-----------------------------
 1. Open the master template.
 2. File > Save As > `<TAIL>_SITS_v2.xlsm` (e.g. ZZ383_SITS_v2.xlsm).
 3. On the Dashboard, click **Setup Wizard**.
 4. Enter tail number and import SITS Long Forecast, airframe usage, and engine usage.
 5. Confirm — populates tblSITS, tblUsageBaseline, tblUsageCurrent.
 
-Step 6 — Log sorties
----------------------
+Day-to-day actions
+------------------
+Log Sortie:
 1. Click **Log Sortie** on the Dashboard (or macro RunLogSortie).
 2. Enter sortie date and required HUMS Op Number.
 3. In each group (Airframe / Engines / WARE), enter Usage for counters that
@@ -159,248 +129,93 @@ Step 6 — Log sorties
    - Leave Usage blank for counters with no change
 4. Click Log sortie.
 
-Each entered usage value:
-  - Appends a row to tblUsageLog
-  - Updates tblUsageCurrent
-  - Refreshes the Usage sheet view
-  - Recalculates and refreshes the SITS view
-
-Catalog codes not yet present in the usage baseline appear as (n/a) with
-Usage locked until imported (e.g. WARE IL/IR/HE/FT on older exports).
-
-Step 7 — SITS view and refresh (Phase 3)
-------------------------------------------
+SITS view:
 1. Open the **SITS** sheet after setup or import.
-2. Click **Horizon** and set forecast hours / days / number to filter the view:
-   - HH/E1/E2 tasks: shown only if life remaining is within the hour threshold
-   - DD tasks: shown only if due within the day threshold
-   - Other number-based interval types (starts, cycles, etc.): shown only if life remaining is within the number threshold
-   - Set any value to 0 to show all tasks of that type
-   - Current values are summarised on row 3 (read-only); edit only via Horizon
+2. Click **Horizon** and set forecast hours / days / number to filter the view.
 3. Use **Refresh View** / **Create Work Package** / **Manage Work Packages** /
-   **Horizon** / **Extend** / **Defer** buttons on the SITS sheet (missing
-   buttons are added by RefreshSITS; existing size and placement are left alone).
-   Uniform button sizing is applied only by Phase 0 setup / **Rebuild SITS Layout**.
-4. Use the **AutoFilter** dropdowns on the header row (row 7) to show/hide interval
-   types (e.g. hide AU, OP) or other columns — standard Excel filtering.
+   **Horizon** / **Extend** / **Defer** / **Add Task** / **Remove Task** buttons.
+4. Use the **AutoFilter** dropdowns on the header row (row 7).
 5. Life remaining highlighting:
    - Amber when due soon (within warn thresholds: default 10:00 hours / 7 days)
-   - Pink/red when overdue (life remaining / days remaining below zero)
-6. Zero-interval tasks awaiting manual update after WP close highlight in light blue.
-7. Ticking a Selector checkbox highlights that row light blue; unticking restores the
-   previous warning colour (or clears the fill). Refresh View once after importing
-   updated VBA so checkboxes pick up the OnAction (SheetChange is a backup path).
+   - Pink/red when overdue
+   - Light blue for zero-interval tasks needing manual update, or selected rows
 
-SITS recalculation runs automatically after:
-  - SITS import (Import SITS / Setup Wizard)
-  - Sortie logging
-  - Work package create / delete / close / remove task
-  - Extension / deferral apply
-  - Manual RunRefreshSITS
+Work packages:
+1. Tick Selector checkboxes on SITS → Create Work Package (ORN ####TAILDDMMYY).
+2. Manage Work Packages: Delete (undo), Remove task, or Close (reforecast).
 
-Step 8 — Work packages (Phase 4)
---------------------------------
-Create:
-1. On the SITS view, tick one or more Selector checkboxes.
-2. Click **Create Work Package**.
-3. If associated `/1` tasks exist on the **same Serial**, confirm the claim message.
-   Same task code on a different Serial (e.g. the other engine) is not claimed.
-4. Enter ORN in format `####TAILDDMMYY` (e.g. `7034ZZ383081125`):
-   - First 4 digits: any number
-   - Middle: must match the aircraft tail number
-   - Last 6: valid calendar date DDMMYY
-5. Selected + associated tasks are assigned the ORN; selectors are cleared.
+Extend / Defer:
+- Extend: scheduled tasks sharing Interval Type + Actual Interval; SNOW + authoriser.
+- Defer: exactly one PT2/PT3; HH due (h:mm) or date due (dd/mm/yyyy).
 
-Manage:
-1. Click **Manage Work Packages** on the SITS sheet (or Dashboard **Work Packages**).
-2. Read-only open count + dropdown of open ORNs.
-3. Selecting an ORN lists Task Code + Task Description.
-4. **Delete** — undoes the WP only (clears In Work ORN; no SITS reforecast).
-5. **Remove task** — releases one selected task from the open WP (no reforecast).
-   If the WP becomes empty it is deleted.
-6. **Close** — completes all tasks in one go:
-   - Reforecasts by Actual Interval (HH/E1/E2 hours, DD date, counters by number)
-   - Auto-includes associated tasks already in the WP
-   - Deletes PT2/PT3 deferred fault rows from SITS
-   - Resets Extension to 0 / 0:00
-   - Writes a Task Description cell comment: ORN, close date, user
-   - Zero-interval tasks: skip auto-reforecast, flag Needs Manual Update (light blue + Dashboard count)
-   - Rebuilds / re-sorts the SITS view so newly reforecasted tasks move to their
-     correct due-soon position (e.g. 25:00 no longer sits above sooner jobs)
-7. Form stays open and refreshes after Delete/Remove/Close.
-
-Dashboard (Phase 4/5 / v2.3.7):
-  Open work packages count
-  Tasks needing manual update count
-  Tasks in warning period count (amber — same rules as SITS view)
-  Tasks overdue count (pink — same rules as SITS view)
-  Status values in C6:C11 are centred
+Dashboard
+---------
+  Open work packages / manual-update / warning / overdue counts
   Pre-setup / master: **Setup Wizard** + **View Help** under User Actions
-  After setup: Log Sortie, Work Packages, View Audit Log, View Help (two columns)
-  Extend / Defer are on the **SITS sheet only** (not Dashboard)
-  Import SITS and Refresh Usage moved to Developer Tools
-  Help sheet explains each part of the system (built by Setup_CreateHelpSheet)
+  After setup: Log Sortie, Work Packages, View Audit Log, View Help
+  Extend / Defer are on the **SITS sheet only**
+  Import SITS and Refresh Usage live under Developer Tools
+  Help sheet explains each part of the system (Rebuild Help Sheet)
 
-Developer Tools (hidden by default):
-  Alt+F8 → **EnableDevTools** to show the whole section; **HideDevTools** (or the
-  Hide Dev Tools button) to hide it again.
+Developer Tools (hidden by default)
+-----------------------------------
+  Alt+F8 → **EnableDevTools** to show; **HideDevTools** to hide.
   Import SITS, Refresh Usage, Repair Formats, Repair Visibility, Validate Structure,
-  Rebuild Dashboard, Ensure Missing Buttons, Phase 0 Setup, Rebuild SITS Layout,
-  Format Usage Matrix, Protect Workbook, Unprotect Workbook, Hide Dev Tools,
-  Reset to Master, Rebuild Help Sheet
+  Rebuild Dashboard, Ensure Missing Buttons, Rebuild SITS Layout,
+  Format Usage Matrix, Rebuild Help Sheet, Protect Workbook, Unprotect Workbook,
+  Hide Dev Tools, Reset to Master
 
-Reset to Master (data only — preserves formatting):
-  Dashboard Dev Tools button → **ResetWorkbookToMaster**
+Reset to Master (data only — preserves formatting)
+--------------------------------------------------
+  Dashboard Dev Tools → **ResetWorkbookToMaster** (module modReset)
   Clears SITS / usage / work packages / sortie log / audit / usage snapshot data
   and reseeds master config (no tail, SetupComplete=False, MasterTemplate=True).
   Does **not** rebuild sheets, column widths, colours, or button placement.
-  Use **Phase 0 Setup** only when you want a full scaffold / formatting rebuild.
-  Prefer **Ensure Missing Buttons** after pasting VBA so the new button appears
+  Prefer **Ensure Missing Buttons** after pasting VBA so new buttons appear
   without wiping your Master layout.
 
-Workbook protection (v2.3.2 / v2.3.3)
-------------------------------------
+Workbook protection
+-------------------
 Sheets and workbook structure are protected so users cannot edit cells or
 unhide/rename/delete sheets, while day-to-day macros and forms keep working.
 
-How it works:
-  - Every sheet is protected with `UserInterfaceOnly:=True` (VBA can write cell values)
-  - Form Control buttons and Selector checkboxes stay clickable (`DrawingObjects:=False`)
+  - Every sheet is protected with `UserInterfaceOnly:=True`
+  - Form Control buttons and Selector checkboxes stay clickable
   - Workbook structure protection stops unhiding data sheets
-  - `Workbook_Open` re-applies protection (Excel clears UserInterfaceOnly on close)
-  - Phase 0 Setup / Repair Visibility temporarily remove protection as needed
-
-Table structure ops (v2.3.3):
-  - Excel still blocks ListObject changes on protected sheets, even with
-    `UserInterfaceOnly` (error 1004: "Table features aren't available…").
+  - `Workbook_Open` re-applies protection
   - Mutating macros call `SuspendWorkbookProtection` / `ResumeWorkbookProtection`
-    (nested-safe helpers in modUtility) around ClearTableData, ListRows.Add,
-    ListColumns.Add, and related import / Setup Wizard / work-package paths.
-  - Error handlers use `ForceResumeWorkbookProtection` so sheets are re-locked.
+  - Admin: **ProtectWorkbook** / **UnprotectWorkbook** (password `PROTECT_PASSWORD`
+    in CONFIG, default `SITSv2` — not a security boundary)
 
 Still editable by users:
-  - SITS Selector checkboxes (LinkedCells + control Locked=False; re-applied
-    after every Refresh SITS because Range.Clear resets cell locks)
+  - SITS Selector checkboxes
   - AutoFilter on the SITS header row
-  - Horizon / other settings via UserForms (not sheet cells)
-
-Admin macros (Dev Tools or Alt+F8):
-  - **ProtectWorkbook** — lock sheets + structure
-  - **UnprotectWorkbook** — unlock for Master layout polishing or repairs
-  - Password constant: `PROTECT_PASSWORD` in CONFIG (default `SITSv2`) — prevents
-    casual unprotect via Review > Unprotect Sheet, not a security boundary
-
-Step 9 — Extensions and deferrals (Phase 5)
--------------------------------------------
-Extend (scheduled tasks — not PT2/PT3):
-1. On the SITS view, tick one or more Selector checkboxes.
-2. Click **Extend** on the SITS sheet.
-3. Validation before the form opens:
-   - All selected tasks must share the same Interval Type Code
-   - All selected tasks must share the same Actual Interval
-   - PT2/PT3 cannot be extended (use Defer)
-   - Tasks in an open work package (IN WORK) are blocked
-4. Enter:
-   - Extension amount (format matches interval: h:mm for HH/E1/E2, days for DD, number otherwise)
-   - SNOW authorisation (required)
-   - Authoriser name (required)
-5. Warnings if total Extension (existing + this increment) exceeds 10% or 20% of Actual Interval.
-6. On apply:
-   - Adds the amount to any existing Extension
-   - Writes Extension SNOW
-   - Bumps baseline / life remaining by the increment
-   - Appends Task Description cell comment (amount, SNOW, authoriser, date, user)
-   - Clears selectors, recalculates SITS, refreshes the view
-   - Audits EXTENSION_APPLIED
-
-Defer (PT2/PT3 only — one at a time):
-1. Tick exactly one PT2-D / PT2-H / PT3-D / PT3-H on the SITS view.
-2. Click **Defer** on the SITS sheet.
-3. Validation:
-   - Exactly one selected task
-   - Must be a deferred fault code
-   - Must not be IN WORK
-4. Enter:
-   - PT2/3-H: airframe hours due as h:mm — life remaining = due − current HH
-   - PT2/3-D: date due as dd/mm/yyyy — due date / life remaining set from that date
-   - SNOW + authoriser (required)
-5. On apply:
-   - Sets life remaining / due from the entered due point
-   - Records Extension delta + Extension SNOW
-   - Appends Task Description cell comment
-   - Clears selector, recalculates, refreshes
-   - Audits DEFERRAL_APPLIED
-
-Step 10 — Save
---------------
-Save the workbook.
+  - Horizon / other settings via UserForms
 
 What Phase 5 includes
 ---------------------
 - modExtensions — Extend / Defer apply lifecycle
-- frmExtend — multi-task extension with amount + SNOW + authoriser
-- frmDefer — single PT2/PT3 deferral with HH due or date due
-- SITS buttons: Extend, Defer, Horizon (uniform width)
-- Dashboard User Actions: Log Sortie, Work Packages, View Audit Log
-  (Extend / Defer are SITS-only — not on Dashboard)
-- Reset to Master (Dev Tools): clear aircraft data back to empty master
-  without touching formatting (ResetWorkbookToMaster)
-- frmHorizon — forecast hours / days / number filter dialog
-- Same Interval Type + Actual Interval validation for Extend
-- Authority warnings at >10% / >20% total Extension of Actual Interval
-- Extension amount added to existing Extension; baseline LR bumped
-- Deferral life remaining from absolute HH due or date due
-- Task Description cell comments for SNOW + authoriser
-- Remove single task from open work package (frmWorkPackage)
+- frmExtend / frmDefer / frmHorizon
+- SITS buttons: Extend, Defer, Horizon, Add Task, Remove Task
+- Dashboard User Actions: Log Sortie, Work Packages, View Audit Log, View Help
+- Reset to Master (Dev Tools) via modReset
 - Audit: EXTENSION_APPLIED / DEFERRAL_APPLIED / WP_TASK_REMOVED / SITS_HORIZON_SET /
-  RESET_MASTER
-
-Manual Add / Remove Task (SITS view)
-------------------------------------
-- modSITSEdit — Add Task / Remove Task entry points
-- SITS buttons (H3/J3): Add Task, Remove Task (ensured on Refresh View; layout preserved)
-- Add Task: sequential InputBox prompts for import-required fields
-  (Interval Type Code, Life Remaining, Task Code, Task Sequence,
-  Task Description, Serial, Actual Interval, Extension, End Item Serial).
-  End Item Serial defaults to the configured tail and must match it.
-  System-only columns (Selector, ORNs, completion fields, baselines,
-  SITS_RowID, Needs Manual Update, current usage, optional import extras)
-  are not prompted. Summary confirmation precedes insert; new rows appear
-  on the view only if they pass the current forecast filter.
-- Remove Task: uses existing Selector checkboxes. If none selected, prompts
-  to select first. Confirmation lists all selected tasks and warns the
-  delete is irreversible. IN WORK rows have no checkbox and cannot be
-  selected. Orphan tblWPTasks links for deleted RowIDs are cleaned up.
-- Audit: SITS_TASK_ADDED / SITS_TASKS_REMOVED
+  RESET_MASTER / SITS_TASK_ADDED / SITS_TASKS_REMOVED
 
 What is NOT included yet
 ------------------------
 - Protected-sheet manual life-remaining edit form for zero-interval tasks
 - Sortie correction / reversal UI (CorrectedFrom column reserved)
 
-SITS life remaining model (Phase 3)
------------------------------------
-GOLDesp life remaining at import is the **baseline** (trusted — may include
-life accrued on other airframes). After import, each sortie increments usage;
-life remaining is updated by **usage delta since the import snapshot**:
+SITS life remaining model
+-------------------------
+GOLDesp life remaining at import is the **baseline**. After import, each sortie
+increments usage; life remaining uses usage delta since the import snapshot:
 
   Life Remaining = Baseline Life Remaining − (Current Usage − Snapshot Usage)
 
 Current usage is looked up from tblUsageCurrent by **interval type code only**.
-DD calendar tasks prefer Projected Due Date (absolute) when present — Life
-Remaining is due date − today (can be negative when overdue). If only a day
-count was imported, that count is reduced by elapsed days since the SITS
-snapshot date.
-
-On WP close, baseline life remaining is adjusted so RecalculateSITS yields the
-full Actual Interval immediately after close (until further usage accrues).
-
-On Extend, baseline life remaining is increased by the extension increment so
-RecalculateSITS reflects the added life. On Defer (PT2/PT3-H), life remaining
-is set from airframe HH due − current HH. On Defer (PT2/PT3-D), enter a date
-due; Life Remaining becomes days remaining (date due − today) and Projected
-Due Date is set to that date. For DD tasks, Projected Due Date is also updated
-on extension and WP close reforecast.
+DD calendar tasks prefer Projected Due Date when present.
 
 Import rules (strict — abort if any required column missing)
 ------------------------------------------------------------
@@ -416,208 +231,99 @@ Usage exports (airframe + engine):
 Engine usage must include SM and SN interval codes after merge
 (typically WC/STARTS/ECU on P4N155/P4N175).
 
-Sample files in repo root:
+Sample files (when present in repo root):
   20260706-Long Forecast_ZZ382.xlsx   — SITS export sample (tail ZZ382)
   ZZ383 Item Usage.xlsx               — Airframe usage sample
   ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)
 
-Upgrading an existing workbook for the Log Sortie form redesign (v2.3.0)
-------------------------------------------------------------------------
-1. Replace modules: CONFIG, modUtility, modUsageLog, modSITSEdit,
-   Setup_CreateDashboard (and paste updated BUILD notes as needed).
-2. Insert > Class Module, Name = clsSortieUsageRow; paste
-   vba/forms/clsSortieUsageRow.txt.
-3. Recreate or update frmLogSortie:
-   - Remove old list/pending controls (lstCounters, lstPending, etc.)
-   - Add static shell per LOG_SORTIE_FORM_LAYOUT.txt
-     (txtHumsOpNumber replaces txtSortieRef; add fraAirframe/fraEngines/fraWare)
-   - Paste vba/forms/frmLogSortie.txt
+Upgrading to v2.3.8 (purge one-time Phase 0 setup)
+--------------------------------------------------
+Phase 0 scaffold macros are removed. Data reset remains via **Reset to Master**.
+
+1. Replace / paste updated modules:
+   CONFIG, modUtility, modSITS, ThisWorkbook,
+   Setup_CreateConfig, Setup_CreateNamedRanges, Setup_CreateDashboard,
+   Setup_FormatUsageMatrix, Setup_CreateHelpSheet
+2. Insert module **modReset** from `vba/modules/modReset.txt`
+   (Name property = modReset). This owns `ResetWorkbookToMaster`.
+3. Delete retired modules from the VBA project if present:
+   modSetupSheets, modSetupTables, modSetupRunAll
 4. Compile VBAProject.
-5. Ensure usage imports include any catalog codes you need to log
-   (WARE IL/IR/HE/FT were missing from older sample exports).
-6. Usage sheet matrix (optional one-time):
-   - Insert setup module modSetupUsageMatrix from
-     vba/setup/Setup_FormatUsageMatrix.txt
-   - Replace modUsageLog with the matrix-aware RefreshUsageView
-   - Run **Setup_FormatUsageMatrix** (Dashboard developer button
-     "Format Usage Matrix", or macro). Afterwards Refresh Usage / Log Sortie
-     keep the matrix current.
+5. Alt+F8 → **EnableDevTools** → **Ensure Missing Buttons**
+   (removes Phase 0 Setup button; adds/compacts remaining Dev Tools).
+   Or **Rebuild Dashboard** if you want a full default layout.
+6. Optional: **Rebuild Help Sheet** so operator guide text matches v2.3.8.
+7. Smoke-test: Reset to Master → Setup Wizard on a Save As copy.
 
-Upgrading for Dashboard status counts and Dev Tools (v2.3.1)
-------------------------------------------------------------
-1. Replace modules: CONFIG, modSITS, modValidation, Setup_CreateConfig,
-   Setup_CreateNamedRanges, Setup_CreateDashboard (modSetupDashboard).
-2. Compile VBAProject.
-3. Run **Setup_CreateNamedRanges** (or Phase 0 Setup) so Warning_Period_Count
-   and Overdue_Count exist.
-4. Run **Rebuild Dashboard** for the new layout (centred status values,
-   warning/overdue counts, two-column user buttons, Import Requirements
-   removed). Developer Tools stay hidden until you run **EnableDevTools**
-   via Alt+F8.
-5. Optional: set ShowDevTools in tblConfig, or just use EnableDevTools /
-   HideDevTools — EnableDevTools writes the config flag automatically.
+Earlier upgrade notes (v2.3.0–v2.3.7)
+-------------------------------------
+Historical Phase 0 / Setup_RunAll / Setup_CreateSheets / Setup_CreateTables steps
+are obsolete. For older workbooks still on those versions:
 
-Upgrading for workbook protection (v2.3.2)
-------------------------------------------
-1. Replace modules: CONFIG, modUtility, modSITS, ThisWorkbook,
-   Setup_CreateDashboard, Setup_CreateTables, Setup_RunAll.
-2. Compile VBAProject.
-3. Alt+F8 → **ProtectWorkbook** (or reopen the workbook — Open applies it).
-4. Optional: EnableDevTools → **Ensure Missing Buttons** for Protect / Unprotect
-   Workbook on the Dashboard. Use **UnprotectWorkbook** only when polishing
-   Master layout or repairing sheets, then Protect again.
-
-Upgrading for table ops under protection (v2.3.3)
--------------------------------------------------
-Fixes Setup Wizard / Import SITS runtime error 1004 after sheet protection:
-"Table features aren't available because the sheet is protected."
-
-1. Replace modules: CONFIG, modUtility, modImportSITS, modImportUsage,
-   modAuditTrail, modSITS, modSITSEdit, modWorkPackage, modUsageLog,
-   Setup_RunAll.
-2. Compile VBAProject.
-3. Reopen the workbook (or run ProtectWorkbook) so protection is applied.
-4. Re-test Setup Wizard Step 2 (Long Forecast import) on a protected copy.
-5. Re-test SITS Selector checkboxes after Refresh SITS — they must toggle.
-
-Upgrading for the Help sheet (v2.3.4 / v2.3.5)
-----------------------------------------------
-Adds a visible **Help** sheet that explains how to use each part of the system,
-plus Dashboard **View Help** / Dev Tools **Rebuild Help Sheet**.
-
-1. Replace modules: CONFIG, modUtility, modValidation, Setup_CreateSheets,
-   Setup_CreateDashboard, Setup_CreateConfig, Setup_CreateTables, Setup_RunAll.
-2. Insert setup module modSetupHelp from vba/setup/Setup_CreateHelpSheet.txt
-   (Name property = modSetupHelp).
-3. Compile VBAProject.
-4. Run **Setup_CreateHelpSheet** once (Alt+F8, or Dev Tools → Rebuild Help Sheet
-   after EnableDevTools + Ensure Missing Buttons). This creates/fills the Help
-   sheet without a full Phase 0 rebuild.
-5. Ensure Missing Buttons (or Rebuild Dashboard) so **View Help** appears under
-   User Actions. Validate Structure should then pass (Help is a required sheet).
-
-v2.3.5 also fixes Phase 0 Setup failing at "Seeding configuration" with
-error 1004 ("Table features aren't available because the sheet is protected").
-Cause: SetConfigValue's nested Resume re-locked sheets mid-run before
-interval-map ListRows.Add. Phase 0 now keeps an outer Suspend for the whole
-rebuild; Setup_CreateConfig / Setup_CreateTables nest correctly.
-Replace Setup_RunAll, Setup_CreateConfig, Setup_CreateTables, and
-Setup_CreateHelpSheet if an older paste still fails.
-
-Upgrading for HUMS Op No on the Usage matrix
---------------------------------------------
-1. Replace modules: CONFIG, modUsageLog, Setup_FormatUsageMatrix,
-   Setup_CreateDashboard; update frmLogSortie from vba/forms/frmLogSortie.txt.
-2. Compile VBAProject.
-3. Run **Refresh Usage** (or Format Usage Matrix once) so the trailing
-   **HUMS Op No** column appears. Sortie dates stay in column A; HUMS is
-   no longer embedded in the date cell.
-4. Log Sortie now requires HUMS Op Number before submit.
-
-Upgrading an existing Phase 0–4 workbook to Phase 5
------------------------------------------------------
-1. Import new modules: modExtensions, modSITSEdit, and updated modules (modSITS,
-   modWorkPackage, CONFIG, Setup_CreateDashboard, Setup_RunAll).
-2. Create frmExtend, frmDefer, and frmHorizon from the layout + code files.
-3. Update frmWorkPackage controls to include cmdRemoveTask (or recreate the form).
-4. Prefer **Ensure Missing Buttons** (and Refresh SITS) so new Add Task / Remove Task /
-   Horizon / Reset to Master buttons appear without wiping your Master layout.
-   Ensure Missing Buttons also removes leftover Dashboard Extend / Defer buttons
-   (those actions stay on the SITS sheet only).
-   Use **Rebuild Dashboard** / **Rebuild SITS Layout** only if you want a full layout reset.
-   Refresh SITS also removes the old row-6 instruction text and migrates any leftover
-   B3/B4/B5 forecast cells into config.
+1. Bring VBA up to v2.3.7 behaviour first if needed (protection, Help sheet,
+   Extend/Defer, Usage matrix, Dev Tools), using a known-good Master as the base.
+2. Then apply the v2.3.8 steps above.
+3. Named ranges: **Rebuild Dashboard** now refreshes them automatically
+   (or run Setup_CreateNamedRanges).
+4. Help sheet: Dev Tools → Rebuild Help Sheet.
+5. Usage matrix: Format Usage Matrix once if the sheet still uses an old list layout;
+   afterwards Refresh Usage / Log Sortie keep it current.
 
 Troubleshooting
 ---------------
 "Expected variable or procedure, not module"
-  -> Setup module Name must be modSetupRunAll etc., not Setup_RunAll.
+  -> Module Name must be modSetupDashboard etc., not the macro name.
 
-"Variable not defined: frmLogSortie" / "frmWorkPackage" / "frmExtend" / "frmDefer" / "frmHorizon"
+"Variable not defined: frmLogSortie" / other forms
   -> Create the UserForm in the IDE. The form object must exist even though
      the code is stored as a .txt file in the repo.
 
 UserForm opens on the wrong monitor
-  -> Forms call CenterUserFormOnExcel (modUtility) from UserForm_Activate so
-     they centre on the Excel window. Re-paste the form code + modUtility if
-     an older workbook still shows this.
+  -> Forms call CenterUserFormOnExcel (modUtility) from UserForm_Activate.
 
 "Missing named range: Open_WP_Count"
-  -> Run Setup_CreateNamedRanges or Rebuild Dashboard after pasting Phase 4+ VBA.
+  -> Rebuild Dashboard (or Setup_CreateNamedRanges).
 
 VBA name shadowing ("expects an array" on a function call)
   -> Do not name parameters the same as functions (VBA is case-insensitive).
-     Example: use skipOverwritePrompt, not confirmOverwrite with ConfirmOverwrite.
 
 All worksheets stuck hidden
-  -> Click Repair Visibility on the Dashboard, or run RepairSetupSheetVisibility.
-  -> That removes protection so you can work; run ProtectWorkbook / FinalizeSetup
-     when finished.
+  -> Repair Visibility, then FinalizeSetupSheetLayout / ProtectWorkbook.
 
 Cannot edit cells / cannot unhide sheets
-  -> Expected when workbook protection is on (v2.3.2). SITS Selector checkboxes
-     remain usable; change Horizon via the Horizon button. Use UnprotectWorkbook
-     (Dev Tools / Alt+F8) for Master layout work, then ProtectWorkbook again.
+  -> Expected when workbook protection is on. Use UnprotectWorkbook for Master
+     layout work, then ProtectWorkbook again.
 
 Runtime error 1004 during Setup Wizard / Import SITS ("Table features aren't
 available because the sheet is protected")
-  -> Fixed in v2.3.3: import and other table-mutating macros temporarily suspend
-     protection. Re-import the modules listed under the v2.3.3 upgrade section.
+  -> Import and other table-mutating macros temporarily suspend protection.
+     Re-import modUtility + import / wizard modules if an older paste still fails.
 
-SITS Selector checkboxes do nothing / cannot be ticked while sheet is protected
-  -> Fixed in v2.3.3: Refresh SITS was clearing cell locks on column A (LinkedCells).
-     Re-import modUtility + modSITS, then Refresh SITS (or reopen + ProtectWorkbook).
+SITS Selector checkboxes do nothing while sheet is protected
+  -> Refresh SITS re-applies LinkedCell unlocks. Re-import modUtility + modSITS.
 
-Phase 0 Setup fails when data sheets are hidden (error during "Building sheets")
-  -> Fixed in modUtility / Setup_RunAll: setup now unhides all worksheets before
-     deleting/rebuilding. Re-import those modules if an older build still fails.
-  -> Workaround on an old build: Repair Visibility (or unhide all sheets), then
-     run Phase 0 Setup again.
-
-Phase 0 Setup fails during "Seeding configuration" (error 1004 table features)
-  -> Fixed in v2.3.5: Phase 0 keeps SuspendWorkbookProtection for the whole run
-     so SetConfigValue's nested Resume cannot re-lock sheets before interval-map
-     rows are added. Re-import Setup_RunAll, Setup_CreateConfig, Setup_CreateTables,
-     Setup_CreateHelpSheet.
-
-Setup Wizard error: 0 - (after imports succeed; tail wrong / C6:C7 struck through)
-  -> Fixed in v2.3.6: the real failure was adding Dashboard/SITS form controls after
-     protection was re-applied; LogError cleared Err before the MsgBox so it showed 0.
-     Re-import modSetupWizard, CONFIG, Setup_CreateDashboard, modSITS.
-     Then re-run Setup Wizard (or click Ensure Missing Buttons + Repair formulas by
-     Rebuild Dashboard if you only need the button/tail display fix).
-
-Dashboard C6/C7 stay "stale" (strikethrough) after Phase 0 / Setup Wizard
-  -> Fixed in v2.3.7: formulas were written while Application.Calculation was Manual
-     (SetExcelState disable) and never recalculated when calc was restored. Excel marks
-     those results stale. Re-import modUtility + Setup_CreateDashboard; run Rebuild
-     Dashboard or Alt+F8 → RepairDashboardConfigFormulas (or press F9 once).
+Dashboard C6/C7 stay "stale" (strikethrough)
+  -> Rebuild Dashboard or Alt+F8 → RepairDashboardConfigFormulas (or press F9).
 
 Serial numbers show as 1.11E+12 or lose leading zeros
-  -> Re-import SITS/usage after updating modUtility, or click Repair Formats.
-  -> Serial columns are stored as text (@) using the source cell display text.
+  -> Repair Formats, or re-import SITS/usage after updating modUtility.
 
 Time values calculate incorrectly / show as 86.61 or plain text
-  -> 86.61 is the internal day-fraction for 2078:43. Hour counters are stored
-     as day fractions with [h]:mm (same principle as SITS), not as text.
-  -> Click Repair Formats on the Dashboard, or re-run setup wizard import.
-  -> HH/E1/E2 Format column will show Hours; Baseline and Usage show [h]:mm.
+  -> Hour counters are day fractions with [h]:mm. Use Repair Formats.
 
 SITS life remaining does not change after sorties
   -> Re-import SITS or run Setup Wizard to refresh tblUsageSnapshot.
   -> Run RunRefreshSITS on the SITS sheet.
 
 Dashboard buttons missing after updating VBA
-  -> Click Ensure Missing Buttons (adds only what is missing).
-  -> Use Rebuild Dashboard only if you want to reset column widths / placement.
+  -> Ensure Missing Buttons (adds only what is missing).
+  -> Rebuild Dashboard only if you want to reset column widths / placement.
 
 Column widths / buttons reset after Refresh
-  -> Refresh is data-only. If widths still reset, re-import updated modSITS /
-     modUsageLog / Setup_CreateDashboard and avoid Rebuild Dashboard unless intended.
+  -> Refresh is data-only. Avoid Rebuild Dashboard unless intended.
 
 Audit Log columns resize after each log entry
   -> Re-import updated modAuditTrail (preserves widths around each append).
-  -> Set preferred widths on the Master once; they carry to aircraft copies.
 
 ORN rejected on create
   -> Must be ####TAILDDMMYY with this aircraft's tail and a real DDMMYY date.
@@ -631,4 +337,9 @@ Extend rejected — PT2/PT3
 Defer rejected — more than one task
   -> Defer exactly one PT2/PT3 at a time.
 
-Build marker: Phase-5-extensions-deferrals-v1
+Compile error: Sub or Function not defined (Setup_RunAll)
+  -> Phase 0 was removed in v2.3.8. Delete the Phase 0 Dashboard button
+     (Ensure Missing Buttons) and remove modSetupRunAll from the project.
+     Use Reset to Master for data wipe.
+
+Build marker: v2.3.8-purge-phase0-setup

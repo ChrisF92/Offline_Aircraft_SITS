@@ -1,13 +1,13 @@
 Option Explicit
 
 ' ========================================================================
-' ONE-TIME SETUP — Usage sheet sortie matrix layout
+' USAGE MATRIX — Sortie matrix layout shell
 ' ========================================================================
 ' Module Name property: modSetupUsageMatrix
 '
-' Run Setup_FormatUsageMatrix once after pasting this module (and the
-' updated modUsageLog). Afterwards, RefreshUsageView / Log Sortie keep
-' the matrix data current without wiping freeze panes or column widths.
+' Format Usage Matrix (optional): resets widths / freeze panes and refreshes.
+' Day-to-day RefreshUsageView / Log Sortie update matrix data without wiping
+' freeze panes or column widths once the shell exists.
 ' ========================================================================
 
 Public Sub Setup_FormatUsageMatrix(Optional ByVal silent As Boolean = False)
@@ -18,7 +18,7 @@ Public Sub Setup_FormatUsageMatrix(Optional ByVal silent As Boolean = False)
                   "Columns = interval types (Airframe, Engines, WARE), plus HUMS Op No." & vbCrLf & _
                   "Rows = B/F Totals, each logged sortie, then Current Totals." & vbCrLf & vbCrLf & _
                   "Existing Usage sheet contents will be replaced.", _
-                  vbQuestion + vbYesNo, "Setup — Usage Matrix") <> vbYes Then Exit Sub
+                  vbQuestion + vbYesNo, "Format Usage Matrix") <> vbYes Then Exit Sub
     End If
 
     If Not ValidateWorkbookStructure(showDialogs:=Not silent) Then Exit Sub
@@ -36,7 +36,7 @@ Public Sub Setup_FormatUsageMatrix(Optional ByVal silent As Boolean = False)
     If Not silent Then
         MsgBox "Usage sheet formatted as a sortie matrix." & vbCrLf & _
                "Use Refresh Usage (or log a sortie) to update data.", _
-               vbInformation, "Setup — Usage Matrix"
+               vbInformation, "Format Usage Matrix"
     End If
     Exit Sub
 
@@ -44,11 +44,11 @@ ErrorHandler:
     SetExcelState "enable"
     If Not silent Then
         MsgBox "Usage matrix format error: " & Err.Number & " - " & Err.Description, _
-               vbCritical, "Setup — Usage Matrix"
+               vbCritical, "Format Usage Matrix"
     End If
 End Sub
 
-' Shared shell used by one-time setup and by RefreshUsageView when missing.
+' Shared shell used by Format Usage Matrix and by RefreshUsageView when missing.
 Public Sub ApplyUsageMatrixShell(ByVal ws As Worksheet, _
                                  Optional ByVal resetWidths As Boolean = False)
     Dim codes As Variant

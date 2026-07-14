@@ -2,6 +2,6 @@
 
 Offline Aircraft SITS v2 — Wildcat single-aircraft Excel workbook (VBA).
 
-Current phase: **Help sheet / operator guide** (v2.3.7)
+Current version: **v2.3.8** (Phase 0 one-time scaffold removed; **Reset to Master** remains for data wipe).
 
-See `vba/BUILD_INSTRUCTIONS.txt` for build and upgrade steps.
+See `vba/BUILD_INSTRUCTIONS.txt` for build, upgrade, and operator workflow.
