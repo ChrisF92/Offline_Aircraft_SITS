@@ -1,5 +1,5 @@
-Offline Aircraft SITS v2 — Build Instructions (v2.3.8)
-======================================================
+Offline Aircraft SITS — Build Instructions (v1.0.0)
+==================================================
 
 You maintain the .xlsm workbook locally from the .txt VBA sources in this folder.
 
@@ -192,13 +192,16 @@ Still editable by users:
   - AutoFilter on the SITS header row
   - Horizon / other settings via UserForms
 
-What Phase 5 includes
----------------------
-- modExtensions — Extend / Defer apply lifecycle
-- frmExtend / frmDefer / frmHorizon
-- SITS buttons: Extend, Defer, Horizon, Add Task, Remove Task
-- Dashboard User Actions: Log Sortie, Work Packages, View Audit Log, View Help
+What this release includes
+--------------------------
+- Setup Wizard — per-aircraft tail + SITS / usage import
+- Log Sortie, Usage matrix, SITS forecast view + Horizon filter
+- Work packages (create / manage / close / remove task)
+- Extend / Defer (modExtensions, frmExtend, frmDefer)
+- Add Task / Remove Task on the SITS sheet
+- Help sheet + Dashboard View Help
 - Reset to Master (Dev Tools) via modReset
+- Workbook protection with Suspend/Resume for table ops
 - Audit: EXTENSION_APPLIED / DEFERRAL_APPLIED / WP_TASK_REMOVED / SITS_HORIZON_SET /
   RESET_MASTER / SITS_TASK_ADDED / SITS_TASKS_REMOVED
 
@@ -236,9 +239,11 @@ Sample files (when present in repo root):
   ZZ383 Item Usage.xlsx               — Airframe usage sample
   ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)
 
-Upgrading to v2.3.8 (purge one-time Phase 0 setup)
---------------------------------------------------
-Phase 0 scaffold macros are removed. Data reset remains via **Reset to Master**.
+First release — v1.0.0 (migrating from pre-release builds)
+---------------------------------------------------------
+Pre-release builds used internal numbering (up to 2.3.8) and included Phase 0
+scaffold macros. **1.0.0** is the first release: Phase 0 sources are gone;
+data reset remains via **Reset to Master**.
 
 1. **First** delete retired modules from the VBA project if present:
    modSetupSheets, modSetupTables, modSetupRunAll
@@ -254,21 +259,21 @@ Phase 0 scaffold macros are removed. Data reset remains via **Reset to Master**.
 5. Alt+F8 → **EnableDevTools** → **Ensure Missing Buttons**
    (removes Phase 0 Setup button; adds/compacts remaining Dev Tools).
    Or **Rebuild Dashboard** if you want a full default layout.
-6. Optional: **Rebuild Help Sheet** so operator guide text matches v2.3.8.
+6. Optional: **Rebuild Help Sheet** so operator guide text matches v1.0.0.
 7. Smoke-test: Reset to Master → Setup Wizard on a Save As copy.
 
 Note: modUtility still includes legacy sheet helpers (`ReuseSheetAs`, etc.) so a
 partial paste does not brick compile mid-upgrade. New code does not call them;
 delete the retired Phase 0 modules and ignore those helpers.
 
-Earlier upgrade notes (v2.3.0–v2.3.7)
--------------------------------------
+Pre-release notes (former 2.3.x)
+--------------------------------
 Historical Phase 0 / Setup_RunAll / Setup_CreateSheets / Setup_CreateTables steps
-are obsolete. For older workbooks still on those versions:
+are obsolete. For older workbooks still on those builds:
 
-1. Bring VBA up to v2.3.7 behaviour first if needed (protection, Help sheet,
+1. Bring VBA up to late pre-release behaviour first if needed (protection, Help sheet,
    Extend/Defer, Usage matrix, Dev Tools), using a known-good Master as the base.
-2. Then apply the v2.3.8 steps above.
+2. Then apply the v1.0.0 steps above.
 3. Named ranges: **Rebuild Dashboard** now refreshes them automatically
    (or run Setup_CreateNamedRanges).
 4. Help sheet: Dev Tools → Rebuild Help Sheet.
@@ -349,4 +354,4 @@ Compile error: Sub or Function not defined (Setup_RunAll / ReuseSheetAs / AddSet
      Use Reset to Master for data wipe. Ensure Missing Buttons removes the Phase 0
      Dashboard button.
 
-Build marker: v2.3.8-purge-phase0-setup
+Build marker: v1.0.0-first-release
