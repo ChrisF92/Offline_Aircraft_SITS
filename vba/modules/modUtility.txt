@@ -10,6 +10,11 @@ Private mExcelStateDepth As Long
 Private mSavedCalculation As XlCalculation
 Private mSavedStatusBar As Variant
 
+' Nested suspend/resume for sheet protection. UserInterfaceOnly lets VBA write
+' cell values, but Excel still blocks ListObject structure changes (add/delete
+' rows/columns, ClearTableData, create tables) while a sheet is protected.
+Private mProtectionSuspendDepth As Long
+
 ' Center a UserForm over the Excel window so it opens on the same monitor.
 ' Call from UserForm_Activate (StartUpPosition/CenterOwner is unreliable with
 ' multiple screens). No WinAPI — uses Application.Left/Top/Width/Height.
@@ -519,8 +524,15 @@ End Sub
 ' controls keep working. UserInterfaceOnly must be re-applied on every Open
 ' (Excel clears that flag when the file is closed).
 '
+' UserInterfaceOnly covers cell value writes only. Table structure ops still
+' raise 1004 ("Table features aren't available because the sheet is protected").
+' Wrap mutating entry points with SuspendWorkbookProtection /
+' ResumeWorkbookProtection (nested-safe, same idea as SetExcelState).
+'
 ' Unlocked UI inputs (SITS only):
 '   Col A from data start — Selector LinkedCells for checkboxes
+'   Form Control checkboxes themselves (Locked=False) — required in addition
+'   to unlocked LinkedCells; RefreshSITSView must re-apply after Range.Clear
 ' DrawingObjects:=False so Form Control buttons/checkboxes stay clickable.
 ' Horizon forecast settings are edited via frmHorizon (config), not sheet cells.
 ' ========================================================================
@@ -534,6 +546,7 @@ Public Sub ProtectWorkbook()
 End Sub
 
 Public Sub UnprotectWorkbook()
+    mProtectionSuspendDepth = 0
     RemoveWorkbookProtection
     MsgBox "Workbook protection removed." & vbCrLf & vbCrLf & _
            "Use while polishing Master layout or repairing sheets. " & _
@@ -541,9 +554,35 @@ Public Sub UnprotectWorkbook()
            vbInformation, APP_NAME
 End Sub
 
+' Temporarily remove protection for ListObject / structural sheet changes.
+' Nestable — only the outermost Suspend/Resume pair touches the workbook.
+Public Sub SuspendWorkbookProtection()
+    If mProtectionSuspendDepth = 0 Then
+        RemoveWorkbookProtection
+    End If
+    mProtectionSuspendDepth = mProtectionSuspendDepth + 1
+End Sub
+
+Public Sub ResumeWorkbookProtection()
+    If mProtectionSuspendDepth > 0 Then
+        mProtectionSuspendDepth = mProtectionSuspendDepth - 1
+    End If
+    If mProtectionSuspendDepth = 0 Then
+        ApplyWorkbookProtection
+    End If
+End Sub
+
+' Clear nested suspend depth and re-apply protection (error-path recovery).
+Public Sub ForceResumeWorkbookProtection()
+    If mProtectionSuspendDepth = 0 Then Exit Sub
+    mProtectionSuspendDepth = 0
+    ApplyWorkbookProtection
+End Sub
+
 Public Sub ApplyWorkbookProtection()
     Dim ws As Worksheet
 
+    mProtectionSuspendDepth = 0
     On Error Resume Next
     For Each ws In ThisWorkbook.Worksheets
         ProtectSheetUI ws, PROTECT_PASSWORD
@@ -618,17 +657,55 @@ End Sub
 
 ' Lock all cells, then unlock the few UI inputs users still need.
 Private Sub ConfigureSheetCellLocks(ByVal ws As Worksheet)
-    Dim lastRow As Long
-
     On Error Resume Next
     ws.Cells.Locked = True
+    On Error GoTo 0
 
     If StrComp(ws.Name, SHEET_SITS, vbTextCompare) = 0 Then
-        ' Selector LinkedCells must accept checkbox TRUE/FALSE writes.
-        lastRow = ws.Rows.Count
-        ws.Range(ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL), _
-                 ws.Cells(lastRow, SITS_SELECTOR_COL)).Locked = False
+        ' Selector LinkedCells + Form Control checkboxes must stay interactive.
+        UnlockSITSSelectorInputs ws
     End If
+
+    ' Form Control buttons default to Locked=True; unlock so OnAction still works
+    ' if DrawingObjects protection is ever tightened.
+    UnlockSheetFormControls ws
+End Sub
+
+' Public so RefreshSITSView can restore unlocks after Range.Clear (which resets
+' Locked back to True on selector LinkedCells).
+Public Sub UnlockSITSSelectorInputs(Optional ByVal ws As Worksheet = Nothing)
+    Dim lastRow As Long
+    Dim cb As CheckBox
+    Dim i As Long
+
+    If ws Is Nothing Then Set ws = GetWorksheet(SHEET_SITS, showError:=False)
+    If ws Is Nothing Then Exit Sub
+    If StrComp(ws.Name, SHEET_SITS, vbTextCompare) <> 0 Then Exit Sub
+
+    On Error Resume Next
+    lastRow = ws.Rows.Count
+    ws.Range(ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL), _
+             ws.Cells(lastRow, SITS_SELECTOR_COL)).Locked = False
+
+    For i = 1 To ws.CheckBoxes.Count
+        Set cb = ws.CheckBoxes(i)
+        cb.Locked = False
+    Next i
+    On Error GoTo 0
+End Sub
+
+Private Sub UnlockSheetFormControls(ByVal ws As Worksheet)
+    Dim i As Long
+
+    If ws Is Nothing Then Exit Sub
+
+    On Error Resume Next
+    For i = 1 To ws.CheckBoxes.Count
+        ws.CheckBoxes(i).Locked = False
+    Next i
+    For i = 1 To ws.Buttons.Count
+        ws.Buttons(i).Locked = False
+    Next i
     On Error GoTo 0
 End Sub
 
@@ -677,13 +754,20 @@ Public Function IsHourBasedIntervalType(ByVal intervalCode As String) As Boolean
 End Function
 
 Public Sub ClearTableData(ByVal tbl As ListObject)
-    On Error Resume Next
-    If Not tbl Is Nothing Then
-        If Not tbl.DataBodyRange Is Nothing Then
-            tbl.DataBodyRange.Delete
-        End If
-    End If
-    On Error GoTo 0
+    If tbl Is Nothing Then Exit Sub
+    If tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    ' DataBodyRange.Delete is a table structure op — needs sheets unprotected.
+    SuspendWorkbookProtection
+    On Error GoTo ClearFail
+    tbl.DataBodyRange.Delete
+    ResumeWorkbookProtection
+    Exit Sub
+
+ClearFail:
+    ResumeWorkbookProtection
+    ' Preserve prior callers that relied on a no-throw clear.
+    Err.Clear
 End Sub
 
 Public Function ParseDMYDateValue(ByVal rawVal As Variant, _

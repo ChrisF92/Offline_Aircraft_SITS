@@ -250,6 +250,7 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
+    SuspendWorkbookProtection
 
     ClearTableData tblBaseline
     ClearTableData tblCurrent
@@ -257,6 +258,7 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
     For Each mergeKey In mUsageRows.Keys
         rowData = mUsageRows(mergeKey)
         If Not IsArray(rowData) Then
+            ResumeWorkbookProtection
             SetExcelState "enable"
             failReason = "Staged usage data is invalid. Re-import airframe and engine usage."
             Exit Function
@@ -291,9 +293,10 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
         rowCount = rowCount + 1
     Next mergeKey
 
+    LogAction "USAGE_IMPORTED", "", "Committed " & rowCount & " merged usage row(s)"
+    ResumeWorkbookProtection
     SetExcelState "enable"
     CommitUsageImport = True
-    LogAction "USAGE_IMPORTED", "", "Committed " & rowCount & " merged usage row(s)"
     RefreshUsageView
 
     If showDialogs Then
@@ -302,16 +305,21 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
     Exit Function
 
 ErrorHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
+    ForceResumeWorkbookProtection
     SetExcelState "enable"
     If Len(failReason) = 0 Then
         If Len(intervalCode) > 0 Then
             failReason = "Usage commit error on " & intervalCode & "/" & taskCode & _
-                         ": " & Err.Number & " - " & Err.Description
+                         ": " & errNum & " - " & errDesc
         Else
-            failReason = "Usage commit error: " & Err.Number & " - " & Err.Description
+            failReason = "Usage commit error: " & errNum & " - " & errDesc
         End If
     End If
-    LogError "CommitUsageImport", Err.Number, Err.Description
+    LogError "CommitUsageImport", errNum, errDesc
     If showDialogs Then
         MsgBox failReason, vbCritical, APP_NAME
     End If
