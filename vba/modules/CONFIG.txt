@@ -9,7 +9,7 @@ Option Explicit
 
 ' --- Workbook identity ---
 Public Const APP_NAME As String = "Offline Aircraft SITS"
-Public Const APP_VERSION As String = "2.3.2"
+Public Const APP_VERSION As String = "2.3.3"
 Public Const AIRCRAFT_TYPE As String = "Wildcat"
 
 ' Sheet/workbook protect password — stops accidental UI edits, not a security boundary.
@@ -25,6 +25,7 @@ Public Const SHEET_DASHBOARD As String = "Dashboard"
 Public Const SHEET_SITS As String = "SITS"
 Public Const SHEET_USAGE As String = "Usage"
 Public Const SHEET_AUDIT As String = "Audit Log"
+Public Const SHEET_HELP As String = "Help"
 
 ' --- Hidden data / system sheets ---
 Public Const SHEET_CONFIG As String = "_CONFIG"

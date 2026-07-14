@@ -45,6 +45,9 @@ Public Sub Setup_RunAll()
     mSetupStep = "Formatting dashboard"
     Setup_CreateDashboard True
 
+    mSetupStep = "Building Help sheet"
+    Setup_CreateHelpSheet True
+
     mSetupStep = "Finalizing sheet layout"
     FinalizeSetupSheetLayout
 
@@ -193,6 +196,7 @@ Private Sub BuildSheetsSilent()
     AddSetupSheet SHEET_SITS
     AddSetupSheet SHEET_USAGE
     AddSetupSheet SHEET_AUDIT
+    AddSetupSheet SHEET_HELP
     AddSetupSheet SHEET_CONFIG
     AddSetupSheet SHEET_DATA_SITS
     AddSetupSheet SHEET_DATA_USAGE_BASELINE

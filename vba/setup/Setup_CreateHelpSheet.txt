@@ -1,0 +1,297 @@
+Option Explicit
+
+' ========================================================================
+' ONE-TIME SETUP — Help / user guide sheet
+' ========================================================================
+' Module Name property: modSetupHelp
+'
+' Setup_CreateHelpSheet — builds (or rebuilds) the Help sheet that explains
+' how to use each part of the workbook. Safe to re-run; content is replaced.
+'
+' ViewHelp — activates the Help sheet (Dashboard "View Help" button).
+' ========================================================================
+
+Public Sub Setup_CreateHelpSheet(Optional ByVal silent As Boolean = False)
+    Dim ws As Worksheet
+
+    If Not silent Then
+        If MsgBox("Build the Help sheet with operator guidance for " & _
+                  APP_NAME & " v" & APP_VERSION & "?" & vbCrLf & vbCrLf & _
+                  "Existing Help sheet contents will be replaced.", _
+                  vbQuestion + vbYesNo, "Setup — Help Sheet") <> vbYes Then Exit Sub
+    End If
+
+    On Error GoTo ErrorHandler
+    SetExcelState "disable"
+    Application.DisplayAlerts = False
+    RemoveWorkbookProtection
+
+    EnsureHelpSheetExists
+    Set ws = GetWorksheet(SHEET_HELP)
+    If ws Is Nothing Then
+        Err.Raise vbObjectError + 5100, , "Help sheet could not be created."
+    End If
+
+    BuildHelpSheetContent ws
+
+    On Error Resume Next
+    ThisWorkbook.Worksheets(SHEET_HELP).Tab.Color = COLOR_TAB_VISIBLE
+    On Error GoTo ErrorHandler
+
+    If Not silent Then
+        ' Standalone upgrade: place Help after Audit Log without a full Phase 0 reorder.
+        PlaceHelpSheetAmongVisibleTabs
+        ApplyWorkbookProtection
+    End If
+
+    Application.DisplayAlerts = True
+    SetExcelState "enable"
+
+    If Not silent Then
+        MsgBox "Help sheet built successfully." & vbCrLf & vbCrLf & _
+               "Open it from the Dashboard (View Help) or the Help tab.", _
+               vbInformation, "Setup — Help Sheet"
+        ViewHelp
+    End If
+    Exit Sub
+
+ErrorHandler:
+    Application.DisplayAlerts = True
+    SetExcelState "enable"
+    If Not silent Then
+        MsgBox "Help sheet setup failed." & vbCrLf & vbCrLf & _
+               "Error " & Err.Number & ": " & Err.Description, _
+               vbCritical, "Setup — Help Sheet"
+    End If
+End Sub
+
+Public Sub ViewHelp()
+    Dim ws As Worksheet
+
+    Set ws = GetWorksheet(SHEET_HELP, showError:=False)
+    If ws Is Nothing Then
+        MsgBox "Help sheet not found." & vbCrLf & vbCrLf & _
+               "Run Setup_CreateHelpSheet (Dev Tools: Rebuild Help Sheet) once.", _
+               vbExclamation, APP_NAME
+        Exit Sub
+    End If
+
+    ws.Visible = xlSheetVisible
+    ws.Activate
+End Sub
+
+Private Sub EnsureHelpSheetExists()
+    Dim ws As Worksheet
+
+    If SheetExists(SHEET_HELP) Then Exit Sub
+
+    UnprotectWorkbookStructure
+    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
+    ws.Name = SHEET_HELP
+    ws.Visible = xlSheetVisible
+End Sub
+
+Private Sub PlaceHelpSheetAmongVisibleTabs()
+    Dim wsHelp As Worksheet
+    Dim wsAudit As Worksheet
+
+    On Error Resume Next
+    Set wsHelp = ThisWorkbook.Worksheets(SHEET_HELP)
+    Set wsAudit = ThisWorkbook.Worksheets(SHEET_AUDIT)
+    If Not wsHelp Is Nothing And Not wsAudit Is Nothing Then
+        UnprotectWorkbookStructure
+        If wsHelp.Index <> wsAudit.Index + 1 Then
+            wsHelp.Move After:=wsAudit
+        End If
+    End If
+    On Error GoTo 0
+End Sub
+
+Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
+    Dim r As Long
+
+    UnprotectSheetUI ws, PROTECT_PASSWORD
+    ws.Cells.Clear
+    ws.Cells.Font.Name = "Calibri"
+    ws.Cells.Font.Size = 11
+    ws.Columns("A").ColumnWidth = 2
+    ws.Columns("B").ColumnWidth = 28
+    ws.Columns("C").ColumnWidth = 92
+    ws.Columns("D").ColumnWidth = 2
+
+    With ws.Range("B2")
+        .Value = APP_NAME & " — How to use"
+        .Font.Size = 18
+        .Font.Bold = True
+        .Font.Color = COLOR_HEADER_BLUE
+    End With
+
+    ws.Range("B3").Value = "Version " & APP_VERSION & "  |  " & AIRCRAFT_TYPE & _
+        "  |  Read-only guide — use Dashboard / SITS buttons for actions"
+    ws.Range("B3").Font.Color = RGB(89, 89, 89)
+
+    r = 5
+    WriteHelpSection ws, r, "Quick start"
+    WriteHelpRow ws, r, "1. Master template", _
+        "Build once with Phase 0 Setup (Setup_RunAll). Polish layout on the Master. Do not enter a tail number on the Master."
+    WriteHelpRow ws, r, "2. Aircraft copy", _
+        "File > Save As > <TAIL>_SITS_v2.xlsm (e.g. ZZ383_SITS_v2.xlsm)."
+    WriteHelpRow ws, r, "3. Setup Wizard", _
+        "On the Dashboard, run Setup Wizard. Enter the tail and import SITS Long Forecast, airframe usage, and engine usage."
+    WriteHelpRow ws, r, "4. Day-to-day", _
+        "Use Dashboard and SITS buttons: Log Sortie, Work Packages, Horizon, Extend, Defer, Add/Remove Task."
+
+    WriteHelpSection ws, r, "Dashboard"
+    WriteHelpRow ws, r, "Aircraft Status", _
+        "Shows Tail Number, Setup Complete, open work packages, tasks needing manual update, warning-period tasks (amber), and overdue tasks (pink)."
+    WriteHelpRow ws, r, "Setup Wizard", _
+        "Visible on the Master and before setup completes. Declares the tail and imports SITS + usage baselines."
+    WriteHelpRow ws, r, "Log Sortie", _
+        "Records a sortie: date, HUMS Op Number, and usage increments by counter group (Airframe / Engines / WARE)."
+    WriteHelpRow ws, r, "Work Packages", _
+        "Opens Manage Work Packages (same as the SITS button). Create packages from the SITS sheet selectors."
+    WriteHelpRow ws, r, "View Audit Log", _
+        "Opens the Audit Log sheet (who did what, when)."
+    WriteHelpRow ws, r, "View Help", _
+        "Opens this sheet."
+    WriteHelpRow ws, r, "Developer Tools", _
+        "Hidden by default. Alt+F8 → EnableDevTools to show Import SITS, Refresh Usage, Rebuild, Protect/Unprotect, Reset to Master, etc. HideDevTools to hide again."
+
+    WriteHelpSection ws, r, "Log Sortie"
+    WriteHelpRow ws, r, "Required fields", _
+        "Sortie date and HUMS Op Number. Enter Usage only for counters that changed; leave blank for no change."
+    WriteHelpRow ws, r, "Hours counters", _
+        "DA, MX, XJ, HH, E1, E2, OH — enter as h:mm (e.g. 1:30)."
+    WriteHelpRow ws, r, "OEI seconds", _
+        "1E / 1G / 2E / 2G — enter decimal seconds (e.g. 3.38)."
+    WriteHelpRow ws, r, "Number counters", _
+        "Enter a positive number. Catalog codes missing from the usage baseline show as (n/a) until imported."
+    WriteHelpRow ws, r, "What it updates", _
+        "Appends tblUsageLog, updates tblUsageCurrent, refreshes the Usage sheet, and recalculates the SITS view."
+
+    WriteHelpSection ws, r, "SITS sheet"
+    WriteHelpRow ws, r, "Purpose", _
+        "Working forecast view of scheduled tasks and deferred faults for this aircraft."
+    WriteHelpRow ws, r, "Horizon", _
+        "Filters the view by forecast hours / days / number. Set a value to 0 to show all of that type. Current values are summarised on row 3 (edit only via Horizon)."
+    WriteHelpRow ws, r, "Refresh View", _
+        "Recalculates life remaining and rebuilds the visible rows. Does not reset column widths or button placement."
+    WriteHelpRow ws, r, "Selector", _
+        "Tick checkboxes to select tasks for Work Package / Extend / Defer / Remove Task. IN WORK rows have no checkbox."
+    WriteHelpRow ws, r, "AutoFilter", _
+        "Use the header-row dropdowns (row 7) to show/hide interval types or other columns — standard Excel filtering."
+    WriteHelpRow ws, r, "Colour meanings", _
+        "Amber = due soon (warning). Pink/red = overdue. Light blue = needs manual update (zero-interval after WP close) or selector ticked."
+    WriteHelpRow ws, r, "Add Task / Remove Task", _
+        "Manually insert a SITS row (guided prompts) or delete selected rows. Deletes are irreversible; orphaned WP task links are cleaned up."
+
+    WriteHelpSection ws, r, "Work packages"
+    WriteHelpRow ws, r, "Create", _
+        "Tick Selector checkboxes on SITS → Create Work Package. Confirm associated /1 tasks on the same Serial if prompted. Enter ORN as ####TAILDDMMYY (e.g. 7034ZZ383081125)."
+    WriteHelpRow ws, r, "Manage", _
+        "Manage Work Packages lists open ORNs. Delete undoes the WP (clears In Work ORN). Remove task releases one task. Close completes all tasks and reforecasts."
+    WriteHelpRow ws, r, "On Close", _
+        "Reforecasts by Actual Interval, includes associated tasks already in the WP, deletes PT2/PT3 deferred fault rows, resets Extension, writes a Task Description comment, and flags zero-interval tasks for manual update."
+
+    WriteHelpSection ws, r, "Extend (scheduled tasks)"
+    WriteHelpRow ws, r, "When to use", _
+        "SITS sheet only. Selected tasks must share Interval Type Code and Actual Interval. Not for PT2/PT3 (use Defer). Blocked if IN WORK."
+    WriteHelpRow ws, r, "Inputs", _
+        "Extension amount (h:mm / days / number to match interval), SNOW authorisation, and authoriser name."
+    WriteHelpRow ws, r, "Warnings", _
+        "Warns if total Extension (existing + this) exceeds 10% or 20% of Actual Interval. Apply bumps life remaining and audits EXTENSION_APPLIED."
+
+    WriteHelpSection ws, r, "Defer (PT2 / PT3 only)"
+    WriteHelpRow ws, r, "When to use", _
+        "Exactly one PT2-D / PT2-H / PT3-D / PT3-H selected. Must not be IN WORK."
+    WriteHelpRow ws, r, "Inputs", _
+        "PT2/3-H: airframe hours due as h:mm. PT2/3-D: date due as dd/mm/yyyy. SNOW + authoriser required."
+    WriteHelpRow ws, r, "Result", _
+        "Sets life remaining / due from the entered due point, records Extension delta + SNOW, comments the Task Description, audits DEFERRAL_APPLIED."
+
+    WriteHelpSection ws, r, "Usage sheet"
+    WriteHelpRow ws, r, "Matrix view", _
+        "Columns are interval types (Airframe, Engines, WARE) plus HUMS Op No. Rows are B/F Totals, each logged sortie, then Current Totals."
+    WriteHelpRow ws, r, "Refresh", _
+        "Updated automatically after Log Sortie. Developer Tools → Refresh Usage rebuilds data without wiping freeze panes or widths (after Format Usage Matrix has been run once)."
+
+    WriteHelpSection ws, r, "Audit Log"
+    WriteHelpRow ws, r, "What it records", _
+        "Timestamp, user, action type, ORN (when relevant), details, and app version. Includes setup, imports, sorties, WP actions, extensions, deferrals, and resets."
+    WriteHelpRow ws, r, "How to open", _
+        "Dashboard → View Audit Log (or open the Audit Log tab)."
+
+    WriteHelpSection ws, r, "Workbook protection"
+    WriteHelpRow ws, r, "What is locked", _
+        "Sheet cells and workbook structure (cannot unhide/rename/delete sheets from the UI). Macros and form buttons still work."
+    WriteHelpRow ws, r, "Still usable", _
+        "SITS Selector checkboxes, AutoFilter on the SITS header, and all UserForms (Horizon, Log Sortie, WP, Extend, Defer)."
+    WriteHelpRow ws, r, "Admin unlock", _
+        "Dev Tools / Alt+F8 → UnprotectWorkbook for Master layout polishing, then ProtectWorkbook again. Password constant is PROTECT_PASSWORD in CONFIG (not a security boundary)."
+
+    WriteHelpSection ws, r, "Reset to Master"
+    WriteHelpRow ws, r, "What it does", _
+        "Clears SITS, usage, work packages, sortie log, audit, and usage snapshot data; reseeds empty-master config. Keeps column widths, colours, and button placement."
+    WriteHelpRow ws, r, "When to use Phase 0 instead", _
+        "Only when you intentionally want a full scaffold / formatting rebuild (Setup_RunAll)."
+
+    WriteHelpSection ws, r, "Import reminders"
+    WriteHelpRow ws, r, "SITS Long Forecast", _
+        "Required columns: Interval Type Code, Life Remaining, Task Code, Task Sequence, Task Description, Serial, Actual Interval, Extension, End Item Serial. Import aborts if any are missing."
+    WriteHelpRow ws, r, "Usage exports", _
+        "Interval Type, Task Code, Life Used, Top Serial. Engine usage must include SM and SN after merge."
+
+    WriteHelpSection ws, r, "Hidden data sheets"
+    WriteHelpRow ws, r, "_CONFIG / _DATA_* / _WP_STATE", _
+        "System tables behind the views. Leave hidden. Day-to-day work uses Dashboard, SITS, Usage, Audit Log, and Help only."
+
+    r = r + 1
+    With ws.Range("B" & r)
+        .Value = "This Help sheet is rebuilt by Setup_CreateHelpSheet (Phase 0 Setup or Dev Tools → Rebuild Help Sheet)."
+        .Font.Italic = True
+        .Font.Size = 9
+        .Font.Color = RGB(89, 89, 89)
+    End With
+
+    ws.Range("C5:C" & r).WrapText = True
+    ws.Rows("5:" & r).VerticalAlignment = xlTop
+    AutoFitHelpRows ws, 5, r
+    ws.Activate
+    ws.Range("B2").Select
+End Sub
+
+Private Sub WriteHelpSection(ByVal ws As Worksheet, ByRef rowNum As Long, ByVal title As String)
+    rowNum = rowNum + 1
+    With ws.Range("B" & rowNum)
+        .Value = title
+        .Font.Bold = True
+        .Font.Size = 12
+        .Font.Color = COLOR_HEADER_BLUE
+    End With
+    ws.Range("C" & rowNum).ClearContents
+    rowNum = rowNum + 1
+End Sub
+
+Private Sub WriteHelpRow(ByVal ws As Worksheet, ByRef rowNum As Long, _
+                         ByVal topic As String, ByVal detail As String)
+    ws.Range("B" & rowNum).Value = topic
+    ws.Range("B" & rowNum).Font.Bold = True
+    ws.Range("C" & rowNum).Value = detail
+    rowNum = rowNum + 1
+End Sub
+
+Private Sub AutoFitHelpRows(ByVal ws As Worksheet, ByVal firstRow As Long, ByVal lastRow As Long)
+    Dim r As Long
+    Dim detailLen As Long
+    Dim lineEstimate As Long
+
+    For r = firstRow To lastRow
+        If Len(Trim$(CStr(ws.Range("C" & r).Value))) = 0 Then
+            ws.Rows(r).RowHeight = 18
+        Else
+            detailLen = Len(CStr(ws.Range("C" & r).Value))
+            lineEstimate = Application.WorksheetFunction.Max(2, Int(detailLen / 95) + 1)
+            ws.Rows(r).RowHeight = Application.WorksheetFunction.Min(90, 15 + (lineEstimate * 13))
+        End If
+    Next r
+End Sub
