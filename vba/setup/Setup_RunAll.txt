@@ -27,8 +27,11 @@ Public Sub Setup_RunAll()
     SetExcelState "disable"
     Application.DisplayAlerts = False
 
-    ' Structure/sheet protection blocks create/delete/hide during rebuild.
-    RemoveWorkbookProtection
+    ' Keep protection suspended for the whole Phase 0 run. Intermediate helpers
+    ' (SetConfigValue, ClearTableData, etc.) Suspend/Resume nested — without an
+    ' outer suspend their Resume would re-lock sheets mid-setup and break
+    ' ListRows.Add / table deletes ("Table features aren't available...").
+    SuspendWorkbookProtection
 
     mSetupStep = "Building sheets"
     BuildSheetsSilent
@@ -44,6 +47,9 @@ Public Sub Setup_RunAll()
 
     mSetupStep = "Formatting dashboard"
     Setup_CreateDashboard True
+
+    mSetupStep = "Building Help sheet"
+    Setup_CreateHelpSheet True
 
     mSetupStep = "Finalizing sheet layout"
     FinalizeSetupSheetLayout
@@ -67,6 +73,7 @@ Public Sub Setup_RunAll()
 ErrorHandler:
     Application.DisplayAlerts = True
     SetExcelState "enable"
+    ForceResumeWorkbookProtection
     MsgBox "Setup failed during: " & mSetupStep & vbCrLf & vbCrLf & _
            "Error " & Err.Number & ": " & Err.Description, _
            vbCritical, "Setup — Run All"
@@ -201,6 +208,7 @@ Private Sub BuildSheetsSilent()
     AddSetupSheet SHEET_SITS
     AddSetupSheet SHEET_USAGE
     AddSetupSheet SHEET_AUDIT
+    AddSetupSheet SHEET_HELP
     AddSetupSheet SHEET_CONFIG
     AddSetupSheet SHEET_DATA_SITS
     AddSetupSheet SHEET_DATA_USAGE_BASELINE
@@ -215,26 +223,6 @@ End Sub
 
 Private Sub WriteMasterTemplateAuditEntry()
     On Error Resume Next
-
-    Dim ws As Worksheet
-    Dim tbl As ListObject
-    Dim row As ListRow
-    Dim userName As String
-
-    Set ws = ThisWorkbook.Worksheets(SHEET_AUDIT)
-    Set tbl = ws.ListObjects("tblAudit")
-    If ws Is Nothing Or tbl Is Nothing Then Exit Sub
-
-    userName = Environ$("USERNAME")
-    If Len(userName) = 0 Then userName = "Unknown"
-
-    Set row = tbl.ListRows.Add
-    row.Range.Cells(1, 1).Value = Now
-    row.Range.Cells(1, 2).Value = userName
-    row.Range.Cells(1, 3).Value = "SETUP_MASTER"
-    row.Range.Cells(1, 4).Value = ""
-    row.Range.Cells(1, 5).Value = "Master template skeleton created"
-    row.Range.Cells(1, 6).Value = APP_VERSION
-
+    LogAction "SETUP_MASTER", "", "Master template skeleton created"
     On Error GoTo 0
 End Sub

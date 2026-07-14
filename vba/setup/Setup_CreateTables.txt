@@ -5,22 +5,34 @@ Option Explicit
 ' ========================================================================
 
 Public Sub Setup_CreateTables(Optional ByVal silent As Boolean = False)
+    Dim errNum As Long
+    Dim errDesc As String
+
     If Not silent Then
         If MsgBox("Create all data tables?", vbQuestion + vbYesNo, "Setup — Tables") <> vbYes Then Exit Sub
     End If
 
     SetExcelState "disable"
     On Error GoTo ErrorHandler
+    SuspendWorkbookProtection
 
     BuildAllTables
 
+    ResumeWorkbookProtection
     SetExcelState "enable"
     If Not silent Then MsgBox "Tables created successfully.", vbInformation, "Setup — Tables"
     Exit Sub
 
 ErrorHandler:
+    errNum = Err.Number
+    errDesc = Err.Description
     SetExcelState "enable"
-    MsgBox "Error creating tables: " & Err.Number & " - " & Err.Description, vbCritical, "Setup — Tables"
+    If Not silent Then
+        ForceResumeWorkbookProtection
+        MsgBox "Error creating tables: " & errNum & " - " & errDesc, vbCritical, "Setup — Tables"
+    Else
+        Err.Raise errNum, "Setup_CreateTables", errDesc
+    End If
 End Sub
 
 Private Sub BuildAllTables()

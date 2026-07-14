@@ -15,7 +15,7 @@ Overview — master template workflow
 1. Build the **master template once** (Phase 0 setup — no aircraft tail).
 2. Save as `Wildcat_SITS_Master.xlsm` (or similar).
 3. **Polish layout on the Master in Excel** (column widths, button positions on
-   Dashboard / SITS / Usage / Audit Log). Day-to-day refresh does **not** reset
+   Dashboard / SITS / Usage / Audit Log / Help). Day-to-day refresh does **not** reset
    these — only explicit Rebuild macros do.
 4. For each aircraft: **File > Save As** a copy (e.g. `ZZ383_SITS_v2.xlsm`).
 5. On the aircraft copy, run **Setup Wizard** to declare the tail and import data.
@@ -85,6 +85,7 @@ Setup modules (one-time use):
   vba/setup/Setup_CreateNamedRanges.txt modSetupNames
   vba/setup/Setup_CreateDashboard.txt   modSetupDashboard
   vba/setup/Setup_FormatUsageMatrix.txt modSetupUsageMatrix
+  vba/setup/Setup_CreateHelpSheet.txt   modSetupHelp
   vba/setup/Setup_RunAll.txt            modSetupRunAll
 
 The macros you run still use their procedure names, e.g. Setup_CreateTables and
@@ -228,16 +229,17 @@ Manage:
      correct due-soon position (e.g. 25:00 no longer sits above sooner jobs)
 7. Form stays open and refreshes after Delete/Remove/Close.
 
-Dashboard (Phase 4/5 / v2.3.2):
+Dashboard (Phase 4/5 / v2.3.7):
   Open work packages count
   Tasks needing manual update count
   Tasks in warning period count (amber — same rules as SITS view)
   Tasks overdue count (pink — same rules as SITS view)
   Status values in C6:C11 are centred
-  Pre-setup / master: only **Setup Wizard** under User Actions
-  After setup: Log Sortie, Work Packages, View Audit Log (two columns)
+  Pre-setup / master: **Setup Wizard** + **View Help** under User Actions
+  After setup: Log Sortie, Work Packages, View Audit Log, View Help (two columns)
   Extend / Defer are on the **SITS sheet only** (not Dashboard)
   Import SITS and Refresh Usage moved to Developer Tools
+  Help sheet explains each part of the system (built by Setup_CreateHelpSheet)
 
 Developer Tools (hidden by default):
   Alt+F8 → **EnableDevTools** to show the whole section; **HideDevTools** (or the
@@ -245,7 +247,7 @@ Developer Tools (hidden by default):
   Import SITS, Refresh Usage, Repair Formats, Repair Visibility, Validate Structure,
   Rebuild Dashboard, Ensure Missing Buttons, Phase 0 Setup, Rebuild SITS Layout,
   Format Usage Matrix, Protect Workbook, Unprotect Workbook, Hide Dev Tools,
-  Reset to Master
+  Reset to Master, Rebuild Help Sheet
 
 Reset to Master (data only — preserves formatting):
   Dashboard Dev Tools button → **ResetWorkbookToMaster**
@@ -478,6 +480,30 @@ Fixes Setup Wizard / Import SITS runtime error 1004 after sheet protection:
 4. Re-test Setup Wizard Step 2 (Long Forecast import) on a protected copy.
 5. Re-test SITS Selector checkboxes after Refresh SITS — they must toggle.
 
+Upgrading for the Help sheet (v2.3.4 / v2.3.5)
+----------------------------------------------
+Adds a visible **Help** sheet that explains how to use each part of the system,
+plus Dashboard **View Help** / Dev Tools **Rebuild Help Sheet**.
+
+1. Replace modules: CONFIG, modUtility, modValidation, Setup_CreateSheets,
+   Setup_CreateDashboard, Setup_CreateConfig, Setup_CreateTables, Setup_RunAll.
+2. Insert setup module modSetupHelp from vba/setup/Setup_CreateHelpSheet.txt
+   (Name property = modSetupHelp).
+3. Compile VBAProject.
+4. Run **Setup_CreateHelpSheet** once (Alt+F8, or Dev Tools → Rebuild Help Sheet
+   after EnableDevTools + Ensure Missing Buttons). This creates/fills the Help
+   sheet without a full Phase 0 rebuild.
+5. Ensure Missing Buttons (or Rebuild Dashboard) so **View Help** appears under
+   User Actions. Validate Structure should then pass (Help is a required sheet).
+
+v2.3.5 also fixes Phase 0 Setup failing at "Seeding configuration" with
+error 1004 ("Table features aren't available because the sheet is protected").
+Cause: SetConfigValue's nested Resume re-locked sheets mid-run before
+interval-map ListRows.Add. Phase 0 now keeps an outer Suspend for the whole
+rebuild; Setup_CreateConfig / Setup_CreateTables nest correctly.
+Replace Setup_RunAll, Setup_CreateConfig, Setup_CreateTables, and
+Setup_CreateHelpSheet if an older paste still fails.
+
 Upgrading for HUMS Op No on the Usage matrix
 --------------------------------------------
 1. Replace modules: CONFIG, modUsageLog, Setup_FormatUsageMatrix,
@@ -547,6 +573,25 @@ Phase 0 Setup fails when data sheets are hidden (error during "Building sheets")
      deleting/rebuilding. Re-import those modules if an older build still fails.
   -> Workaround on an old build: Repair Visibility (or unhide all sheets), then
      run Phase 0 Setup again.
+
+Phase 0 Setup fails during "Seeding configuration" (error 1004 table features)
+  -> Fixed in v2.3.5: Phase 0 keeps SuspendWorkbookProtection for the whole run
+     so SetConfigValue's nested Resume cannot re-lock sheets before interval-map
+     rows are added. Re-import Setup_RunAll, Setup_CreateConfig, Setup_CreateTables,
+     Setup_CreateHelpSheet.
+
+Setup Wizard error: 0 - (after imports succeed; tail wrong / C6:C7 struck through)
+  -> Fixed in v2.3.6: the real failure was adding Dashboard/SITS form controls after
+     protection was re-applied; LogError cleared Err before the MsgBox so it showed 0.
+     Re-import modSetupWizard, CONFIG, Setup_CreateDashboard, modSITS.
+     Then re-run Setup Wizard (or click Ensure Missing Buttons + Repair formulas by
+     Rebuild Dashboard if you only need the button/tail display fix).
+
+Dashboard C6/C7 stay "stale" (strikethrough) after Phase 0 / Setup Wizard
+  -> Fixed in v2.3.7: formulas were written while Application.Calculation was Manual
+     (SetExcelState disable) and never recalculated when calc was restored. Excel marks
+     those results stale. Re-import modUtility + Setup_CreateDashboard; run Rebuild
+     Dashboard or Alt+F8 → RepairDashboardConfigFormulas (or press F9 once).
 
 Serial numbers show as 1.11E+12 or lose leading zeros
   -> Re-import SITS/usage after updating modUtility, or click Repair Formats.

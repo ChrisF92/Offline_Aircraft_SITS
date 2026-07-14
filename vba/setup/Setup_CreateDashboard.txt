@@ -7,8 +7,8 @@ Option Explicit
 ' Rebuild). EnsureDashboardActionButtons only adds missing buttons so
 ' developer placement and column widths survive day-to-day use.
 '
-' Pre-setup / master: only Setup Wizard is shown under User Actions.
-' After setup: Log Sortie, Work Packages, View Audit Log.
+' Pre-setup / master: Setup Wizard + View Help under User Actions.
+' After setup: Log Sortie, Work Packages, View Audit Log, View Help.
 ' Extend / Defer live on the SITS sheet only (not Dashboard).
 ' Import SITS and Refresh Usage live under Developer Tools.
 '
@@ -25,6 +25,7 @@ Private Const USER_BTN_START_ROW As Long = 14
 Private Const DEV_HEADER_ROW As Long = 18
 Private Const DEV_HELP_ROW As Long = 19
 Private Const DEV_BTN_START_ROW As Long = 20
+Private Const DEV_BTN_LAST_OFFSET As Long = 7
 
 Public Sub Setup_CreateDashboard(Optional ByVal silent As Boolean = False)
     If Not silent Then
@@ -62,9 +63,10 @@ Public Sub RefreshDashboardLayout()
 
     WriteSectionHeader ws, "B5", "Aircraft Status"
     WriteLabelValue ws, "B6", "Tail Number:", _
-        "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_TAIL_NUMBER & """,tblConfig[Setting],0)),"""" )"
+        "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_TAIL_NUMBER & """,tblConfig[Setting],0)),"""")"
     WriteLabelValue ws, "B7", "Setup Complete:", _
         "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_SETUP_COMPLETE & """,tblConfig[Setting],0)),FALSE)"
+    RepairDashboardConfigFormulas
 
     WriteLabel ws, "B8", "Open work packages:"
     ws.Range("C8").Value = CountOpenWorkPackages()
@@ -132,17 +134,25 @@ Public Sub RefreshDashboardStatusCounts()
 
     CenterStatusValueCells ws
     WriteWorkbookStatusLine ws
+    Err.Clear
     On Error GoTo 0
 End Sub
 
 ' Add any missing Dashboard buttons at default anchors; never move existing ones.
 Public Sub EnsureDashboardActionButtons()
     Dim ws As Worksheet
+    Dim errNum As Long
+    Dim errDesc As String
+    Dim suspended As Boolean
 
     Set ws = GetWorksheet(SHEET_DASHBOARD, showError:=False)
     If ws Is Nothing Then Exit Sub
 
     SetExcelState "disable"
+    On Error GoTo ErrorHandler
+    SuspendWorkbookProtection
+    suspended = True
+
     PrepareUserButtonRows ws
     SyncUserActionButtons ws, forceAdd:=False
     If AreDevToolsEnabled() Then
@@ -150,7 +160,56 @@ Public Sub EnsureDashboardActionButtons()
     Else
         HideDashboardDevToolsSection ws
     End If
+
+    ResumeWorkbookProtection
+    suspended = False
     SetExcelState "enable"
+    Exit Sub
+
+ErrorHandler:
+    errNum = Err.Number
+    errDesc = Err.Description
+    If suspended Then ResumeWorkbookProtection
+    SetExcelState "enable"
+    Err.Raise errNum, "EnsureDashboardActionButtons", errDesc
+End Sub
+
+' Restore Tail / Setup Complete formulas if they were overwritten or lost table refs.
+Public Sub RepairDashboardConfigFormulas()
+    Dim ws As Worksheet
+    Dim calcWas As XlCalculation
+
+    Set ws = GetWorksheet(SHEET_DASHBOARD, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    On Error Resume Next
+    calcWas = Application.Calculation
+    ' Ensure these lookups calculate immediately (avoid Excel "stale" strikethrough).
+    Application.Calculation = xlCalculationAutomatic
+
+    With ws.Range("C6")
+        .Formula = "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_TAIL_NUMBER & """,tblConfig[Setting],0)),"""")"
+        .Font.Strikethrough = False
+        .Font.Name = "Calibri"
+        .Font.Size = 11
+        .Font.Color = RGB(0, 0, 0)
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+    End With
+    With ws.Range("C7")
+        .Formula = "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_SETUP_COMPLETE & """,tblConfig[Setting],0)),FALSE)"
+        .Font.Strikethrough = False
+        .Font.Name = "Calibri"
+        .Font.Size = 11
+        .Font.Color = RGB(0, 0, 0)
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+    End With
+
+    ws.Range("C6:C7").Calculate
+    Application.Calculate
+    If calcWas <> 0 Then Application.Calculation = calcWas
+    On Error GoTo 0
 End Sub
 
 ' Alt+F8 → EnableDevTools — reveals the whole Developer Tools section.
@@ -223,8 +282,10 @@ Private Sub SyncUserActionButtons(ByVal ws As Worksheet, ByVal forceAdd As Boole
 
         If forceAdd Then
             AddDashboardButtonAt ws, USER_BTN_START_ROW, 0, "Setup Wizard", "RunSetupWizard"
+            AddDashboardButtonAt ws, USER_BTN_START_ROW, 1, "View Help", "ViewHelp"
         Else
             EnsureDashboardButtonAt ws, USER_BTN_START_ROW, 0, "Setup Wizard", "RunSetupWizard"
+            EnsureDashboardButtonAt ws, USER_BTN_START_ROW, 1, "View Help", "ViewHelp"
         End If
     Else
         RemoveDashboardButtonForMacro ws, "RunSetupWizard"
@@ -233,10 +294,12 @@ Private Sub SyncUserActionButtons(ByVal ws As Worksheet, ByVal forceAdd As Boole
             AddDashboardButtonAt ws, USER_BTN_START_ROW, 0, "Log Sortie", "RunLogSortie"
             AddDashboardButtonAt ws, USER_BTN_START_ROW, 1, "Work Packages", "RunManageWorkPackages"
             AddDashboardButtonAt ws, USER_BTN_START_ROW + 1, 0, "View Audit Log", "ViewAuditLog"
+            AddDashboardButtonAt ws, USER_BTN_START_ROW + 1, 1, "View Help", "ViewHelp"
         Else
             EnsureDashboardButtonAt ws, USER_BTN_START_ROW, 0, "Log Sortie", "RunLogSortie"
             EnsureDashboardButtonAt ws, USER_BTN_START_ROW, 1, "Work Packages", "RunManageWorkPackages"
             EnsureDashboardButtonAt ws, USER_BTN_START_ROW + 1, 0, "View Audit Log", "ViewAuditLog"
+            EnsureDashboardButtonAt ws, USER_BTN_START_ROW + 1, 1, "View Help", "ViewHelp"
         End If
     End If
 
@@ -272,8 +335,8 @@ End Sub
 Private Sub HideDashboardDevToolsSection(ByVal ws As Worksheet)
     RemoveDevToolButtons ws
     On Error Resume Next
-    ws.Range("B" & DEV_HEADER_ROW & ":D" & (DEV_BTN_START_ROW + 6)).ClearContents
-    ws.Range("B" & DEV_HEADER_ROW & ":D" & (DEV_BTN_START_ROW + 6)).ClearComments
+    ws.Range("B" & DEV_HEADER_ROW & ":D" & (DEV_BTN_START_ROW + DEV_BTN_LAST_OFFSET)).ClearContents
+    ws.Range("B" & DEV_HEADER_ROW & ":D" & (DEV_BTN_START_ROW + DEV_BTN_LAST_OFFSET)).ClearComments
     On Error GoTo 0
 End Sub
 
@@ -292,6 +355,7 @@ Private Sub AddDevToolButtons(ByVal ws As Worksheet)
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 1, "Unprotect Workbook", "UnprotectWorkbook"
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 6, 0, "Hide Dev Tools", "HideDevTools"
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 6, 1, "Reset to Master", "ResetWorkbookToMaster"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 7, 0, "Rebuild Help Sheet", "Setup_CreateHelpSheet"
 End Sub
 
 Private Sub EnsureDevToolButtons(ByVal ws As Worksheet)
@@ -309,6 +373,7 @@ Private Sub EnsureDevToolButtons(ByVal ws As Worksheet)
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 1, "Unprotect Workbook", "UnprotectWorkbook"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 6, 0, "Hide Dev Tools", "HideDevTools"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 6, 1, "Reset to Master", "ResetWorkbookToMaster"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 7, 0, "Rebuild Help Sheet", "Setup_CreateHelpSheet"
 End Sub
 
 Private Sub RemoveDevToolButtons(ByVal ws As Worksheet)
@@ -326,6 +391,7 @@ Private Sub RemoveDevToolButtons(ByVal ws As Worksheet)
     RemoveDashboardButtonForMacro ws, "UnprotectWorkbook"
     RemoveDashboardButtonForMacro ws, "HideDevTools"
     RemoveDashboardButtonForMacro ws, "ResetWorkbookToMaster"
+    RemoveDashboardButtonForMacro ws, "Setup_CreateHelpSheet"
 End Sub
 
 Private Sub AddDashboardButtonAt(ByVal ws As Worksheet, ByVal rowNum As Long, _
@@ -391,7 +457,7 @@ Private Sub PrepareUserButtonRows(ByVal ws As Worksheet)
 End Sub
 
 Private Sub PrepareDevButtonRows(ByVal ws As Worksheet)
-    ws.Rows(DEV_BTN_START_ROW & ":" & (DEV_BTN_START_ROW + 6)).RowHeight = BTN_ROW_HEIGHT
+    ws.Rows(DEV_BTN_START_ROW & ":" & (DEV_BTN_START_ROW + DEV_BTN_LAST_OFFSET)).RowHeight = BTN_ROW_HEIGHT
 End Sub
 
 Private Sub RemoveDashboardButtons(ByVal ws As Worksheet)

@@ -9,7 +9,7 @@ Option Explicit
 
 ' --- Workbook identity ---
 Public Const APP_NAME As String = "Offline Aircraft SITS"
-Public Const APP_VERSION As String = "2.3.3"
+Public Const APP_VERSION As String = "2.3.7"
 Public Const AIRCRAFT_TYPE As String = "Wildcat"
 
 ' Sheet/workbook protect password — stops accidental UI edits, not a security boundary.
@@ -27,6 +27,7 @@ Public Const SHEET_DASHBOARD As String = "Dashboard"
 Public Const SHEET_SITS As String = "SITS"
 Public Const SHEET_USAGE As String = "Usage"
 Public Const SHEET_AUDIT As String = "Audit Log"
+Public Const SHEET_HELP As String = "Help"
 
 ' --- Hidden data / system sheets ---
 Public Const SHEET_CONFIG As String = "_CONFIG"
@@ -342,6 +343,8 @@ Public Sub SetConfigValue(ByVal settingName As String, ByVal newValue As Variant
     Dim tbl As ListObject
     Dim row As ListRow
     Dim found As Boolean
+    Dim errNum As Long
+    Dim errDesc As String
 
     Set ws = GetWorksheet(SHEET_CONFIG)
     Set tbl = GetTable(ws, TBL_CONFIG)
@@ -357,18 +360,23 @@ Public Sub SetConfigValue(ByVal settingName As String, ByVal newValue As Variant
         Next row
     End If
 
-    If Not found Then
-        ' ListRows.Add needs the sheet unprotected.
-        SuspendWorkbookProtection
-        On Error Resume Next
-        Set row = tbl.ListRows.Add
-        If Err.Number = 0 Then
-            row.Range.Cells(1, 1).Value = settingName
-            row.Range.Cells(1, 2).Value = newValue
-        End If
-        ResumeWorkbookProtection
-        On Error GoTo 0
-    End If
+    If found Then Exit Sub
+
+    ' ListRows.Add needs the sheet unprotected.
+    SuspendWorkbookProtection
+    On Error GoTo AddFail
+    Set row = tbl.ListRows.Add
+    row.Range.Cells(1, 1).Value = settingName
+    row.Range.Cells(1, 2).Value = newValue
+    ResumeWorkbookProtection
+    Exit Sub
+
+AddFail:
+    errNum = Err.Number
+    errDesc = Err.Description
+    ResumeWorkbookProtection
+    Err.Raise errNum, "SetConfigValue", _
+              "Failed to write config '" & settingName & "': " & errDesc
 End Sub
 
 Public Function GetTailNumber() As String

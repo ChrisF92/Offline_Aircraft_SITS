@@ -51,6 +51,9 @@ Public Sub SetExcelState(ByVal action As String)
                 Else
                     Application.Calculation = mSavedCalculation
                 End If
+                ' Formulas written while calc was manual stay "stale" (strikethrough)
+                ' until Excel recalculates — e.g. Dashboard C6/C7 tblConfig lookups.
+                Application.Calculate
                 Application.StatusBar = False
                 On Error GoTo 0
 
@@ -64,6 +67,7 @@ Public Sub SetExcelState(ByVal action As String)
             mExcelStateDepth = 0
             On Error Resume Next
             Application.Calculation = xlCalculationAutomatic
+            Application.Calculate
             Application.StatusBar = False
             On Error GoTo 0
             Application.Cursor = xlDefault
@@ -430,7 +434,7 @@ Public Sub OrderSetupSheets()
     UnprotectWorkbookStructure
 
     order = Array( _
-        SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT, _
+        SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT, SHEET_HELP, _
         SHEET_CONFIG, SHEET_DATA_SITS, SHEET_DATA_USAGE_BASELINE, _
         SHEET_DATA_USAGE_LOG, SHEET_DATA_USAGE_CURRENT, _
         SHEET_DATA_WP, SHEET_DATA_WP_TASKS, SHEET_WP_STATE _
@@ -459,6 +463,7 @@ Public Sub FinalizeSetupSheetLayout()
     ThisWorkbook.Worksheets(SHEET_SITS).Tab.Color = COLOR_TAB_VISIBLE
     ThisWorkbook.Worksheets(SHEET_USAGE).Tab.Color = COLOR_TAB_VISIBLE
     ThisWorkbook.Worksheets(SHEET_AUDIT).Tab.Color = COLOR_TAB_SYSTEM
+    ThisWorkbook.Worksheets(SHEET_HELP).Tab.Color = COLOR_TAB_VISIBLE
     ThisWorkbook.Worksheets(SHEET_CONFIG).Tab.Color = COLOR_TAB_DATA
     ThisWorkbook.Worksheets(SHEET_DATA_SITS).Tab.Color = COLOR_TAB_DATA
     ThisWorkbook.Worksheets(SHEET_DATA_USAGE_BASELINE).Tab.Color = COLOR_TAB_DATA
@@ -499,7 +504,7 @@ End Sub
 
 Private Function IsUserFacingSetupSheet(ByVal sheetName As String) As Boolean
     Select Case sheetName
-        Case SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT
+        Case SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT, SHEET_HELP
             IsUserFacingSetupSheet = True
         Case Else
             IsUserFacingSetupSheet = False

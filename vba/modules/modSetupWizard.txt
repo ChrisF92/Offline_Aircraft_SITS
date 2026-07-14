@@ -18,6 +18,9 @@ Public Sub RunSetupWizard()
     Dim summary As String
     Dim userName As String
     Dim failReason As String
+    Dim errNum As Long
+    Dim errDesc As String
+    Dim protectionSuspended As Boolean
 
     On Error GoTo ErrorHandler
 
@@ -114,10 +117,18 @@ Public Sub RunSetupWizard()
     userName = Environ$("USERNAME")
     If Len(userName) = 0 Then userName = "Unknown"
 
+    ' Keep sheets unlocked through config writes, snapshot, view refresh, and
+    ' Dashboard button swap. Nested Suspend/Resume in helpers must not re-lock
+    ' before Buttons.Add / CheckBoxes.Add (that surfaced as a bogus "error 0").
+    SuspendWorkbookProtection
+    protectionSuspended = True
+
     SetConfigValue CFG_SETUP_COMPLETE, True
     SetConfigValue CFG_SETUP_DATE, Now
     SetConfigValue CFG_SETUP_BY, userName
     SetConfigValue CFG_MASTER_TEMPLATE, False
+    ' Re-assert tail after imports in case any helper touched config.
+    SetConfigValue CFG_TAIL_NUMBER, tailNumber
 
     ResetUsageImportSession
     LogSetupComplete tailNumber, sitsCount, usageCount
@@ -126,6 +137,9 @@ Public Sub RunSetupWizard()
     RefreshSITS
     RefreshDashboardAfterSetup
 
+    ResumeWorkbookProtection
+    protectionSuspended = False
+
     MsgBox "Setup complete for " & tailNumber & "." & vbCrLf & vbCrLf & _
            "SITS tasks: " & sitsCount & vbCrLf & _
            "Usage baseline rows: " & usageCount & vbCrLf & vbCrLf & _
@@ -133,9 +147,19 @@ Public Sub RunSetupWizard()
     Exit Sub
 
 ErrorHandler:
+    errNum = Err.Number
+    errDesc = Err.Description
+    On Error Resume Next
     ResetUsageImportSession
-    LogError PROC_NAME, Err.Number, Err.Description
-    MsgBox "Setup Wizard error: " & Err.Number & " - " & Err.Description, vbCritical, "Setup Wizard"
+    If protectionSuspended Then ForceResumeWorkbookProtection
+    On Error GoTo 0
+
+    If errNum = 0 And Len(errDesc) = 0 Then
+        errDesc = "Unknown error after import commit (protection/button refresh)."
+    End If
+
+    LogError PROC_NAME, errNum, errDesc
+    MsgBox "Setup Wizard error: " & errNum & " - " & errDesc, vbCritical, "Setup Wizard"
 End Sub
 
 Private Function PromptTailNumber() As String
@@ -166,6 +190,11 @@ Private Sub UpdateDashboardTailDisplay(ByVal tailNumber As String)
     If Not ws Is Nothing Then
         ws.Range("B2").Value = tailNumber
     End If
+
+    Set ws = GetWorksheet(SHEET_USAGE, showError:=False)
+    If Not ws Is Nothing Then
+        ws.Range("B2").Value = tailNumber
+    End If
 End Sub
 
 Private Sub RefreshDashboardAfterSetup()
@@ -173,4 +202,5 @@ Private Sub RefreshDashboardAfterSetup()
     ' EnsureDashboardActionButtons swaps Setup Wizard for the post-setup user actions.
     EnsureDashboardActionButtons
     RefreshDashboardStatusCounts
+    RepairDashboardConfigFormulas
 End Sub
