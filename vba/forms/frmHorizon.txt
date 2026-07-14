@@ -1,0 +1,50 @@
+Option Explicit
+
+' ========================================================================
+' HORIZON USERFORM — Offline Aircraft SITS v2
+' ========================================================================
+' Create this UserForm manually in the VBA IDE and paste this code.
+' See vba/forms/HORIZON_FORM_LAYOUT.txt for control names and layout.
+' ========================================================================
+
+Private Sub UserForm_Activate()
+    CenterUserFormOnExcel Me
+End Sub
+
+Private Sub UserForm_Initialize()
+    EnsureForecastConfigDefaults
+    txtHours.Value = CStr(GetForecastHoursSetting())
+    txtDays.Value = CStr(GetForecastDaysSetting())
+    txtNumber.Value = CStr(GetForecastNumberSetting())
+End Sub
+
+Private Sub cmdApply_Click()
+    ' Use ControlText — Default/Enter can fire before TextBox.Value is committed.
+    If ApplyHorizonSettings(ControlText(txtHours), ControlText(txtDays), _
+                            ControlText(txtNumber), True) Then
+        Unload Me
+    End If
+End Sub
+
+Private Sub cmdCancel_Click()
+    Unload Me
+End Sub
+
+' Prefer .Text while the control still has focus (Value may be stale on Enter).
+Private Function ControlText(ByVal ctl As Object) As String
+    Dim liveText As String
+    Dim committed As String
+
+    On Error Resume Next
+    liveText = CStr(ctl.Text)
+    If Err.Number <> 0 Then liveText = ""
+    Err.Clear
+    committed = CStr(ctl.Value)
+    On Error GoTo 0
+
+    If Len(Trim$(liveText)) > 0 Then
+        ControlText = Trim$(liveText)
+    Else
+        ControlText = Trim$(committed)
+    End If
+End Function

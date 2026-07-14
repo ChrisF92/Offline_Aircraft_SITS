@@ -519,16 +519,16 @@ End Sub
 ' (Excel clears that flag when the file is closed).
 '
 ' Unlocked UI inputs (SITS only):
-'   B3:B5  — forecast hours / days / number
 '   Col A from data start — Selector LinkedCells for checkboxes
 ' DrawingObjects:=False so Form Control buttons/checkboxes stay clickable.
+' Horizon forecast settings are edited via frmHorizon (config), not sheet cells.
 ' ========================================================================
 
 Public Sub ProtectWorkbook()
     ApplyWorkbookProtection
     MsgBox "Workbook is protected." & vbCrLf & vbCrLf & _
            "Sheets and structure are locked. Buttons, forms, filters, and SITS " & _
-           "forecast / selector inputs still work. VBA continues to update data.", _
+           "selector checkboxes still work. VBA continues to update data.", _
            vbInformation, APP_NAME
 End Sub
 
@@ -623,9 +623,7 @@ Private Sub ConfigureSheetCellLocks(ByVal ws As Worksheet)
     ws.Cells.Locked = True
 
     If StrComp(ws.Name, SHEET_SITS, vbTextCompare) = 0 Then
-        ws.Range("B3:B5").Locked = False
-        ws.Range("B3:B5").Interior.Color = COLOR_INPUT_HIGHLIGHT
-
+        ' Selector LinkedCells must accept checkbox TRUE/FALSE writes.
         lastRow = ws.Rows.Count
         ws.Range(ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL), _
                  ws.Cells(lastRow, SITS_SELECTOR_COL)).Locked = False

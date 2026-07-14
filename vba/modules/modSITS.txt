@@ -4,12 +4,14 @@ Option Explicit
 ' SITS MODULE — Offline Aircraft SITS v2 (Phase 3)
 ' ========================================================================
 ' Baseline life remaining from GOLDesp import; usage deltas applied after
-' sorties. Calendar DD tasks use imported due dates. View sheet with forecast
-' filter, warning highlighting, and selector-driven row selection highlight.
+' sorties. Calendar DD tasks use imported due dates. View sheet with Horizon
+' forecast filter, warning highlighting, and selector-driven row selection highlight.
 '
 ' Layout ownership: column widths, row heights, and action-button placement
 ' are set once during master setup (or RebuildSITSViewLayout). Day-to-day
-' RefreshSITSView rewrites data only and adds any missing action buttons.
+' RefreshSITSView rewrites data only, tidies shell chrome, and adds any
+' missing action buttons at default anchors — never moves or resizes
+' buttons the developer has already placed.
 ' ========================================================================
 
 Private Const SITS_VIEW_HEADER_ROW As Long = 7
@@ -19,7 +21,7 @@ Private Const SITS_FORECAST_DAYS_CELL As String = "B4"
 Private Const SITS_FORECAST_NUMBER_CELL As String = "B5"
 Private Const SITS_VISIBLE_COLUMN_COUNT As Long = 10
 Private Const SITS_HEADER_ROW_HEIGHT_PX As Double = 40
-Private Const SITS_BTN_WIDTH As Double = 130
+Private Const SITS_BTN_WIDTH As Double = 160
 Private Const SITS_BTN_HEIGHT As Double = 22
 Private Const SITS_SORT_KEY_MISSING As Double = 9.9E+307
 Private Const SITS_CHECKBOX_HIDE_FORMAT As String = ";;;"
@@ -47,10 +49,64 @@ Public Sub RebuildSITSViewLayout()
 
     SetExcelState "disable"
     EnsureSITSViewShellExists ws
+    TidySITSViewShellChrome ws
     ApplySITSViewDefaultColumnWidths ws
-    EnsureSITSViewActionButtons ws
+    EnsureSITSViewActionButtons ws, normaliseExisting:=True
     SetExcelState "enable"
 End Sub
+
+' Horizon button — open forecast filter (hours / days / number) dialog.
+Public Sub RunHorizonSettings()
+    ShowHorizonForm
+End Sub
+
+Public Sub ShowHorizonForm()
+    If Not ValidateWorkbookStructure(showDialogs:=True) Then Exit Sub
+    EnsureForecastConfigDefaults
+    frmHorizon.Show
+End Sub
+
+' Apply Horizon values from the UserForm (or any caller). Refreshes the view.
+Public Function ApplyHorizonSettings(ByVal hoursText As String, _
+                                     ByVal daysText As String, _
+                                     ByVal numberText As String, _
+                                     Optional ByVal showDialogs As Boolean = True) As Boolean
+    Dim hoursValue As Double
+    Dim daysValue As Long
+    Dim numberValue As Long
+    Dim failReason As String
+    Dim ws As Worksheet
+
+    ApplyHorizonSettings = False
+
+    If Not ParseHorizonHours(hoursText, hoursValue, failReason) Then
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+    If Not ParseHorizonWholeNumber(daysText, "Days", daysValue, failReason) Then
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+    If Not ParseHorizonWholeNumber(numberText, "Number", numberValue, failReason) Then
+        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    SetConfigValue CFG_FORECAST_HOURS, hoursValue
+    SetConfigValue CFG_FORECAST_DAYS, daysValue
+    SetConfigValue CFG_FORECAST_NUMBER, numberValue
+
+    ' Prevent SaveForecastSettingsFromView from writing stale B3/B4/B5 over config.
+    Set ws = GetWorksheet(SHEET_SITS, showError:=False)
+    If Not ws Is Nothing Then ClearSITSViewLegacyForecastCells ws
+
+    LogAction "SITS_HORIZON_SET", "", _
+              "Hours=" & CStr(hoursValue) & "; Days=" & CStr(daysValue) & _
+              "; Number=" & CStr(numberValue)
+
+    RefreshSITSViewOnly
+    ApplyHorizonSettings = True
+End Function
 
 ' Form-control checkbox OnAction — highlight / unhighlight the linked SITS view row.
 ' Resolve the control via Application.Caller (name may not stay SITS_SEL_*), then
@@ -523,6 +579,7 @@ Public Sub RefreshSITSView()
     ' Clear data/header rows only — preserve shell chrome and column widths.
     ClearSITSViewDataArea wsView, viewColumns.Count
     EnsureSITSViewShellExists wsView
+    TidySITSViewShellChrome wsView
     wsView.Range("B2").Value = GetTailNumber()
     EnsureSITSViewActionButtons wsView
 
@@ -986,10 +1043,7 @@ Private Sub ApplySITSViewAutoFilter(ByVal ws As Worksheet, _
     ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 1), ws.Cells(lastDataRow, colCount)).AutoFilter
 End Sub
 
-Private Sub WriteSITSViewShell(ByVal ws As Worksheet, _
-                               Optional ByVal forecastHours As Double = -1#, _
-                               Optional ByVal forecastDays As Long = -1, _
-                               Optional ByVal forecastNumber As Long = -1)
+Private Sub WriteSITSViewShell(ByVal ws As Worksheet)
     With ws.Range("A1")
         .Value = "SITS — Task View"
         .Font.Size = 14
@@ -1000,36 +1054,129 @@ Private Sub WriteSITSViewShell(ByVal ws As Worksheet, _
     ws.Range("A2").Value = "Tail:"
     ws.Range("B2").Value = GetTailNumber()
 
-    If forecastHours < 0# Then forecastHours = GetForecastHoursSetting()
-    If forecastDays < 0 Then forecastDays = GetForecastDaysSetting()
-    If forecastNumber < 0 Then forecastNumber = GetForecastNumberSetting()
-
-    ws.Range("A3").Value = "Forecast hours (HH/E1/E2):"
-    ws.Range("B3").Value = forecastHours
-    ws.Range("B3").NumberFormat = FORMAT_GENERAL
-    ws.Range("B3").Interior.Color = COLOR_INPUT_HIGHLIGHT
-
-    ws.Range("A4").Value = "Forecast days (DD):"
-    ws.Range("B4").Value = forecastDays
-    ws.Range("B4").NumberFormat = FORMAT_GENERAL
-    ws.Range("B4").Interior.Color = COLOR_INPUT_HIGHLIGHT
-
-    ws.Range("A5").Value = "Forecast number (other):"
-    ws.Range("B5").Value = forecastNumber
-    ws.Range("B5").NumberFormat = FORMAT_GENERAL
-    ws.Range("B5").Interior.Color = COLOR_INPUT_HIGHLIGHT
-
-    ws.Range("A6").Value = "Tick tasks, then Create Work Package / Extend / Defer / Remove Task. Use Add Task to enter a new row. Manage Work Packages deletes, removes tasks, or closes open ORNs. Filter dropdowns on row 7 hide interval types."
-    ws.Range("A6").Font.Size = 9
-    ws.Range("A6").Font.Italic = True
+    ' Forecast thresholds live in config / Horizon dialog — not editable cells.
+    ClearSITSViewLegacyForecastCells ws
+    UpdateSITSHorizonSummary ws
+    ws.Range("A6").ClearContents
 End Sub
 
-' Create shell labels/forecast cells only when the sheet has never been laid out.
+' Create shell labels only when the sheet has never been laid out.
 Private Sub EnsureSITSViewShellExists(ByVal ws As Worksheet)
     If Len(Trim$(CStr(ws.Range("A1").Value))) = 0 Then
         WriteSITSViewShell ws
     End If
 End Sub
+
+' Migrate legacy B3/B4/B5 inputs into config once, drop row-6 clutter,
+' then refresh the Horizon summary line.
+Private Sub TidySITSViewShellChrome(ByVal ws As Worksheet)
+    If ws Is Nothing Then Exit Sub
+
+    ' Capture any still-present sheet values into config before clearing.
+    SaveForecastSettingsFromView
+    EnsureForecastConfigDefaults
+    ClearSITSViewLegacyForecastCells ws
+    UpdateSITSHorizonSummary ws
+    ws.Range("A6").ClearContents
+    ws.Range("A6").Font.Italic = False
+End Sub
+
+Private Sub ClearSITSViewLegacyForecastCells(ByVal ws As Worksheet)
+    If ws Is Nothing Then Exit Sub
+
+    ws.Range("A3").ClearContents
+    ws.Range("B3").ClearContents
+    ws.Range("A4").ClearContents
+    ws.Range("B4").ClearContents
+    ws.Range("A5").ClearContents
+    ws.Range("B5").ClearContents
+End Sub
+
+Private Sub UpdateSITSHorizonSummary(ByVal ws As Worksheet)
+    Dim hoursValue As Double
+    Dim daysValue As Long
+    Dim numberValue As Long
+
+    If ws Is Nothing Then Exit Sub
+
+    hoursValue = GetForecastHoursSetting()
+    daysValue = GetForecastDaysSetting()
+    numberValue = GetForecastNumberSetting()
+
+    With ws.Range("A3")
+        .Value = "Horizon: " & FormatHorizonHours(hoursValue) & " / " & _
+                 CStr(daysValue) & "d / " & CStr(numberValue) & _
+                 "   (use Horizon button — 0 = show all)"
+        .Font.Size = 9
+        .Font.Italic = False
+        .Font.Bold = False
+        .Font.Color = RGB(89, 89, 89)
+    End With
+End Sub
+
+Private Function FormatHorizonHours(ByVal hoursValue As Double) As String
+    If hoursValue = Fix(hoursValue) Then
+        FormatHorizonHours = CStr(CLng(hoursValue)) & "h"
+    Else
+        FormatHorizonHours = Format$(hoursValue, "0.##") & "h"
+    End If
+End Function
+
+Private Function ParseHorizonHours(ByVal textValue As String, _
+                                   ByRef hoursValue As Double, _
+                                   ByRef failReason As String) As Boolean
+    Dim trimmed As String
+
+    failReason = ""
+    trimmed = Trim$(textValue)
+    If Len(trimmed) = 0 Then
+        failReason = "Hours is required (use 0 to show all)."
+        Exit Function
+    End If
+    If Not IsNumeric(trimmed) Then
+        failReason = "Hours must be a number (use 0 to show all)."
+        Exit Function
+    End If
+    If CDbl(trimmed) < 0# Then
+        failReason = "Hours cannot be negative."
+        Exit Function
+    End If
+
+    hoursValue = CDbl(trimmed)
+    ParseHorizonHours = True
+End Function
+
+Private Function ParseHorizonWholeNumber(ByVal textValue As String, _
+                                         ByVal fieldName As String, _
+                                         ByRef wholeValue As Long, _
+                                         ByRef failReason As String) As Boolean
+    Dim trimmed As String
+    Dim parsed As Double
+
+    failReason = ""
+    trimmed = Trim$(textValue)
+    If Len(trimmed) = 0 Then
+        failReason = fieldName & " is required (use 0 to show all)."
+        Exit Function
+    End If
+    If Not IsNumeric(trimmed) Then
+        failReason = fieldName & " must be a number (use 0 to show all)."
+        Exit Function
+    End If
+
+    parsed = CDbl(trimmed)
+    If parsed < 0# Then
+        failReason = fieldName & " cannot be negative."
+        Exit Function
+    End If
+    If parsed <> Fix(parsed) Then
+        failReason = fieldName & " must be a whole number."
+        Exit Function
+    End If
+
+    wholeValue = CLng(parsed)
+    ParseHorizonWholeNumber = True
+End Function
 
 ' Clear header + data rows without touching rows 1–6 (shell / buttons).
 Private Sub ClearSITSViewDataArea(ByVal ws As Worksheet, ByVal columnCount As Long)
@@ -1105,46 +1252,64 @@ Private Sub ClearSITSViewControls(ByVal ws As Worksheet)
 End Sub
 
 ' Add any missing SITS action buttons at default anchors; never move existing ones.
-Private Sub EnsureSITSViewActionButtons(ByVal ws As Worksheet)
-    EnsureSheetButton ws, "Refresh View", "RunRefreshSITS", "D1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Create Work Package", "RunCreateWorkPackage", "F1", SITS_BTN_WIDTH + 20, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Manage Work Packages", "RunManageWorkPackages", "H1", SITS_BTN_WIDTH + 30, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Extend", "RunExtendFromSelection", "D3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Defer", "RunDeferFromSelection", "F3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Add Task", "RunAddSITSTask", "H3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
-    EnsureSheetButton ws, "Remove Task", "RunRemoveSITSTasks", "J3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT
+' When normaliseExisting:=True (Phase 0 / Rebuild SITS Layout only), also force
+' uniform caption + size on buttons that are already present.
+Private Sub EnsureSITSViewActionButtons(ByVal ws As Worksheet, _
+                                        Optional ByVal normaliseExisting As Boolean = False)
+    EnsureSheetButton ws, "Refresh View", "RunRefreshSITS", "D1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Create Work Package", "RunCreateWorkPackage", "F1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Manage Work Packages", "RunManageWorkPackages", "H1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Horizon", "RunHorizonSettings", "J1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Extend", "RunExtendFromSelection", "D3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Defer", "RunDeferFromSelection", "F3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Add Task", "RunAddSITSTask", "H3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Remove Task", "RunRemoveSITSTasks", "J3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
 End Sub
 
 Private Sub AddSITSViewActionButtons(ByVal ws As Worksheet)
     EnsureSITSViewActionButtons ws
 End Sub
 
-Private Function SheetHasButtonForMacro(ByVal ws As Worksheet, ByVal macroName As String) As Boolean
+Private Function FindSheetButtonForMacro(ByVal ws As Worksheet, ByVal macroName As String) As Button
     Dim btn As Button
     Dim actionName As String
     Dim bangPos As Long
 
-    SheetHasButtonForMacro = False
+    Set FindSheetButtonForMacro = Nothing
     On Error Resume Next
     For Each btn In ws.Buttons
         actionName = Trim$(CStr(btn.OnAction))
         bangPos = InStrRev(actionName, "!")
         If bangPos > 0 Then actionName = Mid$(actionName, bangPos + 1)
         If StrComp(actionName, macroName, vbTextCompare) = 0 Then
-            SheetHasButtonForMacro = True
+            Set FindSheetButtonForMacro = btn
             Exit Function
         End If
     Next btn
     On Error GoTo 0
 End Function
 
+Private Function SheetHasButtonForMacro(ByVal ws As Worksheet, ByVal macroName As String) As Boolean
+    SheetHasButtonForMacro = Not FindSheetButtonForMacro(ws, macroName) Is Nothing
+End Function
+
 Private Sub EnsureSheetButton(ByVal ws As Worksheet, ByVal caption As String, _
                               ByVal macroName As String, ByVal anchorCell As String, _
-                              ByVal btnWidth As Double, ByVal btnHeight As Double)
+                              ByVal btnWidth As Double, ByVal btnHeight As Double, _
+                              Optional ByVal normaliseExisting As Boolean = False)
     Dim btn As Button
     Dim anchor As Range
 
-    If SheetHasButtonForMacro(ws, macroName) Then Exit Sub
+    Set btn = FindSheetButtonForMacro(ws, macroName)
+    If Not btn Is Nothing Then
+        If normaliseExisting Then
+            ' Phase 0 / Rebuild only — keep Left/Top, force uniform caption + size.
+            btn.Caption = caption
+            btn.Width = btnWidth
+            btn.Height = btnHeight
+        End If
+        Exit Sub
+    End If
 
     Set anchor = ws.Range(anchorCell)
     Set btn = ws.Buttons.Add(anchor.Left, anchor.Top, btnWidth, btnHeight)
@@ -1819,18 +1984,8 @@ Private Sub SaveForecastSettingsFromView()
     End If
 End Sub
 
-Private Function GetForecastHoursSetting() As Double
-    Dim ws As Worksheet
+Public Function GetForecastHoursSetting() As Double
     Dim value As Variant
-
-    Set ws = GetWorksheet(SHEET_SITS, showError:=False)
-    If Not ws Is Nothing Then
-        value = ws.Range(SITS_FORECAST_HOURS_CELL).Value
-        If IsPresentNumericSetting(value) Then
-            GetForecastHoursSetting = CDbl(value)
-            Exit Function
-        End If
-    End If
 
     value = GetConfigValue(CFG_FORECAST_HOURS, 50)
     If IsPresentNumericSetting(value) Then
@@ -1840,18 +1995,8 @@ Private Function GetForecastHoursSetting() As Double
     End If
 End Function
 
-Private Function GetForecastDaysSetting() As Long
-    Dim ws As Worksheet
+Public Function GetForecastDaysSetting() As Long
     Dim value As Variant
-
-    Set ws = GetWorksheet(SHEET_SITS, showError:=False)
-    If Not ws Is Nothing Then
-        value = ws.Range(SITS_FORECAST_DAYS_CELL).Value
-        If IsPresentNumericSetting(value) Then
-            GetForecastDaysSetting = CLng(value)
-            Exit Function
-        End If
-    End If
 
     value = GetConfigValue(CFG_FORECAST_DAYS, 90)
     If IsPresentNumericSetting(value) Then
@@ -1861,18 +2006,8 @@ Private Function GetForecastDaysSetting() As Long
     End If
 End Function
 
-Private Function GetForecastNumberSetting() As Long
-    Dim ws As Worksheet
+Public Function GetForecastNumberSetting() As Long
     Dim value As Variant
-
-    Set ws = GetWorksheet(SHEET_SITS, showError:=False)
-    If Not ws Is Nothing Then
-        value = ws.Range(SITS_FORECAST_NUMBER_CELL).Value
-        If IsPresentNumericSetting(value) Then
-            GetForecastNumberSetting = CLng(value)
-            Exit Function
-        End If
-    End If
 
     value = GetConfigValue(CFG_FORECAST_NUMBER, 500)
     If IsPresentNumericSetting(value) Then
@@ -1897,7 +2032,7 @@ End Function
 
 ' Seed missing forecast config to defaults (50 hours / 90 days / 500 number).
 ' Does not overwrite an intentional 0 (show-all) value.
-Private Sub EnsureForecastConfigDefaults()
+Public Sub EnsureForecastConfigDefaults()
     Dim hoursValue As Variant
     Dim daysValue As Variant
     Dim numberValue As Variant
