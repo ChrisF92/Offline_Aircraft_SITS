@@ -12,6 +12,10 @@ Private mIntervalCode As String
 Private mActualInterval As Variant
 Private mFormatType As String
 
+Private Sub UserForm_Activate()
+    CenterUserFormOnExcel Me
+End Sub
+
 Private Sub UserForm_Initialize()
     Dim amountHint As String
     Dim rows As Collection

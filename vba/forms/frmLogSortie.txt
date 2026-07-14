@@ -24,6 +24,10 @@ Private Const CODE_WIDTH As Single = 28
 
 Private mRows As Collection
 
+Private Sub UserForm_Activate()
+    CenterUserFormOnExcel Me
+End Sub
+
 Private Sub UserForm_Initialize()
     Set mRows = New Collection
     txtSortieDate.Value = Format$(Date, FORMAT_DATE)
