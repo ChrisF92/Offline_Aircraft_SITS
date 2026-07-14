@@ -13,6 +13,8 @@ Option Explicit
 
 Public Sub Setup_CreateHelpSheet(Optional ByVal silent As Boolean = False)
     Dim ws As Worksheet
+    Dim errNum As Long
+    Dim errDesc As String
 
     If Not silent Then
         If MsgBox("Build the Help sheet with operator guidance for " & _
@@ -24,7 +26,7 @@ Public Sub Setup_CreateHelpSheet(Optional ByVal silent As Boolean = False)
     On Error GoTo ErrorHandler
     SetExcelState "disable"
     Application.DisplayAlerts = False
-    RemoveWorkbookProtection
+    SuspendWorkbookProtection
 
     EnsureHelpSheetExists
     Set ws = GetWorksheet(SHEET_HELP)
@@ -41,9 +43,9 @@ Public Sub Setup_CreateHelpSheet(Optional ByVal silent As Boolean = False)
     If Not silent Then
         ' Standalone upgrade: place Help after Audit Log without a full Phase 0 reorder.
         PlaceHelpSheetAmongVisibleTabs
-        ApplyWorkbookProtection
     End If
 
+    ResumeWorkbookProtection
     Application.DisplayAlerts = True
     SetExcelState "enable"
 
@@ -56,12 +58,17 @@ Public Sub Setup_CreateHelpSheet(Optional ByVal silent As Boolean = False)
     Exit Sub
 
 ErrorHandler:
+    errNum = Err.Number
+    errDesc = Err.Description
     Application.DisplayAlerts = True
     SetExcelState "enable"
     If Not silent Then
+        ForceResumeWorkbookProtection
         MsgBox "Help sheet setup failed." & vbCrLf & vbCrLf & _
-               "Error " & Err.Number & ": " & Err.Description, _
+               "Error " & errNum & ": " & errDesc, _
                vbCritical, "Setup — Help Sheet"
+    Else
+        Err.Raise errNum, "Setup_CreateHelpSheet", errDesc
     End If
 End Sub
 

@@ -229,7 +229,7 @@ Manage:
      correct due-soon position (e.g. 25:00 no longer sits above sooner jobs)
 7. Form stays open and refreshes after Delete/Remove/Close.
 
-Dashboard (Phase 4/5 / v2.3.4):
+Dashboard (Phase 4/5 / v2.3.5):
   Open work packages count
   Tasks needing manual update count
   Tasks in warning period count (amber — same rules as SITS view)
@@ -480,13 +480,13 @@ Fixes Setup Wizard / Import SITS runtime error 1004 after sheet protection:
 4. Re-test Setup Wizard Step 2 (Long Forecast import) on a protected copy.
 5. Re-test SITS Selector checkboxes after Refresh SITS — they must toggle.
 
-Upgrading for the Help sheet (v2.3.4)
--------------------------------------
+Upgrading for the Help sheet (v2.3.4 / v2.3.5)
+----------------------------------------------
 Adds a visible **Help** sheet that explains how to use each part of the system,
 plus Dashboard **View Help** / Dev Tools **Rebuild Help Sheet**.
 
 1. Replace modules: CONFIG, modUtility, modValidation, Setup_CreateSheets,
-   Setup_CreateDashboard, Setup_RunAll.
+   Setup_CreateDashboard, Setup_CreateConfig, Setup_CreateTables, Setup_RunAll.
 2. Insert setup module modSetupHelp from vba/setup/Setup_CreateHelpSheet.txt
    (Name property = modSetupHelp).
 3. Compile VBAProject.
@@ -495,6 +495,14 @@ plus Dashboard **View Help** / Dev Tools **Rebuild Help Sheet**.
    sheet without a full Phase 0 rebuild.
 5. Ensure Missing Buttons (or Rebuild Dashboard) so **View Help** appears under
    User Actions. Validate Structure should then pass (Help is a required sheet).
+
+v2.3.5 also fixes Phase 0 Setup failing at "Seeding configuration" with
+error 1004 ("Table features aren't available because the sheet is protected").
+Cause: SetConfigValue's nested Resume re-locked sheets mid-run before
+interval-map ListRows.Add. Phase 0 now keeps an outer Suspend for the whole
+rebuild; Setup_CreateConfig / Setup_CreateTables nest correctly.
+Replace Setup_RunAll, Setup_CreateConfig, Setup_CreateTables, and
+Setup_CreateHelpSheet if an older paste still fails.
 
 Upgrading for HUMS Op No on the Usage matrix
 --------------------------------------------

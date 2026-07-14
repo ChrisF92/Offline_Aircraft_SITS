@@ -6,12 +6,19 @@ Option Explicit
 
 Public Sub Setup_CreateConfig(Optional ByVal silent As Boolean = False, _
                             Optional ByVal tailNumber As String = "")
+    Dim errNum As Long
+    Dim errDesc As String
+
     If Not silent Then
         If MsgBox("Seed default configuration values for the master template?", _
                   vbQuestion + vbYesNo, "Setup — Config") <> vbYes Then Exit Sub
     End If
 
+    On Error GoTo ErrorHandler
     SetExcelState "disable"
+    ' SetConfigValue Suspend/Resume nests; keep an outer suspend so interval-map
+    ' ListRows.Add still runs while sheets are unlocked.
+    SuspendWorkbookProtection
 
     SetConfigValue CFG_MASTER_TEMPLATE, True
     SetConfigValue CFG_TAIL_NUMBER, UCase$(Trim$(tailNumber))
@@ -32,9 +39,24 @@ Public Sub Setup_CreateConfig(Optional ByVal silent As Boolean = False, _
     SeedIntervalMapDefaults
     WriteConfigNotes
 
+    ResumeWorkbookProtection
     SetExcelState "enable"
     If Not silent Then
         MsgBox "Master template configuration seeded.", vbInformation, "Setup — Config"
+    End If
+    Exit Sub
+
+ErrorHandler:
+    errNum = Err.Number
+    errDesc = Err.Description
+    SetExcelState "enable"
+    If Not silent Then
+        ForceResumeWorkbookProtection
+        MsgBox "Config seed failed: " & errNum & " - " & errDesc, _
+               vbCritical, "Setup — Config"
+    Else
+        ' Leave suspend depth for Setup_RunAll's ForceResume.
+        Err.Raise errNum, "Setup_CreateConfig", errDesc
     End If
 End Sub
 
@@ -45,6 +67,7 @@ Private Sub SeedIntervalMapDefaults()
     Set ws = GetWorksheet(SHEET_CONFIG)
     Set tbl = GetTable(ws, TBL_INTERVAL_MAP)
 
+    ' Public ClearTableData already Suspend/Resume-nests for DataBodyRange.Delete.
     ClearTableData tbl
 
     ' Wildcat engine start mapping — update serials per tail if exports differ.
@@ -64,14 +87,6 @@ Private Sub AddIntervalMapRow(ByVal tbl As ListObject, _
     row.Range.Cells(1, 2).Value = sourceSerial
     row.Range.Cells(1, 3).Value = targetInterval
     row.Range.Cells(1, 4).Value = notes
-End Sub
-
-Private Sub ClearTableData(ByVal tbl As ListObject)
-    On Error Resume Next
-    If Not tbl.DataBodyRange Is Nothing Then
-        tbl.DataBodyRange.Delete
-    End If
-    On Error GoTo 0
 End Sub
 
 Private Sub WriteConfigNotes()
