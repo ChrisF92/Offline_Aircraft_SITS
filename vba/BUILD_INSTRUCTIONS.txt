@@ -427,6 +427,11 @@ Troubleshooting
   -> Create the UserForm in the IDE. The form object must exist even though
      the code is stored as a .txt file in the repo.
 
+UserForm opens on the wrong monitor
+  -> Forms call CenterUserFormOnExcel (modUtility) from UserForm_Activate so
+     they centre on the Excel window. Re-paste the form code + modUtility if
+     an older workbook still shows this.
+
 "Missing named range: Open_WP_Count"
   -> Run Setup_CreateNamedRanges or Rebuild Dashboard after pasting Phase 4+ VBA.
 

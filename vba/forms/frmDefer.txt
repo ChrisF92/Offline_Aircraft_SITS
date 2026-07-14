@@ -11,6 +11,10 @@ Private mRowId As String
 Private mTaskCode As String
 Private mIsHoursFault As Boolean
 
+Private Sub UserForm_Activate()
+    CenterUserFormOnExcel Me
+End Sub
+
 Private Sub UserForm_Initialize()
     Dim taskDesc As String
     Dim intervalCode As String
