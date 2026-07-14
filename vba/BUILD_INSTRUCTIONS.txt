@@ -240,20 +240,26 @@ Upgrading to v2.3.8 (purge one-time Phase 0 setup)
 --------------------------------------------------
 Phase 0 scaffold macros are removed. Data reset remains via **Reset to Master**.
 
-1. Replace / paste updated modules:
+1. **First** delete retired modules from the VBA project if present:
+   modSetupSheets, modSetupTables, modSetupRunAll
+   (Leaving them in place after updating modUtility causes compile errors such as
+   "Sub or Function not defined: ReuseSheetAs" until they are removed.)
+2. Replace / paste updated modules:
    CONFIG, modUtility, modSITS, ThisWorkbook,
    Setup_CreateConfig, Setup_CreateNamedRanges, Setup_CreateDashboard,
    Setup_FormatUsageMatrix, Setup_CreateHelpSheet
-2. Insert module **modReset** from `vba/modules/modReset.txt`
+3. Insert module **modReset** from `vba/modules/modReset.txt`
    (Name property = modReset). This owns `ResetWorkbookToMaster`.
-3. Delete retired modules from the VBA project if present:
-   modSetupSheets, modSetupTables, modSetupRunAll
 4. Compile VBAProject.
 5. Alt+F8 → **EnableDevTools** → **Ensure Missing Buttons**
    (removes Phase 0 Setup button; adds/compacts remaining Dev Tools).
    Or **Rebuild Dashboard** if you want a full default layout.
 6. Optional: **Rebuild Help Sheet** so operator guide text matches v2.3.8.
 7. Smoke-test: Reset to Master → Setup Wizard on a Save As copy.
+
+Note: modUtility still includes legacy sheet helpers (`ReuseSheetAs`, etc.) so a
+partial paste does not brick compile mid-upgrade. New code does not call them;
+delete the retired Phase 0 modules and ignore those helpers.
 
 Earlier upgrade notes (v2.3.0–v2.3.7)
 -------------------------------------
@@ -337,9 +343,10 @@ Extend rejected — PT2/PT3
 Defer rejected — more than one task
   -> Defer exactly one PT2/PT3 at a time.
 
-Compile error: Sub or Function not defined (Setup_RunAll)
-  -> Phase 0 was removed in v2.3.8. Delete the Phase 0 Dashboard button
-     (Ensure Missing Buttons) and remove modSetupRunAll from the project.
-     Use Reset to Master for data wipe.
+Compile error: Sub or Function not defined (Setup_RunAll / ReuseSheetAs / AddSetupSheet)
+  -> You still have retired Phase 0 modules in the VBA project.
+     Delete modSetupSheets, modSetupTables, and modSetupRunAll, then compile again.
+     Use Reset to Master for data wipe. Ensure Missing Buttons removes the Phase 0
+     Dashboard button.
 
 Build marker: v2.3.8-purge-phase0-setup
