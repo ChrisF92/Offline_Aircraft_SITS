@@ -226,7 +226,7 @@ Manage:
      correct due-soon position (e.g. 25:00 no longer sits above sooner jobs)
 7. Form stays open and refreshes after Delete/Remove/Close.
 
-Dashboard (Phase 4/5 / v2.3.1):
+Dashboard (Phase 4/5 / v2.3.2):
   Open work packages count
   Tasks needing manual update count
   Tasks in warning period count (amber — same rules as SITS view)
@@ -241,7 +241,30 @@ Developer Tools (hidden by default):
   Hide Dev Tools button) to hide it again.
   Import SITS, Refresh Usage, Repair Formats, Repair Visibility, Validate Structure,
   Rebuild Dashboard, Ensure Missing Buttons, Phase 0 Setup, Rebuild SITS Layout,
-  Format Usage Matrix, Hide Dev Tools
+  Format Usage Matrix, Protect Workbook, Unprotect Workbook, Hide Dev Tools
+
+Workbook protection (v2.3.2)
+----------------------------
+Sheets and workbook structure are protected so users cannot edit cells or
+unhide/rename/delete sheets, while day-to-day macros and forms keep working.
+
+How it works:
+  - Every sheet is protected with `UserInterfaceOnly:=True` (VBA can still write)
+  - Form Control buttons and Selector checkboxes stay clickable (`DrawingObjects:=False`)
+  - Workbook structure protection stops unhiding data sheets
+  - `Workbook_Open` re-applies protection (Excel clears UserInterfaceOnly on close)
+  - Phase 0 Setup / Repair Visibility temporarily remove protection as needed
+
+Still editable by users:
+  - SITS Selector column (checkbox LinkedCells)
+  - AutoFilter on the SITS header row
+  - Horizon / other settings via UserForms (not sheet cells)
+
+Admin macros (Dev Tools or Alt+F8):
+  - **ProtectWorkbook** — lock sheets + structure
+  - **UnprotectWorkbook** — unlock for Master layout polishing or repairs
+  - Password constant: `PROTECT_PASSWORD` in CONFIG (default `SITSv2`) — prevents
+    casual unprotect via Review > Unprotect Sheet, not a security boundary
 
 Step 9 — Extensions and deferrals (Phase 5)
 -------------------------------------------
@@ -406,6 +429,16 @@ Upgrading for Dashboard status counts and Dev Tools (v2.3.1)
 5. Optional: set ShowDevTools in tblConfig, or just use EnableDevTools /
    HideDevTools — EnableDevTools writes the config flag automatically.
 
+Upgrading for workbook protection (v2.3.2)
+------------------------------------------
+1. Replace modules: CONFIG, modUtility, modSITS, ThisWorkbook,
+   Setup_CreateDashboard, Setup_CreateTables, Setup_RunAll.
+2. Compile VBAProject.
+3. Alt+F8 → **ProtectWorkbook** (or reopen the workbook — Open applies it).
+4. Optional: EnableDevTools → **Ensure Missing Buttons** for Protect / Unprotect
+   Workbook on the Dashboard. Use **UnprotectWorkbook** only when polishing
+   Master layout or repairing sheets, then Protect again.
+
 Upgrading for HUMS Op No on the Usage matrix
 --------------------------------------------
 1. Replace modules: CONFIG, modUsageLog, Setup_FormatUsageMatrix,
@@ -451,6 +484,13 @@ VBA name shadowing ("expects an array" on a function call)
 
 All worksheets stuck hidden
   -> Click Repair Visibility on the Dashboard, or run RepairSetupSheetVisibility.
+  -> That removes protection so you can work; run ProtectWorkbook / FinalizeSetup
+     when finished.
+
+Cannot edit cells / cannot unhide sheets
+  -> Expected when workbook protection is on (v2.3.2). SITS Selector checkboxes
+     remain usable; change Horizon via the Horizon button. Use UnprotectWorkbook
+     (Dev Tools / Alt+F8) for Master layout work, then ProtectWorkbook again.
 
 Phase 0 Setup fails when data sheets are hidden (error during "Building sheets")
   -> Fixed in modUtility / Setup_RunAll: setup now unhides all worksheets before

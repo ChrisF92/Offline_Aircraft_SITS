@@ -3,6 +3,9 @@ Option Explicit
 Private Sub Workbook_Open()
     On Error Resume Next
 
+    ' UserInterfaceOnly does not persist across closes — re-apply every open.
+    ApplyWorkbookProtection
+
     If Not ValidateWorkbookStructure() Then
         MsgBox "Workbook structure validation found issues." & vbCrLf & vbCrLf & _
                "Run Setup_RunAll if this is a new master template, or use Rebuild Dashboard / " & _

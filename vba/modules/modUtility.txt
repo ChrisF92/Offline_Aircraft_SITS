@@ -323,6 +323,7 @@ End Function
 Public Sub UnhideAllWorksheets()
     Dim ws As Worksheet
 
+    UnprotectWorkbookStructure
     For Each ws In ThisWorkbook.Worksheets
         ws.Visible = xlSheetVisible
     Next ws
@@ -333,6 +334,8 @@ Public Sub DeleteSheetIfExists(ByVal sheetName As String)
 
     ' Excel requires at least one worksheet — never delete the last sheet.
     If ThisWorkbook.Worksheets.Count <= 1 Then Exit Sub
+
+    UnprotectWorkbookStructure
 
     On Error Resume Next
     Set ws = ThisWorkbook.Worksheets(sheetName)
@@ -372,6 +375,7 @@ Public Sub PrepareWorkbookForSetup()
 
     ' Hidden data sheets from a prior Phase 0 run block deletes: Excel will not
     ' remove the last visible sheet while any others remain hidden.
+    RemoveWorkbookProtection
     UnhideAllWorksheets
 
     Do While ThisWorkbook.Worksheets.Count > 1
@@ -389,6 +393,7 @@ End Sub
 Public Sub ReuseSheetAs(ByVal sheetName As String)
     Dim ws As Worksheet
 
+    UnprotectWorkbookStructure
     Set ws = ThisWorkbook.Worksheets(1)
 
     If ws.Name <> sheetName And SheetExists(sheetName) Then
@@ -403,6 +408,7 @@ End Sub
 Public Sub AddSetupSheet(ByVal sheetName As String)
     Dim ws As Worksheet
 
+    UnprotectWorkbookStructure
     If SheetExists(sheetName) Then DeleteSheetIfExists sheetName
 
     Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
@@ -415,6 +421,8 @@ Public Sub OrderSetupSheets()
     Dim i As Long
     Dim ws As Worksheet
     Dim targetIndex As Long
+
+    UnprotectWorkbookStructure
 
     order = Array( _
         SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT, _
@@ -467,19 +475,21 @@ Public Sub FinalizeSetupSheetLayout()
     HideDataSetupSheet SHEET_WP_STATE
 
     ThisWorkbook.Worksheets(SHEET_DASHBOARD).Activate
+    ApplyWorkbookProtection
 End Sub
 
 ' Run manually from VBA if sheets are stuck hidden after a failed setup.
 Public Sub RepairSetupSheetVisibility()
+    RemoveWorkbookProtection
     UnhideAllWorksheets
 
     On Error Resume Next
     ThisWorkbook.Worksheets(SHEET_DASHBOARD).Activate
     On Error GoTo 0
 
-    MsgBox "All worksheets are now visible." & vbCrLf & vbCrLf & _
-           "Run Setup_RunAll again, or run FinalizeSetupSheetLayout to apply tab colours.", _
-           vbInformation, APP_NAME
+    MsgBox "All worksheets are now visible (protection removed)." & vbCrLf & vbCrLf & _
+           "Run FinalizeSetupSheetLayout / ProtectWorkbook when finished, or Setup_RunAll " & _
+           "to rebuild.", vbInformation, APP_NAME
 End Sub
 
 Private Function IsUserFacingSetupSheet(ByVal sheetName As String) As Boolean
@@ -496,15 +506,128 @@ Private Sub HideDataSetupSheet(ByVal sheetName As String)
 
     If IsUserFacingSetupSheet(sheetName) Then Exit Sub
 
+    UnprotectWorkbookStructure
     Set ws = ThisWorkbook.Worksheets(sheetName)
     ws.Visible = xlSheetHidden
 End Sub
 
-Public Sub ProtectSheetUI(ByVal ws As Worksheet, Optional ByVal password As String = "")
+' ========================================================================
+' WORKBOOK / SHEET PROTECTION
+' ========================================================================
+' Goal: users cannot edit cells or unhide data sheets, while VBA and form
+' controls keep working. UserInterfaceOnly must be re-applied on every Open
+' (Excel clears that flag when the file is closed).
+'
+' Unlocked UI inputs (SITS only):
+'   Col A from data start — Selector LinkedCells for checkboxes
+' DrawingObjects:=False so Form Control buttons/checkboxes stay clickable.
+' Horizon forecast settings are edited via frmHorizon (config), not sheet cells.
+' ========================================================================
+
+Public Sub ProtectWorkbook()
+    ApplyWorkbookProtection
+    MsgBox "Workbook is protected." & vbCrLf & vbCrLf & _
+           "Sheets and structure are locked. Buttons, forms, filters, and SITS " & _
+           "selector checkboxes still work. VBA continues to update data.", _
+           vbInformation, APP_NAME
+End Sub
+
+Public Sub UnprotectWorkbook()
+    RemoveWorkbookProtection
+    MsgBox "Workbook protection removed." & vbCrLf & vbCrLf & _
+           "Use while polishing Master layout or repairing sheets. " & _
+           "Run ProtectWorkbook (or reopen the file) when finished.", _
+           vbInformation, APP_NAME
+End Sub
+
+Public Sub ApplyWorkbookProtection()
+    Dim ws As Worksheet
+
     On Error Resume Next
-    ws.Unprotect password
-    ws.Protect password, UserInterfaceOnly:=True, _
-                 AllowFiltering:=True, AllowSorting:=True
+    For Each ws In ThisWorkbook.Worksheets
+        ProtectSheetUI ws, PROTECT_PASSWORD
+    Next ws
+    ProtectWorkbookStructure
+    On Error GoTo 0
+End Sub
+
+Public Sub RemoveWorkbookProtection()
+    Dim ws As Worksheet
+
+    On Error Resume Next
+    UnprotectWorkbookStructure
+    For Each ws In ThisWorkbook.Worksheets
+        UnprotectSheetUI ws, PROTECT_PASSWORD
+    Next ws
+    On Error GoTo 0
+End Sub
+
+Public Sub ProtectWorkbookStructure()
+    On Error Resume Next
+    ThisWorkbook.Unprotect PROTECT_PASSWORD
+    ThisWorkbook.Unprotect ""
+    ThisWorkbook.Protect Password:=PROTECT_PASSWORD, Structure:=True, Windows:=False
+    On Error GoTo 0
+End Sub
+
+Public Sub UnprotectWorkbookStructure()
+    On Error Resume Next
+    ThisWorkbook.Unprotect PROTECT_PASSWORD
+    ThisWorkbook.Unprotect ""
+    On Error GoTo 0
+End Sub
+
+Public Sub UnprotectSheetUI(ByVal ws As Worksheet, Optional ByVal password As String = "")
+    If ws Is Nothing Then Exit Sub
+
+    On Error Resume Next
+    If Len(password) > 0 Then ws.Unprotect password
+    ws.Unprotect ""
+    If Len(PROTECT_PASSWORD) > 0 And StrComp(password, PROTECT_PASSWORD, vbBinaryCompare) <> 0 Then
+        ws.Unprotect PROTECT_PASSWORD
+    End If
+    On Error GoTo 0
+End Sub
+
+Public Sub ProtectSheetUI(ByVal ws As Worksheet, Optional ByVal password As String = "")
+    Dim pwd As String
+
+    If ws Is Nothing Then Exit Sub
+    If Len(password) = 0 Then
+        pwd = PROTECT_PASSWORD
+    Else
+        pwd = password
+    End If
+
+    UnprotectSheetUI ws, pwd
+    ConfigureSheetCellLocks ws
+
+    On Error Resume Next
+    ' DrawingObjects:=False — Form Control buttons and Selector checkboxes must stay usable.
+    ' UserInterfaceOnly:=True — VBA can still write locked cells this session.
+    ws.Protect Password:=pwd, _
+               DrawingObjects:=False, _
+               Contents:=True, _
+               Scenarios:=True, _
+               UserInterfaceOnly:=True, _
+               AllowFiltering:=True, _
+               AllowSorting:=True
+    On Error GoTo 0
+End Sub
+
+' Lock all cells, then unlock the few UI inputs users still need.
+Private Sub ConfigureSheetCellLocks(ByVal ws As Worksheet)
+    Dim lastRow As Long
+
+    On Error Resume Next
+    ws.Cells.Locked = True
+
+    If StrComp(ws.Name, SHEET_SITS, vbTextCompare) = 0 Then
+        ' Selector LinkedCells must accept checkbox TRUE/FALSE writes.
+        lastRow = ws.Rows.Count
+        ws.Range(ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL), _
+                 ws.Cells(lastRow, SITS_SELECTOR_COL)).Locked = False
+    End If
     On Error GoTo 0
 End Sub
 

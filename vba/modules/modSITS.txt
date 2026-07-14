@@ -15,11 +15,10 @@ Option Explicit
 ' ========================================================================
 
 Private Const SITS_VIEW_HEADER_ROW As Long = 7
-Private Const SITS_VIEW_DATA_START_ROW As Long = 8
+' SITS_VIEW_DATA_START_ROW / SITS_SELECTOR_COL live in CONFIG (shared with protection).
 Private Const SITS_FORECAST_HOURS_CELL As String = "B3"
 Private Const SITS_FORECAST_DAYS_CELL As String = "B4"
 Private Const SITS_FORECAST_NUMBER_CELL As String = "B5"
-Private Const SITS_SELECTOR_COL As Long = 1
 Private Const SITS_VISIBLE_COLUMN_COUNT As Long = 10
 Private Const SITS_HEADER_ROW_HEIGHT_PX As Double = 40
 Private Const SITS_BTN_WIDTH As Double = 160

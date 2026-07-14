@@ -24,6 +24,9 @@ Public Sub Setup_RunAll()
     SetExcelState "disable"
     Application.DisplayAlerts = False
 
+    ' Structure/sheet protection blocks create/delete/hide during rebuild.
+    RemoveWorkbookProtection
+
     mSetupStep = "Building sheets"
     BuildSheetsSilent
 
