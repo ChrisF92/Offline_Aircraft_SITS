@@ -1,12 +1,16 @@
 Option Explicit
 
 ' ========================================================================
-' ONE-TIME SETUP — Create named ranges
+' NAMED RANGES — Dashboard status count names
+' Module Name property: modSetupNames
+'
+' Called by Rebuild Dashboard. Safe to re-run as a repair.
 ' ========================================================================
 
 Public Sub Setup_CreateNamedRanges(Optional ByVal silent As Boolean = False)
     If Not silent Then
-        If MsgBox("Create named ranges?", vbQuestion + vbYesNo, "Setup — Names") <> vbYes Then Exit Sub
+        If MsgBox("Create / refresh dashboard named ranges?", _
+                  vbQuestion + vbYesNo, "Named Ranges") <> vbYes Then Exit Sub
     End If
 
     SetExcelState "disable"
@@ -25,12 +29,12 @@ Public Sub Setup_CreateNamedRanges(Optional ByVal silent As Boolean = False)
     ThisWorkbook.Names.Add Name:=NAMED_OVERDUE_COUNT, RefersTo:="=" & SHEET_DASHBOARD & "!$C$11"
 
     SetExcelState "enable"
-    If Not silent Then MsgBox "Named ranges created.", vbInformation, "Setup — Names"
+    If Not silent Then MsgBox "Named ranges created.", vbInformation, "Named Ranges"
     Exit Sub
 
 ErrorHandler:
     SetExcelState "enable"
-    MsgBox "Error creating named ranges: " & Err.Description, vbCritical, "Setup — Names"
+    MsgBox "Error creating named ranges: " & Err.Description, vbCritical, "Named Ranges"
 End Sub
 
 Private Sub DeleteNamedRangeIfExists(ByVal rangeName As String)

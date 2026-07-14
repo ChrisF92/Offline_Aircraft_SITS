@@ -1,7 +1,8 @@
 Option Explicit
 
 ' ========================================================================
-' ONE-TIME SETUP — Seed configuration defaults (master template)
+' CONFIG SEED — Master-template defaults (used by Reset to Master)
+' Module Name property: modSetupConfig
 ' ========================================================================
 
 Public Sub Setup_CreateConfig(Optional ByVal silent As Boolean = False, _
@@ -11,7 +12,7 @@ Public Sub Setup_CreateConfig(Optional ByVal silent As Boolean = False, _
 
     If Not silent Then
         If MsgBox("Seed default configuration values for the master template?", _
-                  vbQuestion + vbYesNo, "Setup — Config") <> vbYes Then Exit Sub
+                  vbQuestion + vbYesNo, "Seed — Config") <> vbYes Then Exit Sub
     End If
 
     On Error GoTo ErrorHandler
@@ -42,7 +43,7 @@ Public Sub Setup_CreateConfig(Optional ByVal silent As Boolean = False, _
     ResumeWorkbookProtection
     SetExcelState "enable"
     If Not silent Then
-        MsgBox "Master template configuration seeded.", vbInformation, "Setup — Config"
+        MsgBox "Master template configuration seeded.", vbInformation, "Seed — Config"
     End If
     Exit Sub
 
@@ -53,9 +54,9 @@ ErrorHandler:
     If Not silent Then
         ForceResumeWorkbookProtection
         MsgBox "Config seed failed: " & errNum & " - " & errDesc, _
-               vbCritical, "Setup — Config"
+               vbCritical, "Seed — Config"
     Else
-        ' Leave suspend depth for Setup_RunAll's ForceResume.
+        ' Leave suspend depth for caller's ForceResume (e.g. ResetWorkbookToMaster).
         Err.Raise errNum, "Setup_CreateConfig", errDesc
     End If
 End Sub
@@ -94,8 +95,9 @@ Private Sub WriteConfigNotes()
 
     Set ws = GetWorksheet(SHEET_CONFIG)
     ws.Range("I1").Value = "Notes"
-    ws.Range("I2").Value = "Master template: run Setup_RunAll once, save, then copy per tail."
+    ws.Range("I2").Value = "Master template: polish layout, then File > Save As per aircraft."
     ws.Range("I3").Value = "Run Setup Wizard on each aircraft copy to declare tail and import data."
     ws.Range("I4").Value = "SITS import: strict required columns; abort if any missing."
     ws.Range("I5").Value = "ORN format: ####TAILDDMMYY (tail must match aircraft; DDMMYY must be a real date)."
+    ws.Range("I6").Value = "Reset to Master clears aircraft data and reseeds this config without touching layout."
 End Sub

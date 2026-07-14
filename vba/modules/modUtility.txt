@@ -338,52 +338,19 @@ Public Sub UnhideAllWorksheets()
     Next ws
 End Sub
 
-Public Sub DeleteSheetIfExists(ByVal sheetName As String)
-    Dim ws As Worksheet
+' ========================================================================
+' LEGACY SHEET HELPERS (upgrade compatibility)
+' Previously used by Phase 0 Setup_CreateSheets / Setup_RunAll.
+' Kept so workbooks that still contain those retired modules can compile
+' until you delete modSetupSheets / modSetupTables / modSetupRunAll.
+' New code does not call these.
+' ========================================================================
 
-    ' Excel requires at least one worksheet — never delete the last sheet.
-    If ThisWorkbook.Worksheets.Count <= 1 Then Exit Sub
-
-    UnprotectWorkbookStructure
-
-    On Error Resume Next
-    Set ws = ThisWorkbook.Worksheets(sheetName)
-    On Error GoTo 0
-
-    If Not ws Is Nothing Then
-        ' Excel also forbids deleting the last *visible* sheet while others
-        ' remain hidden — ensure another sheet is visible first.
-        EnsureAnotherSheetVisibleBeforeDelete ws
-        Application.DisplayAlerts = False
-        ws.Delete
-        Application.DisplayAlerts = True
-    End If
-End Sub
-
-' Excel forbids deleting the last visible sheet. Unhide a sibling first.
-Private Sub EnsureAnotherSheetVisibleBeforeDelete(ByVal wsToDelete As Worksheet)
-    Dim ws As Worksheet
-
-    For Each ws In ThisWorkbook.Worksheets
-        If Not ws Is wsToDelete Then
-            If ws.Visible = xlSheetVisible Then Exit Sub
-        End If
-    Next ws
-
-    For Each ws In ThisWorkbook.Worksheets
-        If Not ws Is wsToDelete Then
-            ws.Visible = xlSheetVisible
-            Exit Sub
-        End If
-    Next ws
-End Sub
-
-' Excel requires at least one worksheet — delete extras, clear the last one.
 Public Sub PrepareWorkbookForSetup()
     Application.DisplayAlerts = False
 
-    ' Hidden data sheets from a prior Phase 0 run block deletes: Excel will not
-    ' remove the last visible sheet while any others remain hidden.
+    ' Hidden data sheets block deletes: Excel will not remove the last visible
+    ' sheet while any others remain hidden.
     RemoveWorkbookProtection
     UnhideAllWorksheets
 
@@ -451,12 +418,50 @@ Public Sub OrderSetupSheets()
     Next i
 End Sub
 
-Public Sub FinalizeSetupSheetLayout()
-    ' Call once at the very end of setup, after tables/config/dashboard exist.
-    ' Phase 0: unhide everything first, then hide data sheets with xlSheetHidden only
-    ' (not xlSheetVeryHidden — that is hard to recover from if something goes wrong).
+Public Sub DeleteSheetIfExists(ByVal sheetName As String)
+    Dim ws As Worksheet
 
-    ' Recover from any hidden state left by a partial or earlier failed run.
+    ' Excel requires at least one worksheet — never delete the last sheet.
+    If ThisWorkbook.Worksheets.Count <= 1 Then Exit Sub
+
+    UnprotectWorkbookStructure
+
+    On Error Resume Next
+    Set ws = ThisWorkbook.Worksheets(sheetName)
+    On Error GoTo 0
+
+    If Not ws Is Nothing Then
+        ' Excel also forbids deleting the last *visible* sheet while others
+        ' remain hidden — ensure another sheet is visible first.
+        EnsureAnotherSheetVisibleBeforeDelete ws
+        Application.DisplayAlerts = False
+        ws.Delete
+        Application.DisplayAlerts = True
+    End If
+End Sub
+
+' Excel forbids deleting the last visible sheet. Unhide a sibling first.
+Private Sub EnsureAnotherSheetVisibleBeforeDelete(ByVal wsToDelete As Worksheet)
+    Dim ws As Worksheet
+
+    For Each ws In ThisWorkbook.Worksheets
+        If Not ws Is wsToDelete Then
+            If ws.Visible = xlSheetVisible Then Exit Sub
+        End If
+    Next ws
+
+    For Each ws In ThisWorkbook.Worksheets
+        If Not ws Is wsToDelete Then
+            ws.Visible = xlSheetVisible
+            Exit Sub
+        End If
+    Next ws
+End Sub
+
+' Re-hide data sheets and re-apply protection after Repair Visibility.
+Public Sub FinalizeSetupSheetLayout()
+    ' Unhide everything first, then hide data sheets with xlSheetHidden only
+    ' (not xlSheetVeryHidden — that is hard to recover from if something goes wrong).
     UnhideAllWorksheets
 
     ThisWorkbook.Worksheets(SHEET_DASHBOARD).Tab.Color = COLOR_TAB_VISIBLE
@@ -488,7 +493,7 @@ Public Sub FinalizeSetupSheetLayout()
     ApplyWorkbookProtection
 End Sub
 
-' Run manually from VBA if sheets are stuck hidden after a failed setup.
+' Run manually from VBA / Dev Tools if sheets are stuck hidden.
 Public Sub RepairSetupSheetVisibility()
     RemoveWorkbookProtection
     UnhideAllWorksheets
@@ -498,8 +503,8 @@ Public Sub RepairSetupSheetVisibility()
     On Error GoTo 0
 
     MsgBox "All worksheets are now visible (protection removed)." & vbCrLf & vbCrLf & _
-           "Run FinalizeSetupSheetLayout / ProtectWorkbook when finished, or Setup_RunAll " & _
-           "to rebuild.", vbInformation, APP_NAME
+           "Run FinalizeSetupSheetLayout / ProtectWorkbook when finished.", _
+           vbInformation, APP_NAME
 End Sub
 
 Private Function IsUserFacingSetupSheet(ByVal sheetName As String) As Boolean

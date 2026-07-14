@@ -1,11 +1,12 @@
 Option Explicit
 
 ' ========================================================================
-' ONE-TIME SETUP — Dashboard layout and action buttons
+' DASHBOARD — Layout, status, user actions, and Developer Tools
+' Module Name property: modSetupDashboard
 ' ========================================================================
-' RefreshDashboardLayout fully rebuilds the sheet (master setup / explicit
-' Rebuild). EnsureDashboardActionButtons only adds missing buttons so
-' developer placement and column widths survive day-to-day use.
+' RefreshDashboardLayout fully rebuilds the sheet (explicit Rebuild only).
+' EnsureDashboardActionButtons only adds missing buttons so developer
+' placement and column widths survive day-to-day use.
 '
 ' Pre-setup / master: Setup Wizard + View Help under User Actions.
 ' After setup: Log Sortie, Work Packages, View Audit Log, View Help.
@@ -25,19 +26,9 @@ Private Const USER_BTN_START_ROW As Long = 14
 Private Const DEV_HEADER_ROW As Long = 18
 Private Const DEV_HELP_ROW As Long = 19
 Private Const DEV_BTN_START_ROW As Long = 20
-Private Const DEV_BTN_LAST_OFFSET As Long = 7
+Private Const DEV_BTN_LAST_OFFSET As Long = 6
 
-Public Sub Setup_CreateDashboard(Optional ByVal silent As Boolean = False)
-    If Not silent Then
-        If MsgBox("Format the Dashboard sheet and create action buttons?", _
-                  vbQuestion + vbYesNo, "Setup — Dashboard") <> vbYes Then Exit Sub
-    End If
-
-    RefreshDashboardLayout
-    If Not silent Then MsgBox "Dashboard formatted.", vbInformation, "Setup — Dashboard"
-End Sub
-
-' Full rebuild — master setup and explicit "Rebuild Dashboard" only.
+' Full rebuild — explicit "Rebuild Dashboard" only.
 Public Sub RefreshDashboardLayout()
     Dim ws As Worksheet
 
@@ -94,6 +85,8 @@ Public Sub RefreshDashboardLayout()
     WriteSectionHeader ws, "B13", "User Actions"
     PrepareUserButtonRows ws
     SyncUserActionButtons ws, forceAdd:=True
+
+    Setup_CreateNamedRanges True
 
     If AreDevToolsEnabled() Then
         ShowDashboardDevToolsSection ws, forceAdd:=True
@@ -348,17 +341,19 @@ Private Sub AddDevToolButtons(ByVal ws As Worksheet)
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 2, 0, "Validate Structure", "RunValidateWorkbookStructure"
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 2, 1, "Rebuild Dashboard", "RefreshDashboardLayout"
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 0, "Ensure Missing Buttons", "EnsureDashboardActionButtons"
-    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 1, "Phase 0 Setup", "Setup_RunAll"
-    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 0, "Rebuild SITS Layout", "RebuildSITSViewLayout"
-    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 1, "Format Usage Matrix", "Setup_FormatUsageMatrix"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 1, "Rebuild SITS Layout", "RebuildSITSViewLayout"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 0, "Format Usage Matrix", "Setup_FormatUsageMatrix"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 1, "Rebuild Help Sheet", "Setup_CreateHelpSheet"
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 0, "Protect Workbook", "ProtectWorkbook"
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 1, "Unprotect Workbook", "UnprotectWorkbook"
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 6, 0, "Hide Dev Tools", "HideDevTools"
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 6, 1, "Reset to Master", "ResetWorkbookToMaster"
-    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 7, 0, "Rebuild Help Sheet", "Setup_CreateHelpSheet"
 End Sub
 
 Private Sub EnsureDevToolButtons(ByVal ws As Worksheet)
+    ' Drop retired Phase 0 Setup button from older workbooks.
+    RemoveDashboardButtonForMacro ws, "Setup_RunAll"
+
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW, 0, "Import SITS", "RunImportSITSFromFile"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW, 1, "Refresh Usage", "RefreshUsageView"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 1, 0, "Repair Formats", "RepairWorkbookFormats"
@@ -366,14 +361,13 @@ Private Sub EnsureDevToolButtons(ByVal ws As Worksheet)
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 2, 0, "Validate Structure", "RunValidateWorkbookStructure"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 2, 1, "Rebuild Dashboard", "RefreshDashboardLayout"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 0, "Ensure Missing Buttons", "EnsureDashboardActionButtons"
-    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 1, "Phase 0 Setup", "Setup_RunAll"
-    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 0, "Rebuild SITS Layout", "RebuildSITSViewLayout"
-    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 1, "Format Usage Matrix", "Setup_FormatUsageMatrix"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 1, "Rebuild SITS Layout", "RebuildSITSViewLayout"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 0, "Format Usage Matrix", "Setup_FormatUsageMatrix"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 1, "Rebuild Help Sheet", "Setup_CreateHelpSheet"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 0, "Protect Workbook", "ProtectWorkbook"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 1, "Unprotect Workbook", "UnprotectWorkbook"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 6, 0, "Hide Dev Tools", "HideDevTools"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 6, 1, "Reset to Master", "ResetWorkbookToMaster"
-    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 7, 0, "Rebuild Help Sheet", "Setup_CreateHelpSheet"
 End Sub
 
 Private Sub RemoveDevToolButtons(ByVal ws As Worksheet)
