@@ -277,7 +277,8 @@ Table structure ops (v2.3.3):
   - Error handlers use `ForceResumeWorkbookProtection` so sheets are re-locked.
 
 Still editable by users:
-  - SITS Selector column (checkbox LinkedCells)
+  - SITS Selector checkboxes (LinkedCells + control Locked=False; re-applied
+    after every Refresh SITS because Range.Clear resets cell locks)
   - AutoFilter on the SITS header row
   - Horizon / other settings via UserForms (not sheet cells)
 
@@ -475,6 +476,7 @@ Fixes Setup Wizard / Import SITS runtime error 1004 after sheet protection:
 2. Compile VBAProject.
 3. Reopen the workbook (or run ProtectWorkbook) so protection is applied.
 4. Re-test Setup Wizard Step 2 (Long Forecast import) on a protected copy.
+5. Re-test SITS Selector checkboxes after Refresh SITS — they must toggle.
 
 Upgrading for HUMS Op No on the Usage matrix
 --------------------------------------------
@@ -535,6 +537,10 @@ Runtime error 1004 during Setup Wizard / Import SITS ("Table features aren't
 available because the sheet is protected")
   -> Fixed in v2.3.3: import and other table-mutating macros temporarily suspend
      protection. Re-import the modules listed under the v2.3.3 upgrade section.
+
+SITS Selector checkboxes do nothing / cannot be ticked while sheet is protected
+  -> Fixed in v2.3.3: Refresh SITS was clearing cell locks on column A (LinkedCells).
+     Re-import modUtility + modSITS, then Refresh SITS (or reopen + ProtectWorkbook).
 
 Phase 0 Setup fails when data sheets are hidden (error during "Building sheets")
   -> Fixed in modUtility / Setup_RunAll: setup now unhides all worksheets before

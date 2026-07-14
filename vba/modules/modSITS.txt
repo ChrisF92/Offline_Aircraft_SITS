@@ -670,6 +670,10 @@ NextCollectRow:
         AddSITSViewSelectorCheckboxes wsView, SITS_VIEW_DATA_START_ROW, lastDataRow
     End If
 
+    ' Range.Clear above resets cell Locked=True; restore selector unlocks so
+    ' Form Control checkboxes can write LinkedCells on a protected sheet.
+    UnlockSITSSelectorInputs wsView
+
     ApplySITSViewAutoFilter wsView, lastDataRow, SITS_VISIBLE_COLUMN_COUNT
     If ActiveSheet Is wsView Then ApplySITSViewFreezePanes wsView
     Application.StatusBar = False
@@ -1386,6 +1390,7 @@ Private Sub AddSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
 
         linkCell.Value = False
         linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
+        linkCell.Locked = False
         Set cb = ws.CheckBoxes.Add(leftPos, linkCell.Top, widthPos, heightPos)
         cb.Name = SITSCheckboxName(rowIndex)
         cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
@@ -1393,6 +1398,8 @@ Private Sub AddSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
         cb.Caption = ""
         cb.Placement = xlMove
         cb.Display3DShading = False
+        ' Form Controls default Locked=True; must be False on a protected sheet.
+        cb.Locked = False
 NextSelectorRow:
     Next rowIndex
 End Sub
@@ -1516,12 +1523,14 @@ Private Sub RemapSITSViewSelectorLinkedCells(ByVal ws As Worksheet)
             cb.Name = SITSCheckboxName(rowIndex)
             cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
             cb.OnAction = "SITSSelectorCheckboxChanged"
+            cb.Locked = False
             If Not (VarType(linkCell.Value) = vbBoolean Or IsNumeric(linkCell.Value)) Then
                 linkCell.Value = False
             End If
             linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
             linkCell.Font.Bold = False
             linkCell.Font.Color = vbBlack
+            linkCell.Locked = False
             ApplySITSViewRowSelectionHighlight ws, rowIndex, ConvertToBoolean(linkCell.Value)
         End If
     Next i
@@ -1598,6 +1607,7 @@ Private Sub SetSITSViewSelectorCheckbox(ByVal ws As Worksheet, ByVal viewRow As 
     linkCell.Font.Bold = False
     linkCell.Font.Color = vbBlack
 
+    linkCell.Locked = False
     Set cb = ws.CheckBoxes.Add(linkCell.Left, linkCell.Top, linkCell.Width, linkCell.Height)
     cb.Name = SITSCheckboxName(viewRow)
     cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
@@ -1605,6 +1615,7 @@ Private Sub SetSITSViewSelectorCheckbox(ByVal ws As Worksheet, ByVal viewRow As 
     cb.Caption = ""
     cb.Placement = xlMove
     cb.Display3DShading = False
+    cb.Locked = False
 End Sub
 
 Private Sub DeleteSITSViewCheckboxOnRow(ByVal ws As Worksheet, ByVal viewRow As Long)

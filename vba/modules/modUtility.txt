@@ -530,6 +530,8 @@ End Sub
 '
 ' Unlocked UI inputs (SITS only):
 '   Col A from data start — Selector LinkedCells for checkboxes
+'   Form Control checkboxes themselves (Locked=False) — required in addition
+'   to unlocked LinkedCells; RefreshSITSView must re-apply after Range.Clear
 ' DrawingObjects:=False so Form Control buttons/checkboxes stay clickable.
 ' Horizon forecast settings are edited via frmHorizon (config), not sheet cells.
 ' ========================================================================
@@ -654,17 +656,55 @@ End Sub
 
 ' Lock all cells, then unlock the few UI inputs users still need.
 Private Sub ConfigureSheetCellLocks(ByVal ws As Worksheet)
-    Dim lastRow As Long
-
     On Error Resume Next
     ws.Cells.Locked = True
+    On Error GoTo 0
 
     If StrComp(ws.Name, SHEET_SITS, vbTextCompare) = 0 Then
-        ' Selector LinkedCells must accept checkbox TRUE/FALSE writes.
-        lastRow = ws.Rows.Count
-        ws.Range(ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL), _
-                 ws.Cells(lastRow, SITS_SELECTOR_COL)).Locked = False
+        ' Selector LinkedCells + Form Control checkboxes must stay interactive.
+        UnlockSITSSelectorInputs ws
     End If
+
+    ' Form Control buttons default to Locked=True; unlock so OnAction still works
+    ' if DrawingObjects protection is ever tightened.
+    UnlockSheetFormControls ws
+End Sub
+
+' Public so RefreshSITSView can restore unlocks after Range.Clear (which resets
+' Locked back to True on selector LinkedCells).
+Public Sub UnlockSITSSelectorInputs(Optional ByVal ws As Worksheet = Nothing)
+    Dim lastRow As Long
+    Dim cb As CheckBox
+    Dim i As Long
+
+    If ws Is Nothing Then Set ws = GetWorksheet(SHEET_SITS, showError:=False)
+    If ws Is Nothing Then Exit Sub
+    If StrComp(ws.Name, SHEET_SITS, vbTextCompare) <> 0 Then Exit Sub
+
+    On Error Resume Next
+    lastRow = ws.Rows.Count
+    ws.Range(ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL), _
+             ws.Cells(lastRow, SITS_SELECTOR_COL)).Locked = False
+
+    For i = 1 To ws.CheckBoxes.Count
+        Set cb = ws.CheckBoxes(i)
+        cb.Locked = False
+    Next i
+    On Error GoTo 0
+End Sub
+
+Private Sub UnlockSheetFormControls(ByVal ws As Worksheet)
+    Dim i As Long
+
+    If ws Is Nothing Then Exit Sub
+
+    On Error Resume Next
+    For i = 1 To ws.CheckBoxes.Count
+        ws.CheckBoxes(i).Locked = False
+    Next i
+    For i = 1 To ws.Buttons.Count
+        ws.Buttons(i).Locked = False
+    Next i
     On Error GoTo 0
 End Sub
 
