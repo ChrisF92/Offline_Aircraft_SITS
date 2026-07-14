@@ -7,6 +7,10 @@ Option Explicit
 ' See vba/forms/HORIZON_FORM_LAYOUT.txt for control names and layout.
 ' ========================================================================
 
+Private Sub UserForm_Activate()
+    CenterUserFormOnExcel Me
+End Sub
+
 Private Sub UserForm_Initialize()
     EnsureForecastConfigDefaults
     txtHours.Value = CStr(GetForecastHoursSetting())
