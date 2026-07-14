@@ -265,6 +265,7 @@ Public Function CreateWorkPackageFromSelection() As Boolean
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
+    SuspendWorkbookProtection
     Application.StatusBar = "Creating work package…"
 
     RemoveWPTaskRows orn
@@ -282,6 +283,7 @@ Public Function CreateWorkPackageFromSelection() As Boolean
     Application.StatusBar = "Updating Dashboard…"
     RefreshDashboardStatusCounts
 
+    ResumeWorkbookProtection
     SetExcelState "enable"
     Application.StatusBar = False
 
@@ -291,10 +293,15 @@ Public Function CreateWorkPackageFromSelection() As Boolean
     Exit Function
 
 ErrorHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
     Application.StatusBar = False
+    ForceResumeWorkbookProtection
     SetExcelState "force-enable"
-    LogError PROC_NAME, Err.Number, Err.Description
-    MsgBox "Failed to create work package: " & Err.Description, vbCritical, APP_NAME
+    LogError PROC_NAME, errNum, errDesc
+    MsgBox "Failed to create work package: " & errDesc, vbCritical, APP_NAME
 End Function
 
 Public Function DeleteWorkPackage(ByVal orn As String, _
@@ -338,6 +345,7 @@ Public Function DeleteWorkPackage(ByVal orn As String, _
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
+    SuspendWorkbookProtection
     Application.StatusBar = "Deleting work package…"
 
     ClearORNFromSITSTasks orn, taskIds, tblSITS
@@ -357,6 +365,7 @@ Public Function DeleteWorkPackage(ByVal orn As String, _
     Application.StatusBar = "Updating Dashboard…"
     RefreshDashboardStatusCounts
 
+    ResumeWorkbookProtection
     SetExcelState "enable"
     Application.StatusBar = False
     DeleteWorkPackage = True
@@ -367,10 +376,15 @@ Failed:
     Exit Function
 
 ErrorHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
     Application.StatusBar = False
+    ForceResumeWorkbookProtection
     SetExcelState "force-enable"
-    LogError PROC_NAME, Err.Number, Err.Description
-    If showDialogs Then MsgBox "Failed to delete work package: " & Err.Description, vbCritical, APP_NAME
+    LogError PROC_NAME, errNum, errDesc
+    If showDialogs Then MsgBox "Failed to delete work package: " & errDesc, vbCritical, APP_NAME
 End Function
 
 Public Function RemoveTaskFromWorkPackage(ByVal orn As String, _
@@ -429,6 +443,7 @@ Public Function RemoveTaskFromWorkPackage(ByVal orn As String, _
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
+    SuspendWorkbookProtection
     Application.StatusBar = "Removing task from work package…"
 
     RemoveSingleWPTaskRow orn, rowId
@@ -452,6 +467,7 @@ Public Function RemoveTaskFromWorkPackage(ByVal orn As String, _
     End If
 
     RefreshDashboardStatusCounts
+    ResumeWorkbookProtection
     SetExcelState "enable"
     Application.StatusBar = False
 
@@ -470,10 +486,15 @@ Failed:
     Exit Function
 
 ErrorHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
     Application.StatusBar = False
+    ForceResumeWorkbookProtection
     SetExcelState "force-enable"
-    LogError PROC_NAME, Err.Number, Err.Description
-    If showDialogs Then MsgBox "Failed to remove task: " & Err.Description, vbCritical, APP_NAME
+    LogError PROC_NAME, errNum, errDesc
+    If showDialogs Then MsgBox "Failed to remove task: " & errDesc, vbCritical, APP_NAME
 End Function
 
 Public Function CloseWorkPackage(ByVal orn As String, _
@@ -538,6 +559,7 @@ Public Function CloseWorkPackage(ByVal orn As String, _
     On Error GoTo ErrorHandler
     Application.StatusBar = "Closing work package…"
     SetExcelState "disable"
+    SuspendWorkbookProtection
 
     Set rowIndex = BuildSITSRowIdIndex(tblSITS)
 
@@ -588,6 +610,7 @@ NextCloseTask:
     Application.StatusBar = "Updating Dashboard…"
     RefreshDashboardStatusCounts
 
+    ResumeWorkbookProtection
     SetExcelState "enable"
     Application.StatusBar = False
 
@@ -609,10 +632,15 @@ NextCloseTask:
     Exit Function
 
 ErrorHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
     Application.StatusBar = False
+    ForceResumeWorkbookProtection
     SetExcelState "force-enable"
-    LogError PROC_NAME, Err.Number, Err.Description
-    If showDialogs Then MsgBox "Failed to close work package: " & Err.Description, vbCritical, APP_NAME
+    LogError PROC_NAME, errNum, errDesc
+    If showDialogs Then MsgBox "Failed to close work package: " & errDesc, vbCritical, APP_NAME
 End Function
 
 Public Sub EnsureWorkPackageSITSColumns(ByVal tbl As ListObject)
@@ -1566,7 +1594,14 @@ Private Function NzNumber(ByVal value As Variant) As Double
 End Function
 
 Private Sub EnsureTableColumnExists(ByVal tbl As ListObject, ByVal columnName As String)
-    If GetTableColumnIndex(tbl, columnName) = 0 Then
-        tbl.ListColumns.Add.Name = columnName
-    End If
+    If GetTableColumnIndex(tbl, columnName) <> 0 Then Exit Sub
+
+    SuspendWorkbookProtection
+    On Error GoTo EnsureColFail
+    tbl.ListColumns.Add.Name = columnName
+    ResumeWorkbookProtection
+    Exit Sub
+
+EnsureColFail:
+    ResumeWorkbookProtection
 End Sub

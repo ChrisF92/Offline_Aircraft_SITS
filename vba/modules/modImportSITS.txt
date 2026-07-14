@@ -119,6 +119,8 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
+    ' ListRows.Add / ClearTableData / snapshot table ops need sheets unprotected.
+    SuspendWorkbookProtection
 
     ClearTableData tbl
 
@@ -179,9 +181,11 @@ NextRow:
     SnapshotUsageForSITS
     RecalculateSITS
     RefreshSITSView
-    SetExcelState "enable"
 
     LogAction "SITS_IMPORTED", "", "Imported " & importedRows & " rows (skipped " & skippedRows & ") from " & filePath
+    ResumeWorkbookProtection
+    SetExcelState "enable"
+
     ImportSITSFromFile = importedRows
 
     If showDialogs Then
@@ -196,13 +200,18 @@ NextRow:
     Exit Function
 
 ErrorHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
     On Error Resume Next
     If Not srcWb Is Nothing Then srcWb.Close SaveChanges:=False
-    On Error GoTo 0
+    ForceResumeWorkbookProtection
     SetExcelState "enable"
-    LogError PROC_NAME, Err.Number, Err.Description
+    On Error GoTo 0
+    LogError PROC_NAME, errNum, errDesc
     If showDialogs Then
-        MsgBox "SITS import error: " & Err.Number & " - " & Err.Description, vbCritical, APP_NAME
+        MsgBox "SITS import error: " & errNum & " - " & errDesc, vbCritical, APP_NAME
     End If
 End Function
 

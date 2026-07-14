@@ -62,6 +62,7 @@ Public Function AddSITSTaskManually() As Boolean
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
+    SuspendWorkbookProtection
     Application.StatusBar = "Adding SITS task…"
 
     rowId = GenerateNextSITSRowId(tbl)
@@ -71,11 +72,12 @@ Public Function AddSITSTaskManually() As Boolean
     ApplyWorkbookDataFormats
     RecalculateSITS
     RefreshSITSView
-    SetExcelState "enable"
 
     LogAction "SITS_TASK_ADDED", "", _
               "RowID=" & rowId & "; Code=" & draft.TaskCode & _
               "; Seq=" & draft.TaskSequence & "; Interval=" & draft.IntervalTypeCode
+    ResumeWorkbookProtection
+    SetExcelState "enable"
 
     AddSITSTaskManually = True
     MsgBox "Task added (" & rowId & ")." & vbCrLf & vbCrLf & _
@@ -84,9 +86,14 @@ Public Function AddSITSTaskManually() As Boolean
     Exit Function
 
 ErrorHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
+    ForceResumeWorkbookProtection
     SetExcelState "enable"
-    LogError PROC_NAME, Err.Number, Err.Description
-    MsgBox "Add task error: " & Err.Number & " - " & Err.Description, vbCritical, APP_NAME
+    LogError PROC_NAME, errNum, errDesc
+    MsgBox "Add task error: " & errNum & " - " & errDesc, vbCritical, APP_NAME
 End Function
 
 Public Function RemoveSelectedSITSTasks() As Boolean
@@ -184,6 +191,7 @@ NextConfirmRow:
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
+    SuspendWorkbookProtection
     Application.StatusBar = "Removing SITS task(s)…"
 
     ' Delete highest ListRow.Index first so earlier indices stay valid.
@@ -204,19 +212,25 @@ NextConfirmRow:
     Next deleteRow
 
     RefreshSITSView
-    SetExcelState "enable"
 
     LogAction "SITS_TASKS_REMOVED", "", _
               "Count=" & deletedCount & "; " & Left$(detailParts, 180)
+    ResumeWorkbookProtection
+    SetExcelState "enable"
 
     RemoveSelectedSITSTasks = True
     MsgBox "Removed " & deletedCount & " task(s) from SITS.", vbInformation, APP_NAME
     Exit Function
 
 ErrorHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
+    ForceResumeWorkbookProtection
     SetExcelState "enable"
-    LogError PROC_NAME, Err.Number, Err.Description
-    MsgBox "Remove task error: " & Err.Number & " - " & Err.Description, vbCritical, APP_NAME
+    LogError PROC_NAME, errNum, errDesc
+    MsgBox "Remove task error: " & errNum & " - " & errDesc, vbCritical, APP_NAME
 End Function
 
 ' ------------------------------------------------------------------------

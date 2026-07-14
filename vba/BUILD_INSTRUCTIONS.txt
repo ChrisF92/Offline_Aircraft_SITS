@@ -256,20 +256,29 @@ Reset to Master (data only — preserves formatting):
   Prefer **Ensure Missing Buttons** after pasting VBA so the new button appears
   without wiping your Master layout.
 
-Workbook protection (v2.3.2)
-----------------------------
+Workbook protection (v2.3.2 / v2.3.3)
+------------------------------------
 Sheets and workbook structure are protected so users cannot edit cells or
 unhide/rename/delete sheets, while day-to-day macros and forms keep working.
 
 How it works:
-  - Every sheet is protected with `UserInterfaceOnly:=True` (VBA can still write)
+  - Every sheet is protected with `UserInterfaceOnly:=True` (VBA can write cell values)
   - Form Control buttons and Selector checkboxes stay clickable (`DrawingObjects:=False`)
   - Workbook structure protection stops unhiding data sheets
   - `Workbook_Open` re-applies protection (Excel clears UserInterfaceOnly on close)
   - Phase 0 Setup / Repair Visibility temporarily remove protection as needed
 
+Table structure ops (v2.3.3):
+  - Excel still blocks ListObject changes on protected sheets, even with
+    `UserInterfaceOnly` (error 1004: "Table features aren't available…").
+  - Mutating macros call `SuspendWorkbookProtection` / `ResumeWorkbookProtection`
+    (nested-safe helpers in modUtility) around ClearTableData, ListRows.Add,
+    ListColumns.Add, and related import / Setup Wizard / work-package paths.
+  - Error handlers use `ForceResumeWorkbookProtection` so sheets are re-locked.
+
 Still editable by users:
-  - SITS Selector column (checkbox LinkedCells)
+  - SITS Selector checkboxes (LinkedCells + control Locked=False; re-applied
+    after every Refresh SITS because Range.Clear resets cell locks)
   - AutoFilter on the SITS header row
   - Horizon / other settings via UserForms (not sheet cells)
 
@@ -456,6 +465,19 @@ Upgrading for workbook protection (v2.3.2)
    Workbook on the Dashboard. Use **UnprotectWorkbook** only when polishing
    Master layout or repairing sheets, then Protect again.
 
+Upgrading for table ops under protection (v2.3.3)
+-------------------------------------------------
+Fixes Setup Wizard / Import SITS runtime error 1004 after sheet protection:
+"Table features aren't available because the sheet is protected."
+
+1. Replace modules: CONFIG, modUtility, modImportSITS, modImportUsage,
+   modAuditTrail, modSITS, modSITSEdit, modWorkPackage, modUsageLog,
+   Setup_RunAll.
+2. Compile VBAProject.
+3. Reopen the workbook (or run ProtectWorkbook) so protection is applied.
+4. Re-test Setup Wizard Step 2 (Long Forecast import) on a protected copy.
+5. Re-test SITS Selector checkboxes after Refresh SITS — they must toggle.
+
 Upgrading for HUMS Op No on the Usage matrix
 --------------------------------------------
 1. Replace modules: CONFIG, modUsageLog, Setup_FormatUsageMatrix,
@@ -510,6 +532,15 @@ Cannot edit cells / cannot unhide sheets
   -> Expected when workbook protection is on (v2.3.2). SITS Selector checkboxes
      remain usable; change Horizon via the Horizon button. Use UnprotectWorkbook
      (Dev Tools / Alt+F8) for Master layout work, then ProtectWorkbook again.
+
+Runtime error 1004 during Setup Wizard / Import SITS ("Table features aren't
+available because the sheet is protected")
+  -> Fixed in v2.3.3: import and other table-mutating macros temporarily suspend
+     protection. Re-import the modules listed under the v2.3.3 upgrade section.
+
+SITS Selector checkboxes do nothing / cannot be ticked while sheet is protected
+  -> Fixed in v2.3.3: Refresh SITS was clearing cell locks on column A (LinkedCells).
+     Re-import modUtility + modSITS, then Refresh SITS (or reopen + ProtectWorkbook).
 
 Phase 0 Setup fails when data sheets are hidden (error during "Building sheets")
   -> Fixed in modUtility / Setup_RunAll: setup now unhides all worksheets before

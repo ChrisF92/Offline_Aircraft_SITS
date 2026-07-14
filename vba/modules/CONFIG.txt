@@ -9,11 +9,13 @@ Option Explicit
 
 ' --- Workbook identity ---
 Public Const APP_NAME As String = "Offline Aircraft SITS"
-Public Const APP_VERSION As String = "2.3.2"
+Public Const APP_VERSION As String = "2.3.3"
 Public Const AIRCRAFT_TYPE As String = "Wildcat"
 
 ' Sheet/workbook protect password — stops accidental UI edits, not a security boundary.
-' VBA keeps writing via UserInterfaceOnly. Change only if you also Unprotect first.
+' Cell writes work via UserInterfaceOnly; table structure ops need
+' SuspendWorkbookProtection / ResumeWorkbookProtection. Change password only if
+' you also Unprotect first.
 Public Const PROTECT_PASSWORD As String = "SITSv2"
 
 ' SITS view layout constants (shared by modSITS / protection locks).
@@ -356,9 +358,16 @@ Public Sub SetConfigValue(ByVal settingName As String, ByVal newValue As Variant
     End If
 
     If Not found Then
+        ' ListRows.Add needs the sheet unprotected.
+        SuspendWorkbookProtection
+        On Error Resume Next
         Set row = tbl.ListRows.Add
-        row.Range.Cells(1, 1).Value = settingName
-        row.Range.Cells(1, 2).Value = newValue
+        If Err.Number = 0 Then
+            row.Range.Cells(1, 1).Value = settingName
+            row.Range.Cells(1, 2).Value = newValue
+        End If
+        ResumeWorkbookProtection
+        On Error GoTo 0
     End If
 End Sub
 

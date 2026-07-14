@@ -45,6 +45,9 @@ Public Sub LogAction(ByVal actionType As String, _
     Err.Clear
     On Error GoTo 0
 
+    ' ListRows.Add needs the sheet unprotected (UserInterfaceOnly is not enough).
+    SuspendWorkbookProtection
+    On Error GoTo LogFail
     Set row = tbl.ListRows.Add
     With row.Range
         .Cells(1, AUDIT_ACTION_COL).Value = Now
@@ -62,6 +65,11 @@ Public Sub LogAction(ByVal actionType As String, _
         Next col
         On Error GoTo 0
     End If
+    ResumeWorkbookProtection
+    Exit Sub
+
+LogFail:
+    ResumeWorkbookProtection
 End Sub
 
 Public Sub LogSetupComplete(ByVal tailNumber As String, _
