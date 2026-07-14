@@ -229,7 +229,7 @@ Manage:
      correct due-soon position (e.g. 25:00 no longer sits above sooner jobs)
 7. Form stays open and refreshes after Delete/Remove/Close.
 
-Dashboard (Phase 4/5 / v2.3.5):
+Dashboard (Phase 4/5 / v2.3.6):
   Open work packages count
   Tasks needing manual update count
   Tasks in warning period count (amber — same rules as SITS view)
@@ -573,6 +573,19 @@ Phase 0 Setup fails when data sheets are hidden (error during "Building sheets")
      deleting/rebuilding. Re-import those modules if an older build still fails.
   -> Workaround on an old build: Repair Visibility (or unhide all sheets), then
      run Phase 0 Setup again.
+
+Phase 0 Setup fails during "Seeding configuration" (error 1004 table features)
+  -> Fixed in v2.3.5: Phase 0 keeps SuspendWorkbookProtection for the whole run
+     so SetConfigValue's nested Resume cannot re-lock sheets before interval-map
+     rows are added. Re-import Setup_RunAll, Setup_CreateConfig, Setup_CreateTables,
+     Setup_CreateHelpSheet.
+
+Setup Wizard error: 0 - (after imports succeed; tail wrong / C6:C7 struck through)
+  -> Fixed in v2.3.6: the real failure was adding Dashboard/SITS form controls after
+     protection was re-applied; LogError cleared Err before the MsgBox so it showed 0.
+     Re-import modSetupWizard, CONFIG, Setup_CreateDashboard, modSITS.
+     Then re-run Setup Wizard (or click Ensure Missing Buttons + Repair formulas by
+     Rebuild Dashboard if you only need the button/tail display fix).
 
 Serial numbers show as 1.11E+12 or lose leading zeros
   -> Re-import SITS/usage after updating modUtility, or click Repair Formats.

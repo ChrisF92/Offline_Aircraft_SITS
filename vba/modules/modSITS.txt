@@ -546,6 +546,7 @@ Public Sub RefreshSITSView()
     Dim warnDays As Long
     Dim lastDataRow As Long
     Dim colManualFlag As Long
+    Dim suspended As Boolean
 
     On Error GoTo CleanFail
 
@@ -566,6 +567,8 @@ Public Sub RefreshSITSView()
 
     SetExcelState "disable"
     Application.StatusBar = "Refreshing SITS view…"
+    SuspendWorkbookProtection
+    suspended = True
 
     ' Selectors must be rebuilt (row set changes). Action buttons are preserved.
     ClearSITSViewSelectorCheckboxes wsView
@@ -676,12 +679,15 @@ NextCollectRow:
 
     ApplySITSViewAutoFilter wsView, lastDataRow, SITS_VISIBLE_COLUMN_COUNT
     If ActiveSheet Is wsView Then ApplySITSViewFreezePanes wsView
+    ResumeWorkbookProtection
+    suspended = False
     Application.StatusBar = False
     SetExcelState "enable"
     Exit Sub
 
 CleanFail:
     Application.StatusBar = False
+    If suspended Then ResumeWorkbookProtection
     SetExcelState "force-enable"
 End Sub
 

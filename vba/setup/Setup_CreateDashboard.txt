@@ -63,9 +63,10 @@ Public Sub RefreshDashboardLayout()
 
     WriteSectionHeader ws, "B5", "Aircraft Status"
     WriteLabelValue ws, "B6", "Tail Number:", _
-        "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_TAIL_NUMBER & """,tblConfig[Setting],0)),"""" )"
+        "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_TAIL_NUMBER & """,tblConfig[Setting],0)),"""")"
     WriteLabelValue ws, "B7", "Setup Complete:", _
         "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_SETUP_COMPLETE & """,tblConfig[Setting],0)),FALSE)"
+    RepairDashboardConfigFormulas
 
     WriteLabel ws, "B8", "Open work packages:"
     ws.Range("C8").Value = CountOpenWorkPackages()
@@ -133,17 +134,25 @@ Public Sub RefreshDashboardStatusCounts()
 
     CenterStatusValueCells ws
     WriteWorkbookStatusLine ws
+    Err.Clear
     On Error GoTo 0
 End Sub
 
 ' Add any missing Dashboard buttons at default anchors; never move existing ones.
 Public Sub EnsureDashboardActionButtons()
     Dim ws As Worksheet
+    Dim errNum As Long
+    Dim errDesc As String
+    Dim suspended As Boolean
 
     Set ws = GetWorksheet(SHEET_DASHBOARD, showError:=False)
     If ws Is Nothing Then Exit Sub
 
     SetExcelState "disable"
+    On Error GoTo ErrorHandler
+    SuspendWorkbookProtection
+    suspended = True
+
     PrepareUserButtonRows ws
     SyncUserActionButtons ws, forceAdd:=False
     If AreDevToolsEnabled() Then
@@ -151,7 +160,47 @@ Public Sub EnsureDashboardActionButtons()
     Else
         HideDashboardDevToolsSection ws
     End If
+
+    ResumeWorkbookProtection
+    suspended = False
     SetExcelState "enable"
+    Exit Sub
+
+ErrorHandler:
+    errNum = Err.Number
+    errDesc = Err.Description
+    If suspended Then ResumeWorkbookProtection
+    SetExcelState "enable"
+    Err.Raise errNum, "EnsureDashboardActionButtons", errDesc
+End Sub
+
+' Restore Tail / Setup Complete formulas if they were overwritten or lost table refs.
+Public Sub RepairDashboardConfigFormulas()
+    Dim ws As Worksheet
+
+    Set ws = GetWorksheet(SHEET_DASHBOARD, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    On Error Resume Next
+    With ws.Range("C6")
+        .Formula = "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_TAIL_NUMBER & """,tblConfig[Setting],0)),"""")"
+        .Font.Strikethrough = False
+        .Font.Name = "Calibri"
+        .Font.Size = 11
+        .Font.Color = RGB(0, 0, 0)
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+    End With
+    With ws.Range("C7")
+        .Formula = "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_SETUP_COMPLETE & """,tblConfig[Setting],0)),FALSE)"
+        .Font.Strikethrough = False
+        .Font.Name = "Calibri"
+        .Font.Size = 11
+        .Font.Color = RGB(0, 0, 0)
+        .HorizontalAlignment = xlCenter
+        .VerticalAlignment = xlCenter
+    End With
+    On Error GoTo 0
 End Sub
 
 ' Alt+F8 → EnableDevTools — reveals the whole Developer Tools section.
