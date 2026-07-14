@@ -3,6 +3,9 @@ Option Explicit
 ' ========================================================================
 ' ONE-TIME SETUP — Build master workbook skeleton (no aircraft data)
 ' Build marker: Phase-5-extensions-deferrals-v1
+'
+' Setup_RunAll      — full scaffold rebuild (sheets, tables, formatting)
+' ResetWorkbookToMaster — same empty-master data state, keep all formatting
 ' ========================================================================
 
 Private mSetupStep As String
@@ -67,6 +70,112 @@ ErrorHandler:
     MsgBox "Setup failed during: " & mSetupStep & vbCrLf & vbCrLf & _
            "Error " & Err.Number & ": " & Err.Description, _
            vbCritical, "Setup — Run All"
+End Sub
+
+' Reset aircraft data / config back to an empty master template without
+' rebuilding sheets, column widths, button placement, or other formatting.
+Public Sub ResetWorkbookToMaster()
+    Dim response As VbMsgBoxResult
+    Dim showDevTools As Boolean
+
+    response = MsgBox("Reset this workbook to an empty master template?" & vbCrLf & vbCrLf & _
+                      "Clears SITS, usage, work packages, sortie log, and audit data," & vbCrLf & _
+                      "and restores master configuration (no tail / setup incomplete)." & vbCrLf & vbCrLf & _
+                      "Column widths, colours, and button placement are preserved." & vbCrLf & _
+                      "(Use Phase 0 Setup if you need a full formatting rebuild.)" & vbCrLf & vbCrLf & _
+                      "Save a backup first. Continue?", _
+                      vbExclamation + vbYesNo + vbDefaultButton2, "Reset to Master")
+
+    If response <> vbYes Then Exit Sub
+
+    On Error GoTo ErrorHandler
+
+    If Not ValidateWorkbookStructure() Then Exit Sub
+
+    showDevTools = AreDevToolsEnabled()
+
+    SetExcelState "disable"
+    Application.DisplayAlerts = False
+
+    mSetupStep = "Clearing operational data"
+    ClearOperationalTableData
+
+    mSetupStep = "Resetting configuration"
+    Setup_CreateConfig True
+    ' Keep Dev Tools visible if the operator launched this from that section.
+    SetConfigValue CFG_SHOW_DEV_TOOLS, showDevTools
+
+    mSetupStep = "Refreshing views"
+    ApplyWorkbookDataFormats
+    RefreshUsageView
+    RefreshSITSView
+    EnsureDashboardActionButtons
+    RefreshDashboardStatusCounts
+
+    Application.DisplayAlerts = True
+    SetExcelState "enable"
+
+    LogAction "RESET_MASTER", "", "Data cleared to master template; formatting preserved"
+
+    MsgBox "Workbook reset to empty master template." & vbCrLf & vbCrLf & _
+           "Formatting was left unchanged." & vbCrLf & vbCrLf & _
+           "Next steps:" & vbCrLf & _
+           "1. Save this workbook as your master copy (or keep polishing layout)" & vbCrLf & _
+           "2. For each aircraft: File > Save As > <TAIL>_SITS_v2.xlsm" & vbCrLf & _
+           "3. On the aircraft copy, run Setup Wizard from the Dashboard", _
+           vbInformation, "Reset to Master"
+    Exit Sub
+
+ErrorHandler:
+    Application.DisplayAlerts = True
+    SetExcelState "enable"
+    MsgBox "Reset failed during: " & mSetupStep & vbCrLf & vbCrLf & _
+           "Error " & Err.Number & ": " & Err.Description, _
+           vbCritical, "Reset to Master"
+End Sub
+
+Private Sub ClearOperationalTableData()
+    ClearNamedTableData SHEET_DATA_SITS, TBL_SITS
+    ClearNamedTableData SHEET_DATA_USAGE_BASELINE, TBL_USAGE_BASELINE
+    ClearNamedTableData SHEET_DATA_USAGE_CURRENT, TBL_USAGE_CURRENT
+    ClearNamedTableData SHEET_DATA_USAGE_LOG, TBL_USAGE_LOG
+    ClearNamedTableData SHEET_DATA_WP, TBL_WORK_PACKAGES
+    ClearNamedTableData SHEET_DATA_WP_TASKS, TBL_WP_TASKS
+    ClearNamedTableData SHEET_CONFIG, TBL_USAGE_SNAPSHOT
+    ClearNamedTableData SHEET_AUDIT, "tblAudit"
+    ClearWpStateScratchData
+End Sub
+
+Private Sub ClearNamedTableData(ByVal sheetName As String, ByVal tableName As String)
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+
+    Set ws = GetWorksheet(sheetName, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    Set tbl = GetTable(ws, tableName, showError:=False)
+    ClearTableData tbl
+End Sub
+
+Private Sub ClearWpStateScratchData()
+    Dim ws As Worksheet
+    Dim lastRow As Long
+
+    Set ws = GetWorksheet(SHEET_WP_STATE, showError:=False)
+    If ws Is Nothing Then Exit Sub
+
+    On Error Resume Next
+    lastRow = ws.Cells(ws.Rows.Count, 1).End(xlUp).Row
+    If lastRow < 2 Then
+        If ws.UsedRange.Rows.Count + ws.UsedRange.Row - 1 > 1 Then
+            lastRow = ws.UsedRange.Rows.Count + ws.UsedRange.Row - 1
+        End If
+    End If
+    If lastRow >= 2 Then
+        ' Clear values only — keep header styling from Phase 0 / master polish.
+        ws.Range(ws.Cells(2, 1), ws.Cells(lastRow, 3)).ClearContents
+    End If
+    On Error GoTo 0
 End Sub
 
 Private Sub BuildSheetsSilent()

@@ -30,6 +30,8 @@ Layout ownership
 - **Rebuild Dashboard** / **Rebuild SITS Layout**: explicit full/default layout
   reset when you intentionally want scaffolding again.
 - **Ensure Missing Buttons**: adds new Dashboard buttons without moving existing ones.
+- **Reset to Master**: clears aircraft data back to empty-master config while
+  preserving all formatting (counterpart to Phase 0 Setup).
 
 Step 1 — Create a new workbook
 ------------------------------
@@ -233,7 +235,8 @@ Dashboard (Phase 4/5 / v2.3.2):
   Tasks overdue count (pink — same rules as SITS view)
   Status values in C6:C11 are centred
   Pre-setup / master: only **Setup Wizard** under User Actions
-  After setup: Log Sortie, Work Packages, View Audit Log, Extend, Defer (two columns)
+  After setup: Log Sortie, Work Packages, View Audit Log (two columns)
+  Extend / Defer are on the **SITS sheet only** (not Dashboard)
   Import SITS and Refresh Usage moved to Developer Tools
 
 Developer Tools (hidden by default):
@@ -241,7 +244,17 @@ Developer Tools (hidden by default):
   Hide Dev Tools button) to hide it again.
   Import SITS, Refresh Usage, Repair Formats, Repair Visibility, Validate Structure,
   Rebuild Dashboard, Ensure Missing Buttons, Phase 0 Setup, Rebuild SITS Layout,
-  Format Usage Matrix, Protect Workbook, Unprotect Workbook, Hide Dev Tools
+  Format Usage Matrix, Protect Workbook, Unprotect Workbook, Hide Dev Tools,
+  Reset to Master
+
+Reset to Master (data only — preserves formatting):
+  Dashboard Dev Tools button → **ResetWorkbookToMaster**
+  Clears SITS / usage / work packages / sortie log / audit / usage snapshot data
+  and reseeds master config (no tail, SetupComplete=False, MasterTemplate=True).
+  Does **not** rebuild sheets, column widths, colours, or button placement.
+  Use **Phase 0 Setup** only when you want a full scaffold / formatting rebuild.
+  Prefer **Ensure Missing Buttons** after pasting VBA so the new button appears
+  without wiping your Master layout.
 
 Workbook protection (v2.3.2)
 ----------------------------
@@ -270,7 +283,7 @@ Step 9 — Extensions and deferrals (Phase 5)
 -------------------------------------------
 Extend (scheduled tasks — not PT2/PT3):
 1. On the SITS view, tick one or more Selector checkboxes.
-2. Click **Extend** (SITS sheet or Dashboard).
+2. Click **Extend** on the SITS sheet.
 3. Validation before the form opens:
    - All selected tasks must share the same Interval Type Code
    - All selected tasks must share the same Actual Interval
@@ -291,7 +304,7 @@ Extend (scheduled tasks — not PT2/PT3):
 
 Defer (PT2/PT3 only — one at a time):
 1. Tick exactly one PT2-D / PT2-H / PT3-D / PT3-H on the SITS view.
-2. Click **Defer**.
+2. Click **Defer** on the SITS sheet.
 3. Validation:
    - Exactly one selected task
    - Must be a deferred fault code
@@ -317,7 +330,10 @@ What Phase 5 includes
 - frmExtend — multi-task extension with amount + SNOW + authoriser
 - frmDefer — single PT2/PT3 deferral with HH due or date due
 - SITS buttons: Extend, Defer, Horizon (uniform width)
-- Dashboard buttons: Extend, Defer
+- Dashboard User Actions: Log Sortie, Work Packages, View Audit Log
+  (Extend / Defer are SITS-only — not on Dashboard)
+- Reset to Master (Dev Tools): clear aircraft data back to empty master
+  without touching formatting (ResetWorkbookToMaster)
 - frmHorizon — forecast hours / days / number filter dialog
 - Same Interval Type + Actual Interval validation for Extend
 - Authority warnings at >10% / >20% total Extension of Actual Interval
@@ -325,7 +341,8 @@ What Phase 5 includes
 - Deferral life remaining from absolute HH due or date due
 - Task Description cell comments for SNOW + authoriser
 - Remove single task from open work package (frmWorkPackage)
-- Audit: EXTENSION_APPLIED / DEFERRAL_APPLIED / WP_TASK_REMOVED / SITS_HORIZON_SET
+- Audit: EXTENSION_APPLIED / DEFERRAL_APPLIED / WP_TASK_REMOVED / SITS_HORIZON_SET /
+  RESET_MASTER
 
 Manual Add / Remove Task (SITS view)
 ------------------------------------
@@ -455,8 +472,10 @@ Upgrading an existing Phase 0–4 workbook to Phase 5
    modWorkPackage, CONFIG, Setup_CreateDashboard, Setup_RunAll).
 2. Create frmExtend, frmDefer, and frmHorizon from the layout + code files.
 3. Update frmWorkPackage controls to include cmdRemoveTask (or recreate the form).
-4. Prefer **Ensure Missing Buttons** (and Refresh SITS) so new Extend / Defer /
-   Add Task / Remove Task / Horizon buttons appear without wiping your Master layout.
+4. Prefer **Ensure Missing Buttons** (and Refresh SITS) so new Add Task / Remove Task /
+   Horizon / Reset to Master buttons appear without wiping your Master layout.
+   Ensure Missing Buttons also removes leftover Dashboard Extend / Defer buttons
+   (those actions stay on the SITS sheet only).
    Use **Rebuild Dashboard** / **Rebuild SITS Layout** only if you want a full layout reset.
    Refresh SITS also removes the old row-6 instruction text and migrates any leftover
    B3/B4/B5 forecast cells into config.
