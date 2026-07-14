@@ -225,10 +225,13 @@ Private Sub FormatSITSView()
     ws.Range("B2").Value = "(set during setup)"
     ws.Range("A3").Value = "Forecast hours (HH/E1/E2):"
     ws.Range("B3").Value = 50
+    ws.Range("B3").Interior.Color = COLOR_INPUT_HIGHLIGHT
     ws.Range("A4").Value = "Forecast days (DD):"
     ws.Range("B4").Value = 90
+    ws.Range("B4").Interior.Color = COLOR_INPUT_HIGHLIGHT
     ws.Range("A5").Value = "Forecast number (other):"
     ws.Range("B5").Value = 500
+    ws.Range("B5").Interior.Color = COLOR_INPUT_HIGHLIGHT
     ws.Range("A6").Value = "Use filter dropdowns on row 7 to hide interval types. Check tasks to select for future work packages."
 
     ' Default widths for master scaffolding only — later tweaks survive refresh.

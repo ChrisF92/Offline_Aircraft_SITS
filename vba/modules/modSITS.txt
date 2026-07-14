@@ -13,11 +13,10 @@ Option Explicit
 ' ========================================================================
 
 Private Const SITS_VIEW_HEADER_ROW As Long = 7
-Private Const SITS_VIEW_DATA_START_ROW As Long = 8
+' SITS_VIEW_DATA_START_ROW / SITS_SELECTOR_COL live in CONFIG (shared with protection).
 Private Const SITS_FORECAST_HOURS_CELL As String = "B3"
 Private Const SITS_FORECAST_DAYS_CELL As String = "B4"
 Private Const SITS_FORECAST_NUMBER_CELL As String = "B5"
-Private Const SITS_SELECTOR_COL As Long = 1
 Private Const SITS_VISIBLE_COLUMN_COUNT As Long = 10
 Private Const SITS_HEADER_ROW_HEIGHT_PX As Double = 40
 Private Const SITS_BTN_WIDTH As Double = 130
@@ -1008,14 +1007,17 @@ Private Sub WriteSITSViewShell(ByVal ws As Worksheet, _
     ws.Range("A3").Value = "Forecast hours (HH/E1/E2):"
     ws.Range("B3").Value = forecastHours
     ws.Range("B3").NumberFormat = FORMAT_GENERAL
+    ws.Range("B3").Interior.Color = COLOR_INPUT_HIGHLIGHT
 
     ws.Range("A4").Value = "Forecast days (DD):"
     ws.Range("B4").Value = forecastDays
     ws.Range("B4").NumberFormat = FORMAT_GENERAL
+    ws.Range("B4").Interior.Color = COLOR_INPUT_HIGHLIGHT
 
     ws.Range("A5").Value = "Forecast number (other):"
     ws.Range("B5").Value = forecastNumber
     ws.Range("B5").NumberFormat = FORMAT_GENERAL
+    ws.Range("B5").Interior.Color = COLOR_INPUT_HIGHLIGHT
 
     ws.Range("A6").Value = "Tick tasks, then Create Work Package / Extend / Defer / Remove Task. Use Add Task to enter a new row. Manage Work Packages deletes, removes tasks, or closes open ORNs. Filter dropdowns on row 7 hide interval types."
     ws.Range("A6").Font.Size = 9

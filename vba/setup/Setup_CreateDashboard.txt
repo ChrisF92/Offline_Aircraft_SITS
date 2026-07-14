@@ -252,7 +252,8 @@ Private Sub ShowDashboardDevToolsSection(ByVal ws As Worksheet, ByVal forceAdd A
     WriteSectionHeader ws, "B" & DEV_HEADER_ROW, "Developer Tools"
     With ws.Range("B" & DEV_HELP_ROW)
         .Value = "Rebuild macros after pasting updated VBA modules. Rebuild Dashboard resets layout; " & _
-                 "Ensure Missing Buttons only adds new ones. Run HideDevTools to hide this section."
+                 "Ensure Missing Buttons only adds new ones. Protect/Unprotect Workbook for layout edits. " & _
+                 "Run HideDevTools to hide this section."
         .Font.Italic = True
         .Font.Size = 9
         .Font.Color = RGB(89, 89, 89)
@@ -271,8 +272,8 @@ End Sub
 Private Sub HideDashboardDevToolsSection(ByVal ws As Worksheet)
     RemoveDevToolButtons ws
     On Error Resume Next
-    ws.Range("B" & DEV_HEADER_ROW & ":D" & (DEV_BTN_START_ROW + 5)).ClearContents
-    ws.Range("B" & DEV_HEADER_ROW & ":D" & (DEV_BTN_START_ROW + 5)).ClearComments
+    ws.Range("B" & DEV_HEADER_ROW & ":D" & (DEV_BTN_START_ROW + 6)).ClearContents
+    ws.Range("B" & DEV_HEADER_ROW & ":D" & (DEV_BTN_START_ROW + 6)).ClearComments
     On Error GoTo 0
 End Sub
 
@@ -287,7 +288,9 @@ Private Sub AddDevToolButtons(ByVal ws As Worksheet)
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 1, "Phase 0 Setup", "Setup_RunAll"
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 0, "Rebuild SITS Layout", "RebuildSITSViewLayout"
     AddDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 1, "Format Usage Matrix", "Setup_FormatUsageMatrix"
-    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 0, "Hide Dev Tools", "HideDevTools"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 0, "Protect Workbook", "ProtectWorkbook"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 1, "Unprotect Workbook", "UnprotectWorkbook"
+    AddDashboardButtonAt ws, DEV_BTN_START_ROW + 6, 0, "Hide Dev Tools", "HideDevTools"
 End Sub
 
 Private Sub EnsureDevToolButtons(ByVal ws As Worksheet)
@@ -301,7 +304,9 @@ Private Sub EnsureDevToolButtons(ByVal ws As Worksheet)
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 3, 1, "Phase 0 Setup", "Setup_RunAll"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 0, "Rebuild SITS Layout", "RebuildSITSViewLayout"
     EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 4, 1, "Format Usage Matrix", "Setup_FormatUsageMatrix"
-    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 0, "Hide Dev Tools", "HideDevTools"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 0, "Protect Workbook", "ProtectWorkbook"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 5, 1, "Unprotect Workbook", "UnprotectWorkbook"
+    EnsureDashboardButtonAt ws, DEV_BTN_START_ROW + 6, 0, "Hide Dev Tools", "HideDevTools"
 End Sub
 
 Private Sub RemoveDevToolButtons(ByVal ws As Worksheet)
@@ -315,6 +320,8 @@ Private Sub RemoveDevToolButtons(ByVal ws As Worksheet)
     RemoveDashboardButtonForMacro ws, "Setup_RunAll"
     RemoveDashboardButtonForMacro ws, "RebuildSITSViewLayout"
     RemoveDashboardButtonForMacro ws, "Setup_FormatUsageMatrix"
+    RemoveDashboardButtonForMacro ws, "ProtectWorkbook"
+    RemoveDashboardButtonForMacro ws, "UnprotectWorkbook"
     RemoveDashboardButtonForMacro ws, "HideDevTools"
 End Sub
 
@@ -381,7 +388,7 @@ Private Sub PrepareUserButtonRows(ByVal ws As Worksheet)
 End Sub
 
 Private Sub PrepareDevButtonRows(ByVal ws As Worksheet)
-    ws.Rows(DEV_BTN_START_ROW & ":" & (DEV_BTN_START_ROW + 5)).RowHeight = BTN_ROW_HEIGHT
+    ws.Rows(DEV_BTN_START_ROW & ":" & (DEV_BTN_START_ROW + 6)).RowHeight = BTN_ROW_HEIGHT
 End Sub
 
 Private Sub RemoveDashboardButtons(ByVal ws As Worksheet)
