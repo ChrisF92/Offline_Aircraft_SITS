@@ -422,6 +422,8 @@ Public Sub OrderSetupSheets()
     Dim ws As Worksheet
     Dim targetIndex As Long
 
+    UnprotectWorkbookStructure
+
     order = Array( _
         SHEET_DASHBOARD, SHEET_SITS, SHEET_USAGE, SHEET_AUDIT, _
         SHEET_CONFIG, SHEET_DATA_SITS, SHEET_DATA_USAGE_BASELINE, _
