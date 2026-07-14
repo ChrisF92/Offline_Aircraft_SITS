@@ -229,7 +229,7 @@ Manage:
      correct due-soon position (e.g. 25:00 no longer sits above sooner jobs)
 7. Form stays open and refreshes after Delete/Remove/Close.
 
-Dashboard (Phase 4/5 / v2.3.6):
+Dashboard (Phase 4/5 / v2.3.7):
   Open work packages count
   Tasks needing manual update count
   Tasks in warning period count (amber — same rules as SITS view)
@@ -586,6 +586,12 @@ Setup Wizard error: 0 - (after imports succeed; tail wrong / C6:C7 struck throug
      Re-import modSetupWizard, CONFIG, Setup_CreateDashboard, modSITS.
      Then re-run Setup Wizard (or click Ensure Missing Buttons + Repair formulas by
      Rebuild Dashboard if you only need the button/tail display fix).
+
+Dashboard C6/C7 stay "stale" (strikethrough) after Phase 0 / Setup Wizard
+  -> Fixed in v2.3.7: formulas were written while Application.Calculation was Manual
+     (SetExcelState disable) and never recalculated when calc was restored. Excel marks
+     those results stale. Re-import modUtility + Setup_CreateDashboard; run Rebuild
+     Dashboard or Alt+F8 → RepairDashboardConfigFormulas (or press F9 once).
 
 Serial numbers show as 1.11E+12 or lose leading zeros
   -> Re-import SITS/usage after updating modUtility, or click Repair Formats.

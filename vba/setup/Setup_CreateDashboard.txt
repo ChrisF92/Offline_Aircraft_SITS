@@ -177,11 +177,16 @@ End Sub
 ' Restore Tail / Setup Complete formulas if they were overwritten or lost table refs.
 Public Sub RepairDashboardConfigFormulas()
     Dim ws As Worksheet
+    Dim calcWas As XlCalculation
 
     Set ws = GetWorksheet(SHEET_DASHBOARD, showError:=False)
     If ws Is Nothing Then Exit Sub
 
     On Error Resume Next
+    calcWas = Application.Calculation
+    ' Ensure these lookups calculate immediately (avoid Excel "stale" strikethrough).
+    Application.Calculation = xlCalculationAutomatic
+
     With ws.Range("C6")
         .Formula = "=IFERROR(INDEX(tblConfig[Value],MATCH(""" & CFG_TAIL_NUMBER & """,tblConfig[Setting],0)),"""")"
         .Font.Strikethrough = False
@@ -200,6 +205,10 @@ Public Sub RepairDashboardConfigFormulas()
         .HorizontalAlignment = xlCenter
         .VerticalAlignment = xlCenter
     End With
+
+    ws.Range("C6:C7").Calculate
+    Application.Calculate
+    If calcWas <> 0 Then Application.Calculation = calcWas
     On Error GoTo 0
 End Sub
 

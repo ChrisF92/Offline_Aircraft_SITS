@@ -51,6 +51,9 @@ Public Sub SetExcelState(ByVal action As String)
                 Else
                     Application.Calculation = mSavedCalculation
                 End If
+                ' Formulas written while calc was manual stay "stale" (strikethrough)
+                ' until Excel recalculates — e.g. Dashboard C6/C7 tblConfig lookups.
+                Application.Calculate
                 Application.StatusBar = False
                 On Error GoTo 0
 
@@ -64,6 +67,7 @@ Public Sub SetExcelState(ByVal action As String)
             mExcelStateDepth = 0
             On Error Resume Next
             Application.Calculation = xlCalculationAutomatic
+            Application.Calculate
             Application.StatusBar = False
             On Error GoTo 0
             Application.Cursor = xlDefault
