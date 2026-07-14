@@ -96,6 +96,7 @@ Public Sub ResetWorkbookToMaster()
 
     SetExcelState "disable"
     Application.DisplayAlerts = False
+    SuspendWorkbookProtection
 
     mSetupStep = "Clearing operational data"
     ClearOperationalTableData
@@ -112,10 +113,10 @@ Public Sub ResetWorkbookToMaster()
     EnsureDashboardActionButtons
     RefreshDashboardStatusCounts
 
+    LogAction "RESET_MASTER", "", "Data cleared to master template; formatting preserved"
+    ResumeWorkbookProtection
     Application.DisplayAlerts = True
     SetExcelState "enable"
-
-    LogAction "RESET_MASTER", "", "Data cleared to master template; formatting preserved"
 
     MsgBox "Workbook reset to empty master template." & vbCrLf & vbCrLf & _
            "Formatting was left unchanged." & vbCrLf & vbCrLf & _
@@ -127,10 +128,17 @@ Public Sub ResetWorkbookToMaster()
     Exit Sub
 
 ErrorHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
+    On Error Resume Next
+    ForceResumeWorkbookProtection
     Application.DisplayAlerts = True
     SetExcelState "enable"
+    On Error GoTo 0
     MsgBox "Reset failed during: " & mSetupStep & vbCrLf & vbCrLf & _
-           "Error " & Err.Number & ": " & Err.Description, _
+           "Error " & errNum & ": " & errDesc, _
            vbCritical, "Reset to Master"
 End Sub
 

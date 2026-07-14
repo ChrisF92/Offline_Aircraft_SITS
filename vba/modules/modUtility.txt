@@ -10,6 +10,11 @@ Private mExcelStateDepth As Long
 Private mSavedCalculation As XlCalculation
 Private mSavedStatusBar As Variant
 
+' Nested suspend/resume for sheet protection. UserInterfaceOnly lets VBA write
+' cell values, but Excel still blocks ListObject structure changes (add/delete
+' rows/columns, ClearTableData, create tables) while a sheet is protected.
+Private mProtectionSuspendDepth As Long
+
 ' Center a UserForm over the Excel window so it opens on the same monitor.
 ' Call from UserForm_Activate (StartUpPosition/CenterOwner is unreliable with
 ' multiple screens). No WinAPI — uses Application.Left/Top/Width/Height.
@@ -518,6 +523,11 @@ End Sub
 ' controls keep working. UserInterfaceOnly must be re-applied on every Open
 ' (Excel clears that flag when the file is closed).
 '
+' UserInterfaceOnly covers cell value writes only. Table structure ops still
+' raise 1004 ("Table features aren't available because the sheet is protected").
+' Wrap mutating entry points with SuspendWorkbookProtection /
+' ResumeWorkbookProtection (nested-safe, same idea as SetExcelState).
+'
 ' Unlocked UI inputs (SITS only):
 '   Col A from data start — Selector LinkedCells for checkboxes
 ' DrawingObjects:=False so Form Control buttons/checkboxes stay clickable.
@@ -533,6 +543,7 @@ Public Sub ProtectWorkbook()
 End Sub
 
 Public Sub UnprotectWorkbook()
+    mProtectionSuspendDepth = 0
     RemoveWorkbookProtection
     MsgBox "Workbook protection removed." & vbCrLf & vbCrLf & _
            "Use while polishing Master layout or repairing sheets. " & _
@@ -540,9 +551,35 @@ Public Sub UnprotectWorkbook()
            vbInformation, APP_NAME
 End Sub
 
+' Temporarily remove protection for ListObject / structural sheet changes.
+' Nestable — only the outermost Suspend/Resume pair touches the workbook.
+Public Sub SuspendWorkbookProtection()
+    If mProtectionSuspendDepth = 0 Then
+        RemoveWorkbookProtection
+    End If
+    mProtectionSuspendDepth = mProtectionSuspendDepth + 1
+End Sub
+
+Public Sub ResumeWorkbookProtection()
+    If mProtectionSuspendDepth > 0 Then
+        mProtectionSuspendDepth = mProtectionSuspendDepth - 1
+    End If
+    If mProtectionSuspendDepth = 0 Then
+        ApplyWorkbookProtection
+    End If
+End Sub
+
+' Clear nested suspend depth and re-apply protection (error-path recovery).
+Public Sub ForceResumeWorkbookProtection()
+    If mProtectionSuspendDepth = 0 Then Exit Sub
+    mProtectionSuspendDepth = 0
+    ApplyWorkbookProtection
+End Sub
+
 Public Sub ApplyWorkbookProtection()
     Dim ws As Worksheet
 
+    mProtectionSuspendDepth = 0
     On Error Resume Next
     For Each ws In ThisWorkbook.Worksheets
         ProtectSheetUI ws, PROTECT_PASSWORD
@@ -676,13 +713,20 @@ Public Function IsHourBasedIntervalType(ByVal intervalCode As String) As Boolean
 End Function
 
 Public Sub ClearTableData(ByVal tbl As ListObject)
-    On Error Resume Next
-    If Not tbl Is Nothing Then
-        If Not tbl.DataBodyRange Is Nothing Then
-            tbl.DataBodyRange.Delete
-        End If
-    End If
-    On Error GoTo 0
+    If tbl Is Nothing Then Exit Sub
+    If tbl.DataBodyRange Is Nothing Then Exit Sub
+
+    ' DataBodyRange.Delete is a table structure op — needs sheets unprotected.
+    SuspendWorkbookProtection
+    On Error GoTo ClearFail
+    tbl.DataBodyRange.Delete
+    ResumeWorkbookProtection
+    Exit Sub
+
+ClearFail:
+    ResumeWorkbookProtection
+    ' Preserve prior callers that relied on a no-throw clear.
+    Err.Clear
 End Sub
 
 Public Function ParseDMYDateValue(ByVal rawVal As Variant, _

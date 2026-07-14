@@ -702,9 +702,15 @@ Public Sub SnapshotUsageForSITS()
     Set wsConfig = GetWorksheet(SHEET_CONFIG, showError:=False)
     If wsConfig Is Nothing Then Exit Sub
 
+    On Error GoTo SnapshotFail
+    SuspendWorkbookProtection
+
     EnsureUsageSnapshotTable wsConfig
     Set tblSnapshot = GetTable(wsConfig, TBL_USAGE_SNAPSHOT, showError:=False)
-    If tblSnapshot Is Nothing Then Exit Sub
+    If tblSnapshot Is Nothing Then
+        ResumeWorkbookProtection
+        Exit Sub
+    End If
 
     ClearTableData tblSnapshot
     Set seen = CreateObject("Scripting.Dictionary")
@@ -728,6 +734,11 @@ NextUsageRow:
     End If
 
     SetConfigValue CFG_SITS_SNAPSHOT_DATE, Date
+    ResumeWorkbookProtection
+    Exit Sub
+
+SnapshotFail:
+    ForceResumeWorkbookProtection
 End Sub
 
 Public Sub CaptureTaskBaselineFromImport(ByVal tbl As ListObject, ByVal newRow As ListRow, _
@@ -2445,10 +2456,17 @@ Private Sub EnsureUsageSnapshotTable(ByVal ws As Worksheet)
 End Sub
 
 Private Sub EnsureTableColumn(ByVal tbl As ListObject, ByVal columnName As String)
-    If GetTableColumnIndex(tbl, columnName) = 0 Then
-        tbl.ListColumns.Add
-        tbl.ListColumns(tbl.ListColumns.Count).Name = columnName
-    End If
+    If GetTableColumnIndex(tbl, columnName) <> 0 Then Exit Sub
+
+    SuspendWorkbookProtection
+    On Error GoTo EnsureColFail
+    tbl.ListColumns.Add
+    tbl.ListColumns(tbl.ListColumns.Count).Name = columnName
+    ResumeWorkbookProtection
+    Exit Sub
+
+EnsureColFail:
+    ResumeWorkbookProtection
 End Sub
 
 Private Function IsEmptyBaselineValue(ByVal value As Variant) As Boolean

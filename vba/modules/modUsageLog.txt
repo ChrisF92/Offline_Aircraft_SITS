@@ -525,6 +525,7 @@ Public Function CommitSortie(ByVal sortieDate As Date, _
 
     On Error GoTo ErrorHandler
     SetExcelState "disable"
+    SuspendWorkbookProtection
 
     For Each mergeKey In pending.Keys
         parts = Split(CStr(mergeKey), "|")
@@ -557,12 +558,13 @@ NextItem:
     ApplyUsageTableFormats
     RefreshUsageView
     RefreshSITS
-    SetExcelState "enable"
 
     LogAction "SORTIE_LOGGED", "", _
               "Sortie " & Format$(sortieDate, FORMAT_DATE) & _
               IIf(Len(Trim$(sortieRef)) > 0, " (" & sortieRef & ")", "") & _
               "; increments=" & loggedCount
+    ResumeWorkbookProtection
+    SetExcelState "enable"
 
     CommitSortie = True
 
@@ -573,15 +575,21 @@ NextItem:
     Exit Function
 
 ValidationFailed:
+    ResumeWorkbookProtection
     SetExcelState "enable"
     If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
     Exit Function
 
 ErrorHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
+    ForceResumeWorkbookProtection
     SetExcelState "enable"
-    LogError PROC_NAME, Err.Number, Err.Description
+    LogError PROC_NAME, errNum, errDesc
     If showDialogs Then
-        MsgBox "Sortie log error: " & Err.Number & " - " & Err.Description, vbCritical, APP_NAME
+        MsgBox "Sortie log error: " & errNum & " - " & errDesc, vbCritical, APP_NAME
     End If
 End Function
 
