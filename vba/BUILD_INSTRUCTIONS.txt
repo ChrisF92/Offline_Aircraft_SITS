@@ -283,7 +283,11 @@ Upgrade — v1.1.0 (from v1.0.0)
 1. Paste updated modules: CONFIG, Setup_CreateDashboard, Setup_CreateHelpSheet,
    modImportSITS, modExtensions, modSITS, modSITSEdit.
 2. Update frmExtend: add Label `lblCurrentExt`, set ColumnCount=4 on lstTasks,
-   paste `vba/forms/frmExtend.txt` (see EXTEND_FORM_LAYOUT.txt).
+   add header Labels (`lblHdrTaskCode`, `lblHdrDescription`,
+   `lblHdrActualInterval`, `lblHdrLifeRemaining`), paste `vba/forms/frmExtend.txt`
+   (see EXTEND_FORM_LAYOUT.txt).
+   Update frmWorkPackage: add header Labels `lblHdrTaskCode` /
+   `lblHdrDescription`, paste `vba/forms/frmWorkPackage.txt`.
 3. Compile VBAProject.
 4. Alt+F8 → **EnableDevTools** → **Ensure Missing Buttons** (adds Manual Update
    on SITS; fixes View Help placement after Setup Wizard).
