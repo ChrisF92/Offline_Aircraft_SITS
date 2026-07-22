@@ -7,18 +7,29 @@ Suggested form size: Width ~560, Height ~440
 
 Then add these controls (Name property must match exactly):
 
-Control Name      Type           Caption / Notes
-----------------  -------------  ------------------------------------------
-lblOpenCount      Label          Open work packages:
-txtOpenCount      TextBox        Read-only count (Locked = True in code)
-lblORN            Label          Open ORN:
-cboORN            ComboBox       Style = fmStyleDropDownList (dropdown only)
-lblTasks          Label          Tasks in selected work package:
-lstTasks          ListBox        ColumnCount = 3 (Task Code | Description | SITS_RowID hidden)
-cmdDelete         CommandButton  Delete
-cmdRemoveTask     CommandButton  Remove task
-cmdCloseWP        CommandButton  Close work package
-cmdCloseForm      CommandButton  Close form
+Control Name         Type           Caption / Notes
+-------------------  -------------  ------------------------------------------
+lblOpenCount         Label          Open work packages:
+txtOpenCount         TextBox        Read-only count (Locked = True in code)
+lblORN               Label          Open ORN:
+cboORN               ComboBox       Style = fmStyleDropDownList (dropdown only)
+lblTasks             Label          Tasks in selected work package:
+lblHdrTaskCode       Label          Task Code (list column header — caption set in code)
+lblHdrDescription    Label          Description (list column header — caption set in code)
+lstTasks             ListBox        ColumnCount = 3 (Task Code | Description | SITS_RowID hidden)
+cmdDelete            CommandButton  Delete
+cmdRemoveTask        CommandButton  Remove task
+cmdCloseWP           CommandButton  Close work package
+cmdCloseForm         CommandButton  Close form
+
+List box column headers
+-----------------------
+MSForms ListBox.ColumnHeads only works when the list is bound to a worksheet
+RowSource. These forms populate with AddItem, so ColumnHeads cannot be used.
+
+Instead: add Labels above lstTasks (one per visible column). Code in
+LayoutWorkPackageListHeaders aligns them to ColumnWidths (160 / 280).
+Leave ~14 pt between lblTasks and lstTasks for the header row.
 
 Button behaviour:
   - Delete / Close work package are enabled only when an ORN is selected
@@ -34,8 +45,9 @@ Suggested positions (approximate):
   Row 1: lblOpenCount [12,12]  txtOpenCount [150,10] width 60
   Row 2: lblORN [12,42]  cboORN [150,40] width 220
   Row 3: lblTasks [12,72]
-  Row 4: lstTasks [12,92] size 520x220
-  Row 5: cmdDelete [12,330]  cmdRemoveTask [100,330]  cmdCloseWP [220,330]  cmdCloseForm [400,330]
+  Row 4: lblHdrTaskCode / lblHdrDescription [12,90]  (code repositions to match columns)
+  Row 5: lstTasks [12,104] size 520x208
+  Row 6: cmdDelete [12,330]  cmdRemoveTask [100,330]  cmdCloseWP [220,330]  cmdCloseForm [400,330]
 
 After creating controls, open the form's code window and paste the contents of:
   vba/forms/frmWorkPackage.txt
@@ -46,3 +58,7 @@ SITS sheet macros:
 
 Dashboard macro:
   RunManageWorkPackages  — Work Packages button
+
+Upgrade note (existing frmWorkPackage):
+  Add Labels lblHdrTaskCode and lblHdrDescription above lstTasks, then
+  re-paste frmWorkPackage.txt.

@@ -15,6 +15,7 @@ Private mCurrentExtension As Double
 
 Private Sub UserForm_Activate()
     CenterUserFormOnExcel Me
+    LayoutExtendListHeaders
 End Sub
 
 Private Sub UserForm_Initialize()
@@ -59,6 +60,7 @@ Private Sub UserForm_Initialize()
     lstTasks.Clear
     lstTasks.ColumnCount = 4
     lstTasks.ColumnWidths = "120 pt;200 pt;80 pt;80 pt"
+    LayoutExtendListHeaders
 
     Set rows = GetExtendSelectionDisplayRows(mSelectedIds)
     For i = 1 To rows.Count
@@ -169,3 +171,36 @@ Private Function FormatExtensionAmountWithPercent(ByVal amountValue As Double, _
     pctText = Format$((amountValue / CDbl(actualInterval)) * 100#, "0.00")
     FormatExtensionAmountWithPercent = amountText & " (" & pctText & "%)"
 End Function
+
+' ColumnHeads only works with RowSource. These lists use AddItem, so align
+' Labels above lstTasks to the visible ColumnWidths instead.
+Private Sub LayoutExtendListHeaders()
+    Const GAP As Double = 2
+    Const HDR_HEIGHT As Double = 12
+    Dim leftPos As Double
+    Dim topPos As Double
+
+    leftPos = lstTasks.Left
+    topPos = lstTasks.Top - HDR_HEIGHT - GAP
+
+    PlaceListHeaderLabel lblHdrTaskCode, "Task Code", leftPos, topPos, 120, HDR_HEIGHT
+    leftPos = leftPos + 120
+    PlaceListHeaderLabel lblHdrDescription, "Description", leftPos, topPos, 200, HDR_HEIGHT
+    leftPos = leftPos + 200
+    PlaceListHeaderLabel lblHdrActualInterval, "Actual Interval", leftPos, topPos, 80, HDR_HEIGHT
+    leftPos = leftPos + 80
+    PlaceListHeaderLabel lblHdrLifeRemaining, "Life Remaining", leftPos, topPos, 80, HDR_HEIGHT
+End Sub
+
+Private Sub PlaceListHeaderLabel(ByVal lbl As Object, ByVal captionText As String, _
+                                 ByVal leftPos As Double, ByVal topPos As Double, _
+                                 ByVal widthPos As Double, ByVal heightPos As Double)
+    With lbl
+        .Caption = captionText
+        .Left = leftPos
+        .Top = topPos
+        .Width = widthPos
+        .Height = heightPos
+        .Font.Bold = True
+    End With
+End Sub
