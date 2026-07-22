@@ -1459,7 +1459,6 @@ Private Sub SyncSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
     Dim heightPos As Double
     Dim cellText As String
     Dim poolIndex As Long
-    Dim needed As Long
 
     If ws Is Nothing Then Exit Sub
 
