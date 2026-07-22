@@ -660,25 +660,85 @@ NextCollectRow:
             ReDim Preserve sortEntries(1 To sortCount)
             SortSITSViewEntries sortEntries
 
+            Dim colCount As Long
+            Dim values() As Variant
+            Dim formats() As Variant
+            Dim comments() As String
+            Dim colNames() As String
+            Dim dataRange As Range
+            Dim cellValue As Variant
+            Dim cellFormat As String
+            Dim commentText As String
+            Dim descCol As Long
+            Dim hasComments As Boolean
+            Dim arrayCol As Long
+
+            colCount = viewColumns.Count
+            ReDim values(1 To sortCount, 1 To colCount)
+            ReDim formats(1 To sortCount, 1 To colCount)
+            ReDim comments(1 To sortCount)
+            ReDim colNames(1 To colCount)
+
+            arrayCol = 1
+            For Each columnName In viewColumns
+                colNames(arrayCol) = CStr(columnName)
+                If StrComp(colNames(arrayCol), HDR_TASK_DESCRIPTION, vbTextCompare) = 0 Then
+                    descCol = arrayCol
+                End If
+                arrayCol = arrayCol + 1
+            Next columnName
+
+            Application.StatusBar = "Building SITS view data…"
             For entryIndex = 1 To sortCount
                 Set row = tbl.ListRows(sortEntries(entryIndex).ListRowIndex)
                 intervalCode = sortEntries(entryIndex).IntervalCode
-                lifeHoursFraction = sortEntries(entryIndex).LifeHoursFraction
-                daysUntilDue = sortEntries(entryIndex).DaysUntilDue
 
-                outputCol = 1
-                For Each columnName In viewColumns
-                    WriteSITSViewCell row, tbl, intervalCode, CStr(columnName), _
-                        wsView.Cells(outputRow, outputCol), colMap
-                    outputCol = outputCol + 1
-                Next columnName
-
-                ApplySITSViewRowWarnings wsView, outputRow, SITS_VISIBLE_COLUMN_COUNT, _
-                    intervalCode, lifeHoursFraction, daysUntilDue, _
-                    warnHoursFraction, warnDays, row, colManualFlag
-
-                outputRow = outputRow + 1
+                For arrayCol = 1 To colCount
+                    BuildSITSViewCellPayload row, tbl, intervalCode, colNames(arrayCol), colMap, _
+                        cellValue, cellFormat, commentText
+                    If IsEmpty(cellValue) Then
+                        values(entryIndex, arrayCol) = Empty
+                    Else
+                        values(entryIndex, arrayCol) = cellValue
+                    End If
+                    formats(entryIndex, arrayCol) = cellFormat
+                    If arrayCol = descCol And Len(commentText) > 0 Then
+                        comments(entryIndex) = commentText
+                        hasComments = True
+                    End If
+                Next arrayCol
             Next entryIndex
+
+            lastDataRow = SITS_VIEW_DATA_START_ROW + sortCount - 1
+            Set dataRange = wsView.Range( _
+                wsView.Cells(SITS_VIEW_DATA_START_ROW, 1), _
+                wsView.Cells(lastDataRow, colCount))
+            dataRange.Value = values
+            dataRange.NumberFormat = formats
+            dataRange.WrapText = False
+
+            If hasComments And descCol > 0 Then
+                For entryIndex = 1 To sortCount
+                    If Len(comments(entryIndex)) > 0 Then
+                        SetCellCommentText _
+                            wsView.Cells(SITS_VIEW_DATA_START_ROW + entryIndex - 1, descCol), _
+                            comments(entryIndex)
+                    End If
+                Next entryIndex
+            End If
+
+            Application.StatusBar = "Applying SITS warning colours…"
+            For entryIndex = 1 To sortCount
+                Set row = tbl.ListRows(sortEntries(entryIndex).ListRowIndex)
+                ApplySITSViewRowWarnings wsView, _
+                    SITS_VIEW_DATA_START_ROW + entryIndex - 1, SITS_VISIBLE_COLUMN_COUNT, _
+                    sortEntries(entryIndex).IntervalCode, _
+                    sortEntries(entryIndex).LifeHoursFraction, _
+                    sortEntries(entryIndex).DaysUntilDue, _
+                    warnHoursFraction, warnDays, row, colManualFlag
+            Next entryIndex
+
+            outputRow = lastDataRow + 1
         End If
     End If
 
@@ -1372,32 +1432,6 @@ Private Sub EnsureSheetButton(ByVal ws As Worksheet, ByVal caption As String, _
     btn.Placement = xlFreeFloating
 End Sub
 
-Private Sub WriteSITSViewSelectorCell(ByVal sourceRow As ListRow, _
-                                      ByVal tbl As ListObject, _
-                                      ByVal target As Range, _
-                                      Optional ByVal colMap As Object = Nothing)
-    Dim colOrn As Long
-    Dim inWorkOrn As String
-
-    colOrn = ResolveTableColumnIndex(tbl, HDR_ORN_INWORK, colMap)
-    If colOrn > 0 Then
-        inWorkOrn = Trim$(CStr(sourceRow.Range.Cells(1, colOrn).Value))
-    End If
-
-    If Len(inWorkOrn) > 0 Then
-        target.Value = SITS_IN_WORK_TEXT
-        target.NumberFormat = FORMAT_GENERAL
-        target.HorizontalAlignment = xlCenter
-        target.Font.Bold = True
-        target.Font.Color = RGB(192, 0, 0)
-    Else
-        target.Value = False
-        target.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
-        target.Font.Bold = False
-        target.Font.Color = vbBlack
-    End If
-End Sub
-
 Private Sub AddSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
                                           ByVal firstDataRow As Long, _
                                           ByVal lastDataRow As Long)
@@ -1861,63 +1895,66 @@ Private Function SITSViewUsesHourFormat(ByVal intervalCode As String) As Boolean
     End Select
 End Function
 
-Private Sub WriteSITSViewCell(ByVal sourceRow As ListRow, _
-                              ByVal tbl As ListObject, _
-                              ByVal intervalCode As String, _
-                              ByVal columnName As String, _
-                              ByVal target As Range, _
-                              Optional ByVal colMap As Object = Nothing)
+' Pure value/format builder for bulk view writes and single-cell writers.
+Private Sub BuildSITSViewCellPayload(ByVal sourceRow As ListRow, _
+                                     ByVal tbl As ListObject, _
+                                     ByVal intervalCode As String, _
+                                     ByVal columnName As String, _
+                                     ByVal colMap As Object, _
+                                     ByRef outValue As Variant, _
+                                     ByRef outFormat As String, _
+                                     ByRef outComment As String)
     Dim sourceCell As Range
     Dim colIndex As Long
     Dim value As Variant
 
-    target.WrapText = False
+    outValue = Empty
+    outFormat = FORMAT_GENERAL
+    outComment = ""
 
     If StrComp(columnName, HDR_VIEW_LIFE_REMAINING, vbTextCompare) = 0 Then
-        WriteSITSViewLifeRemaining sourceRow, tbl, intervalCode, target, colMap
+        BuildSITSViewLifeRemainingPayload sourceRow, tbl, intervalCode, colMap, outValue, outFormat
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_SELECTOR, vbTextCompare) = 0 Then
+        BuildSITSViewSelectorPayload sourceRow, tbl, colMap, outValue, outFormat
         Exit Sub
     End If
 
     colIndex = ResolveTableColumnIndex(tbl, columnName, colMap)
     If colIndex = 0 Then Exit Sub
-
     Set sourceCell = sourceRow.Range.Cells(1, colIndex)
-
-    If StrComp(columnName, HDR_SELECTOR, vbTextCompare) = 0 Then
-        WriteSITSViewSelectorCell sourceRow, tbl, target, colMap
-        Exit Sub
-    End If
 
     If StrComp(columnName, HDR_SERIAL, vbTextCompare) = 0 Or _
        StrComp(columnName, HDR_END_ITEM_SERIAL, vbTextCompare) = 0 Then
-        WriteSerialCell target, sourceCell.Value, sourceCell.Text
+        outValue = NormalizeSerialText(sourceCell.Value, sourceCell.Text)
+        outFormat = FORMAT_TEXT
         Exit Sub
     End If
 
     If StrComp(columnName, HDR_ACTUAL_INTERVAL, vbTextCompare) = 0 Or _
        StrComp(columnName, HDR_EXTENSION, vbTextCompare) = 0 Or _
        StrComp(columnName, HDR_WARNING_INTERVAL, vbTextCompare) = 0 Then
-        WriteSITSViewIntervalValue sourceCell, target, intervalCode
+        BuildSITSViewIntervalPayload sourceCell, intervalCode, outValue, outFormat
         Exit Sub
     End If
 
     If StrComp(columnName, HDR_CURRENT_USAGE_HOURS, vbTextCompare) = 0 Then
         If SITSViewUsesHourFormat(intervalCode) Then
-            WriteSITSViewIntervalValue sourceCell, target, intervalCode
-        Else
-            target.ClearContents
+            BuildSITSViewIntervalPayload sourceCell, intervalCode, outValue, outFormat
         End If
         Exit Sub
     End If
 
     If StrComp(columnName, HDR_CURRENT_USAGE_NUMBER, vbTextCompare) = 0 Then
         If SITSViewUsesHourFormat(intervalCode) Then
-            target.ClearContents
+            Exit Sub
         ElseIf IsEmpty(sourceCell.Value) Or Len(Trim$(CStr(sourceCell.Value))) = 0 Then
-            target.ClearContents
+            Exit Sub
         Else
-            target.Value = CDbl(NzSITSNumber(sourceCell.Value))
-            target.NumberFormat = FORMAT_DECIMAL
+            outValue = CDbl(NzSITSNumber(sourceCell.Value))
+            outFormat = FORMAT_DECIMAL
         End If
         Exit Sub
     End If
@@ -1925,23 +1962,174 @@ Private Sub WriteSITSViewCell(ByVal sourceRow As ListRow, _
     If StrComp(columnName, HDR_PROJECTED_DUE_DATE, vbTextCompare) = 0 Then
         value = sourceCell.Value
         If IsDate(value) Then
-            target.Value = CDate(value)
-            target.NumberFormat = FORMAT_DATE
-        Else
-            target.ClearContents
+            outValue = CDate(value)
+            outFormat = FORMAT_DATE
         End If
         Exit Sub
     End If
 
     If StrComp(columnName, HDR_TASK_DESCRIPTION, vbTextCompare) = 0 Then
-        target.Value = sourceCell.Value
-        target.NumberFormat = FORMAT_GENERAL
-        CopySITSDescriptionComment sourceCell, target
+        outValue = sourceCell.Value
+        outFormat = FORMAT_GENERAL
+        outComment = GetCellCommentText(sourceCell)
         Exit Sub
     End If
 
-    target.Value = sourceCell.Value
-    target.NumberFormat = FORMAT_GENERAL
+    outValue = sourceCell.Value
+    outFormat = FORMAT_GENERAL
+End Sub
+
+Private Sub BuildSITSViewSelectorPayload(ByVal sourceRow As ListRow, _
+                                         ByVal tbl As ListObject, _
+                                         ByVal colMap As Object, _
+                                         ByRef outValue As Variant, _
+                                         ByRef outFormat As String)
+    Dim colOrn As Long
+    Dim inWorkOrn As String
+
+    colOrn = ResolveTableColumnIndex(tbl, HDR_ORN_INWORK, colMap)
+    If colOrn > 0 Then
+        inWorkOrn = Trim$(CStr(sourceRow.Range.Cells(1, colOrn).Value))
+    End If
+
+    If Len(inWorkOrn) > 0 Then
+        outValue = SITS_IN_WORK_TEXT
+        outFormat = FORMAT_GENERAL
+    Else
+        outValue = False
+        outFormat = SITS_CHECKBOX_HIDE_FORMAT
+    End If
+End Sub
+
+Private Sub BuildSITSViewLifeRemainingPayload(ByVal sourceRow As ListRow, _
+                                              ByVal tbl As ListObject, _
+                                              ByVal intervalCode As String, _
+                                              ByVal colMap As Object, _
+                                              ByRef outValue As Variant, _
+                                              ByRef outFormat As String)
+    Dim sourceCell As Range
+    Dim colIndex As Long
+    Dim value As Variant
+
+    outValue = Empty
+    outFormat = FORMAT_GENERAL
+
+    If SITSViewUsesHourFormat(intervalCode) Then
+        colIndex = ResolveTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING, colMap)
+        If colIndex = 0 Then Exit Sub
+        Set sourceCell = sourceRow.Range.Cells(1, colIndex)
+        value = sourceCell.Value
+        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
+            Exit Sub
+        ElseIf IsNumeric(value) And CDbl(value) < 0# Then
+            outValue = FormatElapsedHoursFromDayFraction(CDbl(value))
+            outFormat = FORMAT_GENERAL
+        Else
+            BuildSITSViewIntervalPayload sourceCell, intervalCode, outValue, outFormat
+        End If
+        Exit Sub
+    End If
+
+    If intervalCode = TYPE_DD Then
+        colIndex = ResolveTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE, colMap)
+        If colIndex = 0 Then Exit Sub
+        Set sourceCell = sourceRow.Range.Cells(1, colIndex)
+        value = sourceCell.Value
+        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
+            Exit Sub
+        ElseIf LooksLikeAbsoluteDueDate(value) Then
+            outValue = CDbl(DateDiff("d", Date, CDate(value)))
+            outFormat = FORMAT_DECIMAL
+        ElseIf IsNumeric(value) Then
+            outValue = CDbl(value)
+            outFormat = FORMAT_DECIMAL
+        End If
+        Exit Sub
+    End If
+
+    colIndex = ResolveTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING, colMap)
+    If colIndex = 0 Then Exit Sub
+    Set sourceCell = sourceRow.Range.Cells(1, colIndex)
+    If IsEmpty(sourceCell.Value) Or Len(Trim$(CStr(sourceCell.Value))) = 0 Then
+        Exit Sub
+    End If
+    outValue = CDbl(NzSITSNumber(sourceCell.Value))
+    outFormat = FORMAT_DECIMAL
+End Sub
+
+Private Sub BuildSITSViewIntervalPayload(ByVal sourceCell As Range, _
+                                         ByVal intervalCode As String, _
+                                         ByRef outValue As Variant, _
+                                         ByRef outFormat As String)
+    Dim storedValue As Double
+
+    outValue = Empty
+    outFormat = FORMAT_GENERAL
+
+    If IsEmpty(sourceCell.Value) Or Len(Trim$(CStr(sourceCell.Value))) = 0 Then Exit Sub
+
+    If SITSViewUsesHourFormat(intervalCode) Then
+        storedValue = CoerceUsageStorageValue(sourceCell.Value, FORMAT_TYPE_HOURS, sourceCell.Text)
+        outValue = storedValue
+        outFormat = UsageNumberFormatPattern(FORMAT_TYPE_HOURS, storedValue)
+    Else
+        outValue = CDbl(NzSITSNumber(sourceCell.Value))
+        outFormat = FORMAT_DECIMAL
+    End If
+End Sub
+
+Private Sub WriteSITSViewCell(ByVal sourceRow As ListRow, _
+                              ByVal tbl As ListObject, _
+                              ByVal intervalCode As String, _
+                              ByVal columnName As String, _
+                              ByVal target As Range, _
+                              Optional ByVal colMap As Object = Nothing)
+    Dim value As Variant
+    Dim numberFormat As String
+    Dim commentText As String
+
+    BuildSITSViewCellPayload sourceRow, tbl, intervalCode, columnName, colMap, _
+        value, numberFormat, commentText
+
+    target.WrapText = False
+    If IsEmpty(value) Then
+        target.ClearContents
+    Else
+        target.Value = value
+    End If
+    target.NumberFormat = numberFormat
+
+    If StrComp(columnName, HDR_SELECTOR, vbTextCompare) = 0 Then
+        ApplySITSViewSelectorCellStyle target, value
+    End If
+
+    If StrComp(columnName, HDR_TASK_DESCRIPTION, vbTextCompare) = 0 Then
+        SetCellCommentText target, commentText
+    End If
+End Sub
+
+Private Sub ApplySITSViewSelectorCellStyle(ByVal target As Range, ByVal value As Variant)
+    If StrComp(CStr(value), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then
+        target.HorizontalAlignment = xlCenter
+        target.Font.Bold = True
+        target.Font.Color = RGB(192, 0, 0)
+    Else
+        target.Font.Bold = False
+        target.Font.Color = vbBlack
+    End If
+End Sub
+
+Private Sub WriteSITSViewSelectorCell(ByVal sourceRow As ListRow, _
+                                      ByVal tbl As ListObject, _
+                                      ByVal target As Range, _
+                                      Optional ByVal colMap As Object = Nothing)
+    Dim value As Variant
+    Dim numberFormat As String
+
+    BuildSITSViewSelectorPayload sourceRow, tbl, colMap, value, numberFormat
+    target.Value = value
+    target.NumberFormat = numberFormat
+    ApplySITSViewSelectorCellStyle target, value
 End Sub
 
 Private Sub CopySITSDescriptionComment(ByVal sourceCell As Range, ByVal target As Range)
@@ -1956,72 +2144,31 @@ Private Sub WriteSITSViewLifeRemaining(ByVal sourceRow As ListRow, _
                                        ByVal intervalCode As String, _
                                        ByVal target As Range, _
                                        Optional ByVal colMap As Object = Nothing)
-    Dim sourceCell As Range
-    Dim colIndex As Long
     Dim value As Variant
+    Dim numberFormat As String
 
-    If SITSViewUsesHourFormat(intervalCode) Then
-        colIndex = ResolveTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING, colMap)
-        If colIndex = 0 Then Exit Sub
-        Set sourceCell = sourceRow.Range.Cells(1, colIndex)
-        value = sourceCell.Value
-        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
-            target.ClearContents
-        ElseIf IsNumeric(value) And CDbl(value) < 0# Then
-            ' Excel [h]:mm does not display negatives reliably — show as text.
-            target.Value = FormatElapsedHoursFromDayFraction(CDbl(value))
-            target.NumberFormat = FORMAT_GENERAL
-        Else
-            WriteSITSViewIntervalValue sourceCell, target, intervalCode
-        End If
-        Exit Sub
-    End If
-
-    If intervalCode = TYPE_DD Then
-        colIndex = ResolveTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE, colMap)
-        If colIndex = 0 Then Exit Sub
-        Set sourceCell = sourceRow.Range.Cells(1, colIndex)
-        value = sourceCell.Value
-        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
-            target.ClearContents
-        ElseIf LooksLikeAbsoluteDueDate(value) Then
-            ' Legacy absolute date in Days When Due — show days remaining (may be negative).
-            target.Value = CDbl(DateDiff("d", Date, CDate(value)))
-            target.NumberFormat = FORMAT_DECIMAL
-        ElseIf IsNumeric(value) Then
-            target.Value = CDbl(value)
-            target.NumberFormat = FORMAT_DECIMAL
-        Else
-            target.ClearContents
-        End If
-        Exit Sub
-    End If
-
-    colIndex = ResolveTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING, colMap)
-    If colIndex = 0 Then Exit Sub
-    Set sourceCell = sourceRow.Range.Cells(1, colIndex)
-    If IsEmpty(sourceCell.Value) Or Len(Trim$(CStr(sourceCell.Value))) = 0 Then
+    BuildSITSViewLifeRemainingPayload sourceRow, tbl, intervalCode, colMap, value, numberFormat
+    If IsEmpty(value) Then
         target.ClearContents
     Else
-        target.Value = CDbl(NzSITSNumber(sourceCell.Value))
-        target.NumberFormat = FORMAT_DECIMAL
+        target.Value = value
     End If
+    target.NumberFormat = numberFormat
 End Sub
 
 Private Sub WriteSITSViewIntervalValue(ByVal sourceCell As Range, _
                                        ByVal target As Range, _
                                        ByVal intervalCode As String)
-    If IsEmpty(sourceCell.Value) Or Len(Trim$(CStr(sourceCell.Value))) = 0 Then
-        target.ClearContents
-        Exit Sub
-    End If
+    Dim value As Variant
+    Dim numberFormat As String
 
-    If SITSViewUsesHourFormat(intervalCode) Then
-        WriteFormattedUsageValue target, sourceCell.Value, FORMAT_TYPE_HOURS, sourceCell.Text
+    BuildSITSViewIntervalPayload sourceCell, intervalCode, value, numberFormat
+    If IsEmpty(value) Then
+        target.ClearContents
     Else
-        target.Value = CDbl(NzSITSNumber(sourceCell.Value))
-        target.NumberFormat = FORMAT_DECIMAL
+        target.Value = value
     End If
+    target.NumberFormat = numberFormat
 End Sub
 
 Private Sub SaveForecastSettingsFromView()
