@@ -3,19 +3,20 @@ Extend UserForm — Control Layout (frmExtend)
 
 Create a UserForm in the VBA IDE named exactly: frmExtend
 Set the form Caption to: Extend Tasks
-Suggested form size: Width ~560, Height ~420
+Suggested form size: Width ~560, Height ~440
 
 Then add these controls (Name property must match exactly):
 
 Control Name      Type           Caption / Notes
 ----------------  -------------  ------------------------------------------
-lblTasks          Label          Selected tasks (must share Interval Type + Actual Interval):
-lstTasks          ListBox        ColumnCount = 3 (Task Code | Description | Actual Interval)
-lblInterval       Label          Interval / Actual Interval summary (set in code)
+lblTasks          Label          Selected tasks (must share Interval Type + Actual Interval + Life Remaining):
+lstTasks          ListBox        ColumnCount = 4 (Task Code | Description | Actual Interval | Life Remaining)
+lblInterval       Label          Interval / Actual Interval / Life Remaining summary (set in code)
+lblCurrentExt     Label          Current extension (set in code)
 lblAmount         Label          Extension amount:
 txtAmount         TextBox        h:mm for HH/E1/E2; days for DD; number otherwise
 lblAmountHint     Label          Format hint (set in code)
-lblLivePct        Label          Live % preview (set in code)
+lblLivePct        Label          Live total % preview (set in code)
 lblPctHint        Label          Authority tier hint (set in code)
 lblSNOW           Label          SNOW:
 txtSNOW           TextBox        Required authorisation reference
@@ -26,18 +27,23 @@ cmdCancel         CommandButton  Cancel
 
 Suggested positions (approximate):
   Row 1: lblTasks [12,12]
-  Row 2: lstTasks [12,32] size 520x160
-  Row 3: lblInterval [12,200]
-  Row 4: lblAmount [12,228]  txtAmount [140,226] width 100
-  Row 5: lblAmountHint [12,254]
-  Row 6: lblLivePct [12,276]
-  Row 7: lblPctHint [12,296]
-  Row 8: lblSNOW [12,324]  txtSNOW [140,322] width 200
-  Row 9: lblAuthoriser [12,352]  txtAuthoriser [140,350] width 200
-  Row 10: cmdApply [12,382]  cmdCancel [160,382]
+  Row 2: lstTasks [12,32] size 520x150
+  Row 3: lblInterval [12,190]
+  Row 4: lblCurrentExt [12,210]
+  Row 5: lblAmount [12,236]  txtAmount [140,234] width 100
+  Row 6: lblAmountHint [12,260]
+  Row 7: lblLivePct [12,282]
+  Row 8: lblPctHint [12,302]
+  Row 9: lblSNOW [12,330]  txtSNOW [140,328] width 200
+  Row 10: lblAuthoriser [12,358]  txtAuthoriser [140,356] width 200
+  Row 11: cmdApply [12,390]  cmdCancel [160,390]
 
 After creating controls, open the form's code window and paste the contents of:
   vba/forms/frmExtend.txt
 
 SITS sheet macro:
   RunExtendFromSelection — Extend button
+
+Upgrade note (existing frmExtend):
+  Add Label named lblCurrentExt above the Extension amount row.
+  Widen lstTasks ColumnCount to 4 (Actual Interval + Life Remaining).

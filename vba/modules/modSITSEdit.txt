@@ -9,6 +9,8 @@ Option Explicit
 '      filter decides visibility).
 ' Remove: reuse Selector checkboxes; confirm irreversible delete of the
 '         whole selection (listed); delete from tblSITS (+ orphan WP links).
+' Manual Update: zero-interval tasks only — step-by-step InputBox for due
+'         date or hours/number until due (workbook cells stay protected).
 ' ========================================================================
 
 Private Type SITSManualTaskDraft
@@ -29,6 +31,10 @@ End Sub
 
 Public Sub RunRemoveSITSTasks()
     RemoveSelectedSITSTasks
+End Sub
+
+Public Sub RunManualUpdateSITSTasks()
+    ManualUpdateSelectedZeroIntervalTasks
 End Sub
 
 Public Function AddSITSTaskManually() As Boolean
@@ -239,6 +245,426 @@ ErrorHandler:
     LogError PROC_NAME, errNum, errDesc
     MsgBox "Remove task error: " & errNum & " - " & errDesc, vbCritical, APP_NAME
 End Function
+
+' ------------------------------------------------------------------------
+' Manual Update — zero-interval life remaining (protected sheet)
+' ------------------------------------------------------------------------
+
+Public Function ManualUpdateSelectedZeroIntervalTasks() As Boolean
+    Const PROC_NAME As String = "ManualUpdateSelectedZeroIntervalTasks"
+
+    Dim tbl As ListObject
+    Dim selectedIds As Object
+    Dim rowIndex As Object
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim failReason As String
+    Dim updatedCount As Long
+    Dim skippedCount As Long
+    Dim taskCode As String
+    Dim intervalCode As String
+    Dim lifeText As String
+    Dim cancelled As Boolean
+
+    ManualUpdateSelectedZeroIntervalTasks = False
+
+    If Not ValidateSetupReady() Then Exit Function
+
+    Set tbl = GetSITSEditTable(True)
+    If tbl Is Nothing Then Exit Function
+    If Not ValidateSITSColumns(tbl) Then Exit Function
+    EnsureWorkPackageSITSColumns tbl
+    EnsureSITSBaselineColumns tbl
+
+    Set rowIndex = BuildSITSRowIdIndex(tbl)
+    Set selectedIds = CollectSelectedFromSITSView(tbl, rowIndex)
+
+    If selectedIds Is Nothing Or selectedIds.Count = 0 Then
+        MsgBox "Tick one or more zero-interval tasks on the SITS view, then click Manual Update.", _
+               vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    If Not ValidateSelectionForManualUpdate(selectedIds, tbl, rowIndex, failReason) Then
+        MsgBox failReason, vbExclamation, APP_NAME
+        Exit Function
+    End If
+
+    On Error GoTo ErrorHandler
+
+    For Each rowId In selectedIds.Keys
+        Set sitsRow = ResolveSITSRowById(rowIndex, tbl, CStr(rowId))
+        If sitsRow Is Nothing Then
+            skippedCount = skippedCount + 1
+            GoTo NextManualTask
+        End If
+
+        taskCode = Trim$(CStr(sitsRow.Range.Cells(1, GetTableColumnIndex(tbl, HDR_TASK_CODE)).Value))
+        intervalCode = UCase$(Trim$(CStr( _
+            sitsRow.Range.Cells(1, GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)).Value)))
+
+        lifeText = PromptManualLifeRemainingForTask(taskCode, intervalCode, cancelled)
+        If cancelled Then
+            If updatedCount = 0 Then Exit Function
+            Exit For
+        End If
+
+        If Len(Trim$(lifeText)) = 0 Then
+            skippedCount = skippedCount + 1
+            GoTo NextManualTask
+        End If
+
+        failReason = ""
+        If Not ValidateLifeRemainingText(intervalCode, lifeText, failReason) Then
+            MsgBox failReason & vbCrLf & vbCrLf & "Skipping " & taskCode & ".", _
+                   vbExclamation, APP_NAME
+            skippedCount = skippedCount + 1
+            GoTo NextManualTask
+        End If
+
+        If MsgBox("Update " & taskCode & " (" & intervalCode & ")?" & vbCrLf & vbCrLf & _
+                  "New life remaining / due: " & lifeText, _
+                  vbQuestion + vbYesNo, APP_NAME) <> vbYes Then
+            skippedCount = skippedCount + 1
+            GoTo NextManualTask
+        End If
+
+        BeginBusyUI "Updating " & taskCode & "…"
+        SetExcelState "disable"
+        SuspendWorkbookProtection
+
+        ApplyManualUpdateLifeRemaining sitsRow, tbl, intervalCode, lifeText
+        ClearManualUpdateFlag sitsRow, tbl
+        ClearTaskSelectorEdit sitsRow, tbl
+
+        updatedCount = updatedCount + 1
+
+        ResumeWorkbookProtection
+        SetExcelState "enable"
+        EndBusyUI
+NextManualTask:
+    Next rowId
+
+    If updatedCount = 0 Then
+        MsgBox "No tasks were updated.", vbInformation, APP_NAME
+        Exit Function
+    End If
+
+    BeginBusyUI "Recalculating SITS…"
+    SetExcelState "disable"
+    SuspendWorkbookProtection
+    RecalculateSITS skipTableFormats:=True
+    UpdateBusyUI "Refreshing SITS view…"
+    RefreshSITSView
+    UpdateBusyUI "Updating Dashboard…"
+    RefreshDashboardStatusCounts
+    ResumeWorkbookProtection
+    SetExcelState "enable"
+    EndBusyUI
+
+    LogAction "SITS_MANUAL_UPDATE", "", _
+              "Updated=" & updatedCount & "; Skipped=" & skippedCount
+
+    ManualUpdateSelectedZeroIntervalTasks = True
+    MsgBox "Manual update applied to " & updatedCount & " task(s)." & _
+           IIf(skippedCount > 0, vbCrLf & skippedCount & " skipped/cancelled.", ""), _
+           vbInformation, APP_NAME
+    Exit Function
+
+ErrorHandler:
+    Dim errNum As Long
+    Dim errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
+    EndBusyUI
+    ForceResumeWorkbookProtection
+    SetExcelState "force-enable"
+    LogError PROC_NAME, errNum, errDesc
+    MsgBox "Manual update error: " & errNum & " - " & errDesc, vbCritical, APP_NAME
+End Function
+
+Private Function ValidateSelectionForManualUpdate(ByVal selectedIds As Object, _
+                                                  ByVal tbl As ListObject, _
+                                                  ByVal rowIndex As Object, _
+                                                  ByRef failReason As String) As Boolean
+    Dim rowId As Variant
+    Dim sitsRow As ListRow
+    Dim taskCode As String
+    Dim inWorkOrn As String
+    Dim haveAny As Boolean
+
+    failReason = ""
+    haveAny = False
+
+    For Each rowId In selectedIds.Keys
+        Set sitsRow = ResolveSITSRowById(rowIndex, tbl, CStr(rowId))
+        If sitsRow Is Nothing Then
+            failReason = "A selected SITS task is no longer present."
+            Exit Function
+        End If
+
+        taskCode = Trim$(CStr(sitsRow.Range.Cells(1, GetTableColumnIndex(tbl, HDR_TASK_CODE)).Value))
+        inWorkOrn = ""
+        If GetTableColumnIndex(tbl, HDR_ORN_INWORK) > 0 Then
+            inWorkOrn = Trim$(CStr(sitsRow.Range.Cells(1, GetTableColumnIndex(tbl, HDR_ORN_INWORK)).Value))
+        End If
+        If Len(inWorkOrn) > 0 Then
+            failReason = "Task " & taskCode & " is in open work package " & inWorkOrn & "." & vbCrLf & _
+                         "Close or remove it from the work package before manual update."
+            Exit Function
+        End If
+
+        If Not IsZeroActualIntervalRow(sitsRow, tbl) Then
+            failReason = "Manual Update is only for zero Actual Interval tasks." & vbCrLf & _
+                         "Task " & taskCode & " does not have Actual Interval = 0."
+            Exit Function
+        End If
+
+        haveAny = True
+    Next rowId
+
+    If Not haveAny Then
+        failReason = "No valid tasks selected."
+        Exit Function
+    End If
+
+    ValidateSelectionForManualUpdate = True
+End Function
+
+Private Function IsZeroActualIntervalRow(ByVal sitsRow As ListRow, ByVal tbl As ListObject) As Boolean
+    Dim colInterval As Long
+    Dim value As Variant
+
+    colInterval = GetTableColumnIndex(tbl, HDR_ACTUAL_INTERVAL)
+    If colInterval = 0 Then Exit Function
+
+    value = sitsRow.Range.Cells(1, colInterval).Value
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+
+    If IsNumeric(value) Then
+        IsZeroActualIntervalRow = (CDbl(value) = 0#)
+    End If
+End Function
+
+Private Function PromptManualLifeRemainingForTask(ByVal taskCode As String, _
+                                                  ByVal intervalCode As String, _
+                                                  ByRef cancelled As Boolean) As String
+    Dim hint As String
+    Dim entered As String
+    Dim fieldFail As String
+
+    cancelled = False
+    hint = ManualUpdatePromptHint(intervalCode)
+
+    Do
+        entered = PromptFieldValue( _
+            "Life Remaining / Due", _
+            "Manual update for " & taskCode & " (" & intervalCode & ")." & vbCrLf & vbCrLf & hint, _
+            "", cancelled)
+        If cancelled Then Exit Function
+        If Len(Trim$(entered)) = 0 Then
+            MsgBox "A value is required.", vbExclamation, APP_NAME
+            GoTo NextPrompt
+        End If
+        fieldFail = ""
+        If ValidateLifeRemainingText(intervalCode, Trim$(entered), fieldFail) Then
+            PromptManualLifeRemainingForTask = Trim$(entered)
+            Exit Function
+        End If
+        MsgBox fieldFail, vbExclamation, APP_NAME
+NextPrompt:
+    Loop
+End Function
+
+Private Function ManualUpdatePromptHint(ByVal intervalCode As String) As String
+    If UsesHourFormatForManualEntry(intervalCode) Then
+        ManualUpdatePromptHint = "Enter hours until due as h:mm (e.g. 25:30) or a decimal day-fraction."
+    ElseIf UCase$(Trim$(intervalCode)) = TYPE_DD Then
+        ManualUpdatePromptHint = "Enter date due as dd/mm/yyyy, or days until due as a number."
+    Else
+        ManualUpdatePromptHint = "Enter number until due."
+    End If
+End Function
+
+Private Sub ApplyManualUpdateLifeRemaining(ByVal sitsRow As ListRow, _
+                                           ByVal tbl As ListObject, _
+                                           ByVal intervalCode As String, _
+                                           ByVal lifeText As String)
+    Dim targetLife As Double
+    Dim parsedTime As Variant
+    Dim parsedDate As Variant
+    Dim dueDate As Date
+    Dim colLRHours As Long
+    Dim colLRNumber As Long
+    Dim colDaysDue As Long
+    Dim colBaseHours As Long
+    Dim colBaseNumber As Long
+    Dim colBaseDue As Long
+
+    colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+    colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+    colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
+    colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
+    colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
+
+    If UsesHourFormatForManualEntry(intervalCode) Then
+        parsedTime = ParseTimeUsageValue(lifeText, lifeText)
+        If Not IsEmpty(parsedTime) Then
+            targetLife = CDbl(parsedTime)
+        Else
+            targetLife = CDbl(lifeText)
+        End If
+
+        If colLRHours > 0 Then
+            WriteFormattedUsageValue sitsRow.Range.Cells(1, colLRHours), targetLife, FORMAT_TYPE_HOURS
+        End If
+        If colLRNumber > 0 Then sitsRow.Range.Cells(1, colLRNumber).ClearContents
+        If colDaysDue > 0 Then sitsRow.Range.Cells(1, colDaysDue).ClearContents
+        If colBaseNumber > 0 Then sitsRow.Range.Cells(1, colBaseNumber).ClearContents
+        If colBaseDue > 0 Then sitsRow.Range.Cells(1, colBaseDue).ClearContents
+        AdjustManualUpdateBaseline sitsRow, tbl, intervalCode, targetLife, FORMAT_TYPE_HOURS
+        Exit Sub
+    End If
+
+    If intervalCode = TYPE_DD Then
+        parsedDate = ParseDMYDateValue(lifeText, lifeText)
+        If IsDate(parsedDate) Then
+            dueDate = CDate(parsedDate)
+        Else
+            dueDate = DateAdd("d", CLng(CDbl(lifeText)), Date)
+        End If
+
+        If colDaysDue > 0 Then
+            sitsRow.Range.Cells(1, colDaysDue).Value = CDbl(DateDiff("d", Date, dueDate))
+            sitsRow.Range.Cells(1, colDaysDue).NumberFormat = FORMAT_DECIMAL
+        End If
+        If colBaseDue > 0 Then
+            sitsRow.Range.Cells(1, colBaseDue).Value = dueDate
+            sitsRow.Range.Cells(1, colBaseDue).NumberFormat = FORMAT_DATE
+        End If
+        SyncProjectedDueDate sitsRow, tbl, dueDate
+        If colLRHours > 0 Then sitsRow.Range.Cells(1, colLRHours).ClearContents
+        If colLRNumber > 0 Then sitsRow.Range.Cells(1, colLRNumber).ClearContents
+        If colBaseHours > 0 Then sitsRow.Range.Cells(1, colBaseHours).ClearContents
+        If colBaseNumber > 0 Then sitsRow.Range.Cells(1, colBaseNumber).ClearContents
+        Exit Sub
+    End If
+
+    targetLife = CDbl(lifeText)
+    If colLRNumber > 0 Then
+        sitsRow.Range.Cells(1, colLRNumber).Value = targetLife
+        sitsRow.Range.Cells(1, colLRNumber).NumberFormat = FORMAT_DECIMAL
+    End If
+    If colLRHours > 0 Then sitsRow.Range.Cells(1, colLRHours).ClearContents
+    If colDaysDue > 0 Then sitsRow.Range.Cells(1, colDaysDue).ClearContents
+    If colBaseHours > 0 Then sitsRow.Range.Cells(1, colBaseHours).ClearContents
+    If colBaseDue > 0 Then sitsRow.Range.Cells(1, colBaseDue).ClearContents
+    AdjustManualUpdateBaseline sitsRow, tbl, intervalCode, targetLife, FORMAT_TYPE_NUMBER
+End Sub
+
+Private Sub AdjustManualUpdateBaseline(ByVal sitsRow As ListRow, _
+                                       ByVal tbl As ListObject, _
+                                       ByVal intervalCode As String, _
+                                       ByVal targetLife As Double, _
+                                       ByVal formatType As String)
+    Dim currentUsage As Variant
+    Dim snapshotUsage As Variant
+    Dim usageDelta As Double
+    Dim adjusted As Double
+    Dim colBaseHours As Long
+    Dim colBaseNumber As Long
+
+    colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
+    colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
+
+    currentUsage = LookupEditCurrentUsage(intervalCode)
+    snapshotUsage = LookupEditSnapshotUsage(intervalCode)
+
+    If IsEmpty(currentUsage) Or IsEmpty(snapshotUsage) Then
+        ' No usage delta available — store target as baseline so LR stays put until sorties.
+        If formatType = FORMAT_TYPE_HOURS Then
+            If colBaseHours > 0 Then
+                WriteFormattedUsageValue sitsRow.Range.Cells(1, colBaseHours), targetLife, FORMAT_TYPE_HOURS
+            End If
+        ElseIf colBaseNumber > 0 Then
+            sitsRow.Range.Cells(1, colBaseNumber).Value = targetLife
+            sitsRow.Range.Cells(1, colBaseNumber).NumberFormat = FORMAT_DECIMAL
+        End If
+        Exit Sub
+    End If
+
+    If formatType = FORMAT_TYPE_HOURS Then
+        usageDelta = UsageValueAsDayFraction(currentUsage, FORMAT_TYPE_HOURS) - _
+                     UsageValueAsDayFraction(snapshotUsage, FORMAT_TYPE_HOURS)
+        adjusted = targetLife + usageDelta
+        If colBaseHours > 0 Then
+            WriteFormattedUsageValue sitsRow.Range.Cells(1, colBaseHours), adjusted, FORMAT_TYPE_HOURS
+        End If
+    Else
+        If Not IsNumeric(currentUsage) Or Not IsNumeric(snapshotUsage) Then
+            If colBaseNumber > 0 Then
+                sitsRow.Range.Cells(1, colBaseNumber).Value = targetLife
+                sitsRow.Range.Cells(1, colBaseNumber).NumberFormat = FORMAT_DECIMAL
+            End If
+            Exit Sub
+        End If
+        usageDelta = CDbl(currentUsage) - CDbl(snapshotUsage)
+        adjusted = targetLife + usageDelta
+        If colBaseNumber > 0 Then
+            sitsRow.Range.Cells(1, colBaseNumber).Value = adjusted
+            sitsRow.Range.Cells(1, colBaseNumber).NumberFormat = FORMAT_DECIMAL
+        End If
+    End If
+End Sub
+
+Private Function LookupEditCurrentUsage(ByVal intervalCode As String) As Variant
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_CURRENT, showError:=False)
+    If ws Is Nothing Then Exit Function
+    Set tbl = GetTable(ws, TBL_USAGE_CURRENT, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), intervalCode, vbTextCompare) = 0 Then
+            LookupEditCurrentUsage = row.Range.Cells(1, 3).Value
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Function LookupEditSnapshotUsage(ByVal intervalCode As String) As Variant
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+
+    Set ws = GetWorksheet(SHEET_CONFIG, showError:=False)
+    If ws Is Nothing Then Exit Function
+    Set tbl = GetTable(ws, TBL_USAGE_SNAPSHOT, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), intervalCode, vbTextCompare) = 0 Then
+            LookupEditSnapshotUsage = row.Range.Cells(1, 2).Value
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Sub ClearManualUpdateFlag(ByVal sitsRow As ListRow, ByVal tbl As ListObject)
+    Dim colFlag As Long
+    colFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
+    If colFlag > 0 Then sitsRow.Range.Cells(1, colFlag).Value = False
+End Sub
+
+Private Sub ClearTaskSelectorEdit(ByVal sitsRow As ListRow, ByVal tbl As ListObject)
+    Dim colSelector As Long
+    colSelector = GetTableColumnIndex(tbl, HDR_SELECTOR)
+    If colSelector > 0 Then sitsRow.Range.Cells(1, colSelector).Value = False
+End Sub
 
 ' ------------------------------------------------------------------------
 ' Add — prompts / validation / write

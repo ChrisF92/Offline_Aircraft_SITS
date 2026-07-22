@@ -111,6 +111,7 @@ Public Function GetExtendSelectionDisplayRows(ByVal selectedIds As Object) As Co
     Dim taskDesc As String
     Dim intervalCode As String
     Dim actualText As String
+    Dim lifeText As String
 
     Set GetExtendSelectionDisplayRows = result
     If selectedIds Is Nothing Then Exit Function
@@ -127,7 +128,9 @@ Public Function GetExtendSelectionDisplayRows(ByVal selectedIds As Object) As Co
         intervalCode = ExtGetIntervalCode(sitsRow, tbl)
         actualText = FormatExtensionAmountForDisplay( _
             ExtGetActualInterval(sitsRow, tbl), intervalCode)
-        result.Add Array(taskCode, taskDesc, intervalCode, actualText, CStr(rowId))
+        lifeText = FormatExtensionAmountForDisplay( _
+            ExtGetComparableLifeRemaining(sitsRow, tbl, intervalCode), intervalCode)
+        result.Add Array(taskCode, taskDesc, intervalCode, actualText, lifeText, CStr(rowId))
 NextDisplay:
     Next rowId
 End Function
@@ -136,18 +139,25 @@ Public Function GetExtendSelectionMeta(ByVal selectedIds As Object, _
                                        ByRef intervalCode As String, _
                                        ByRef actualInterval As Variant, _
                                        ByRef formatType As String, _
-                                       ByRef amountHint As String) As Boolean
+                                       ByRef amountHint As String, _
+                                       Optional ByRef currentExtension As Variant, _
+                                       Optional ByRef currentExtensionDisplay As String, _
+                                       Optional ByRef lifeRemainingDisplay As String) As Boolean
     Dim tbl As ListObject
     Dim rowIndex As Object
     Dim sitsRow As ListRow
     Dim firstId As String
     Dim rowId As Variant
+    Dim lifeRemaining As Variant
 
     GetExtendSelectionMeta = False
     intervalCode = ""
     actualInterval = Empty
     formatType = FORMAT_TYPE_NUMBER
     amountHint = ""
+    currentExtension = Empty
+    currentExtensionDisplay = ""
+    lifeRemainingDisplay = ""
 
     If selectedIds Is Nothing Or selectedIds.Count = 0 Then Exit Function
     Set tbl = GetExtensionsSITSTable(False)
@@ -166,6 +176,11 @@ Public Function GetExtendSelectionMeta(ByVal selectedIds As Object, _
     actualInterval = ExtGetActualInterval(sitsRow, tbl)
     formatType = ExtensionFormatTypeForInterval(intervalCode)
     amountHint = ExtensionAmountHint(intervalCode, formatType)
+    currentExtension = ExtensionValueAsDouble(ExtGetExtension(sitsRow, tbl), formatType)
+    currentExtensionDisplay = FormatExtensionAmountForDisplay(currentExtension, intervalCode)
+    If Len(currentExtensionDisplay) = 0 Then currentExtensionDisplay = "0"
+    lifeRemaining = ExtGetComparableLifeRemaining(sitsRow, tbl, intervalCode)
+    lifeRemainingDisplay = FormatExtensionAmountForDisplay(lifeRemaining, intervalCode)
     GetExtendSelectionMeta = True
 End Function
 
@@ -587,8 +602,10 @@ Private Function ValidateSelectionForExtend(ByVal selectedIds As Object, _
     Dim sitsRow As ListRow
     Dim firstInterval As String
     Dim firstActual As Double
+    Dim firstLife As Double
     Dim intervalCode As String
     Dim actualInterval As Variant
+    Dim lifeRemaining As Variant
     Dim taskCode As String
     Dim inWorkOrn As String
     Dim haveFirst As Boolean
@@ -624,9 +641,16 @@ Private Function ValidateSelectionForExtend(ByVal selectedIds As Object, _
             Exit Function
         End If
 
+        lifeRemaining = ExtGetComparableLifeRemaining(sitsRow, tbl, intervalCode)
+        If IsEmpty(lifeRemaining) Then
+            failReason = "Task " & taskCode & " has no Life Remaining."
+            Exit Function
+        End If
+
         If Not haveFirst Then
             firstInterval = intervalCode
             firstActual = CDbl(actualInterval)
+            firstLife = CDbl(lifeRemaining)
             haveFirst = True
         Else
             If StrComp(intervalCode, firstInterval, vbTextCompare) <> 0 Then
@@ -636,6 +660,10 @@ Private Function ValidateSelectionForExtend(ByVal selectedIds As Object, _
             End If
             If Abs(CDbl(actualInterval) - firstActual) > 0.0000001 Then
                 failReason = "All selected tasks must share the same Actual Interval."
+                Exit Function
+            End If
+            If Abs(CDbl(lifeRemaining) - firstLife) > 0.0000001 Then
+                failReason = "All selected tasks must share the same Life Remaining."
                 Exit Function
             End If
         End If
@@ -1126,6 +1154,47 @@ Private Function ExtGetLifeRemainingHours(ByVal sitsRow As ListRow, ByVal tbl As
     Dim col As Long
     col = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
     If col > 0 Then ExtGetLifeRemainingHours = sitsRow.Range.Cells(1, col).Value
+End Function
+
+' Comparable Life Remaining used for Extend selection matching (day-fraction hours,
+' days remaining for DD, or number LR).
+Private Function ExtGetComparableLifeRemaining(ByVal sitsRow As ListRow, _
+                                               ByVal tbl As ListObject, _
+                                               ByVal intervalCode As String) As Variant
+    Dim col As Long
+    Dim value As Variant
+
+    ExtGetComparableLifeRemaining = Empty
+    intervalCode = UCase$(Trim$(intervalCode))
+
+    If intervalCode = TYPE_DD Then
+        col = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+        If col = 0 Then Exit Function
+        value = sitsRow.Range.Cells(1, col).Value
+        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+        If LooksLikeAbsoluteDueDateValue(value) Then
+            ExtGetComparableLifeRemaining = CDbl(DateDiff("d", Date, CDate(value)))
+        ElseIf IsNumeric(value) Then
+            ExtGetComparableLifeRemaining = CDbl(value)
+        End If
+        Exit Function
+    End If
+
+    If IsHourUsageInterval(intervalCode) Or _
+       (IsHourBasedIntervalType(intervalCode) And Not IsSecondsCountInterval(intervalCode)) Then
+        col = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+        If col = 0 Then Exit Function
+        value = sitsRow.Range.Cells(1, col).Value
+        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+        ExtGetComparableLifeRemaining = UsageValueAsDayFraction(value, FORMAT_TYPE_HOURS)
+        Exit Function
+    End If
+
+    col = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    If col = 0 Then Exit Function
+    value = sitsRow.Range.Cells(1, col).Value
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+    If IsNumeric(value) Then ExtGetComparableLifeRemaining = CDbl(value)
 End Function
 
 Private Function ExtGetEffectiveDueDate(ByVal sitsRow As ListRow, _

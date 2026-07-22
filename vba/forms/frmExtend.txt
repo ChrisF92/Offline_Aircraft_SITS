@@ -11,6 +11,7 @@ Private mSelectedIds As Object
 Private mIntervalCode As String
 Private mActualInterval As Variant
 Private mFormatType As String
+Private mCurrentExtension As Double
 
 Private Sub UserForm_Activate()
     CenterUserFormOnExcel Me
@@ -22,6 +23,9 @@ Private Sub UserForm_Initialize()
     Dim i As Long
     Dim rowData As Variant
     Dim metaOk As Boolean
+    Dim currentExt As Variant
+    Dim currentExtDisplay As String
+    Dim lifeRemainingDisplay As String
 
     Set mSelectedIds = GetPendingExtendSelection()
     If mSelectedIds Is Nothing Then
@@ -31,22 +35,31 @@ Private Sub UserForm_Initialize()
     End If
 
     metaOk = GetExtendSelectionMeta(mSelectedIds, mIntervalCode, mActualInterval, _
-                                    mFormatType, amountHint)
+                                    mFormatType, amountHint, currentExt, _
+                                    currentExtDisplay, lifeRemainingDisplay)
     If Not metaOk Then
         MsgBox "Could not read selected task details.", vbExclamation, APP_NAME
         Unload Me
         Exit Sub
     End If
 
+    If IsEmpty(currentExt) Or Not IsNumeric(currentExt) Then
+        mCurrentExtension = 0#
+    Else
+        mCurrentExtension = CDbl(currentExt)
+    End If
+
     lblInterval.Caption = "Interval: " & mIntervalCode & _
                           "   Actual Interval: " & _
-                          FormatExtensionAmountForDisplay(mActualInterval, mIntervalCode)
+                          FormatExtensionAmountForDisplay(mActualInterval, mIntervalCode) & _
+                          "   Life Remaining: " & lifeRemainingDisplay
+    lblCurrentExt.Caption = "Current extension: " & currentExtDisplay
     lblAmountHint.Caption = amountHint
     lblPctHint.Caption = "Warnings at >10% and >20% of Actual Interval (total including existing)."
 
     lstTasks.Clear
-    lstTasks.ColumnCount = 3
-    lstTasks.ColumnWidths = "140 pt;260 pt;80 pt"
+    lstTasks.ColumnCount = 4
+    lstTasks.ColumnWidths = "120 pt;200 pt;80 pt;80 pt"
 
     Set rows = GetExtendSelectionDisplayRows(mSelectedIds)
     For i = 1 To rows.Count
@@ -54,6 +67,7 @@ Private Sub UserForm_Initialize()
         lstTasks.AddItem CStr(rowData(0))
         lstTasks.List(lstTasks.ListCount - 1, 1) = CStr(rowData(1))
         lstTasks.List(lstTasks.ListCount - 1, 2) = CStr(rowData(3))
+        lstTasks.List(lstTasks.ListCount - 1, 3) = CStr(rowData(4))
     Next i
 
     txtAmount.Value = ""
@@ -110,6 +124,7 @@ End Function
 
 Private Sub UpdateLivePercent()
     Dim incrementValue As Variant
+    Dim totalExt As Double
     Dim totalPct As Double
     Dim amountText As String
 
@@ -135,8 +150,8 @@ Private Sub UpdateLivePercent()
         Exit Sub
     End If
 
-    ' Preview uses this increment only; apply warnings use total including existing.
-    totalPct = CDbl(incrementValue) / CDbl(mActualInterval)
-    lblLivePct.Caption = "This increment ≈ " & Format$(totalPct * 100#, "0.0") & _
-                         "% of Actual Interval (warnings use total including existing)."
+    totalExt = mCurrentExtension + CDbl(incrementValue)
+    totalPct = totalExt / CDbl(mActualInterval)
+    lblLivePct.Caption = "Total extension ≈ " & Format$(totalPct * 100#, "0.0") & _
+                         "% of Actual Interval (current + this)."
 End Sub

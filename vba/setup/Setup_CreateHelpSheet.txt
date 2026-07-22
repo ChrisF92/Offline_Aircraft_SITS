@@ -146,7 +146,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "3. Setup Wizard", _
         "On the Dashboard, run Setup Wizard. Enter the tail and import SITS Long Forecast, airframe usage, and engine usage."
     WriteHelpRow ws, r, "4. Day-to-day", _
-        "Use Dashboard and SITS buttons: Log Sortie, Work Packages, Horizon, Extend, Defer, Add/Remove Task."
+        "Use Dashboard and SITS buttons: Log Sortie, Work Packages, Horizon, Extend, Defer, Add/Remove Task, Manual Update."
     WriteHelpRow ws, r, "5. Reset data", _
         "Dev Tools → Reset to Master clears aircraft data while keeping layout. Then Save As / Setup Wizard again as needed."
 
@@ -186,13 +186,15 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "Refresh View", _
         "Recalculates life remaining and rebuilds the visible rows. Does not reset column widths or button placement."
     WriteHelpRow ws, r, "Selector", _
-        "Tick checkboxes to select tasks for Work Package / Extend / Defer / Remove Task. IN WORK rows have no checkbox."
+        "Tick checkboxes to select tasks for Work Package / Extend / Defer / Remove Task / Manual Update. IN WORK rows have no checkbox."
     WriteHelpRow ws, r, "AutoFilter", _
         "Use the header-row dropdowns (row 7) to show/hide interval types or other columns — standard Excel filtering."
     WriteHelpRow ws, r, "Colour meanings", _
         "Amber = due soon (warning). Pink/red = overdue. Light blue = needs manual update (zero-interval after WP close) or selector ticked."
     WriteHelpRow ws, r, "Add Task / Remove Task", _
         "Manually insert a SITS row (guided prompts) or delete selected rows. Deletes are irreversible; orphaned WP task links are cleaned up."
+    WriteHelpRow ws, r, "Manual Update", _
+        "Zero Actual Interval tasks only (typically flagged light blue after WP close). Step-by-step prompts for due date (DD) or hours/number until due. Clears the manual-update flag."
 
     WriteHelpSection ws, r, "Work packages"
     WriteHelpRow ws, r, "Create", _
@@ -204,9 +206,9 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
 
     WriteHelpSection ws, r, "Extend (scheduled tasks)"
     WriteHelpRow ws, r, "When to use", _
-        "SITS sheet only. Selected tasks must share Interval Type Code and Actual Interval. Not for PT2/PT3 (use Defer). Blocked if IN WORK."
+        "SITS sheet only. Selected tasks must share Interval Type Code, Actual Interval, and Life Remaining. Not for PT2/PT3 (use Defer). Blocked if IN WORK."
     WriteHelpRow ws, r, "Inputs", _
-        "Extension amount (h:mm / days / number to match interval), SNOW authorisation, and authoriser name."
+        "Extension amount (h:mm / days / number to match interval), SNOW authorisation, and authoriser name. Form shows Current extension and live total %."
     WriteHelpRow ws, r, "Warnings", _
         "Warns if total Extension (existing + this) exceeds 10% or 20% of Actual Interval. Apply bumps life remaining and audits EXTENSION_APPLIED."
 
@@ -226,7 +228,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
 
     WriteHelpSection ws, r, "Audit Log"
     WriteHelpRow ws, r, "What it records", _
-        "Timestamp, user, action type, ORN (when relevant), details, and app version. Includes setup, imports, sorties, WP actions, extensions, deferrals, and resets."
+        "Timestamp, user, action type, ORN (when relevant), details, and app version. Includes setup, imports, sorties, WP actions, extensions, deferrals, manual updates, and resets."
     WriteHelpRow ws, r, "How to open", _
         "Dashboard → View Audit Log (or open the Audit Log tab)."
 
@@ -234,7 +236,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "What is locked", _
         "Sheet cells and workbook structure (cannot unhide/rename/delete sheets from the UI). Macros and form buttons still work."
     WriteHelpRow ws, r, "Still usable", _
-        "SITS Selector checkboxes, AutoFilter on the SITS header, and all UserForms (Horizon, Log Sortie, WP, Extend, Defer)."
+        "SITS Selector checkboxes, AutoFilter on the SITS header, and all UserForms (Horizon, Log Sortie, WP, Extend, Defer) plus Manual Update prompts."
     WriteHelpRow ws, r, "Admin unlock", _
         "Dev Tools / Alt+F8 → UnprotectWorkbook for Master layout polishing, then ProtectWorkbook again. Password constant is PROTECT_PASSWORD in CONFIG (not a security boundary)."
 
@@ -248,7 +250,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
 
     WriteHelpSection ws, r, "Import reminders"
     WriteHelpRow ws, r, "SITS Long Forecast", _
-        "Required columns: Interval Type Code, Life Remaining, Task Code, Task Sequence, Task Description, Serial, Actual Interval, Extension, End Item Serial. Import aborts if any are missing."
+        "Required columns: Interval Type Code, Life Remaining, Task Code, Task Sequence, Task Description, Serial, Actual Interval, Extension, End Item Serial. Import aborts if any are missing. Task codes beginning with Gen/ are skipped. Number-based interval types (excluding DD) are skipped unless Actual Interval and Life Remaining are both zero."
     WriteHelpRow ws, r, "Usage exports", _
         "Interval Type, Task Code, Life Used, Top Serial. Engine usage must include SM and SN after merge."
 
