@@ -154,7 +154,7 @@ Work packages:
 
 Extend / Defer / Manual Update:
 - Extend: scheduled tasks sharing Interval Type + Actual Interval + Life Remaining;
-  form shows Current extension and total %; SNOW + authoriser.
+  form shows Current/Total Extension as amount (percent); SNOW + authoriser.
 - Defer: exactly one PT2/PT3; HH due (h:mm) or date due (dd/mm/yyyy).
 - Manual Update: zero Actual Interval tasks only; step-by-step prompts for due
   date or hours/number until due; clears the Needs Manual Update flag.
