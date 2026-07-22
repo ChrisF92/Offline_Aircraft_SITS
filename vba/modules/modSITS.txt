@@ -635,7 +635,6 @@ Public Sub RefreshSITSView()
     Dim wsView As Worksheet
     Dim wsData As Worksheet
     Dim tbl As ListObject
-    Dim row As ListRow
     Dim viewColumns As Collection
     Dim columnName As Variant
     Dim outputCol As Long
@@ -724,29 +723,41 @@ Public Sub RefreshSITSView()
         Dim sortCount As Long
         Dim entryIndex As Long
         Dim includeRow As Boolean
+        Dim data As Variant
+        Dim dataRowCount As Long
+        Dim dataRowIndex As Long
+        Dim colOrn As Long
+        Dim colDesc As Long
+
+        data = NormalizeTableDataArray(tbl.DataBodyRange.Value, _
+            tbl.ListRows.Count, tbl.ListColumns.Count)
+        If Not IsArray(data) Then GoTo AfterDataBody
+        dataRowCount = UBound(data, 1)
+        colOrn = LookupColumnIndex(colMap, HDR_ORN_INWORK)
+        colDesc = LookupColumnIndex(colMap, HDR_TASK_DESCRIPTION)
 
         sortCount = 0
-        ReDim sortEntries(1 To tbl.ListRows.Count)
+        ReDim sortEntries(1 To dataRowCount)
 
-        For Each row In tbl.ListRows
-            intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, colIntervalCached).Value)))
+        For dataRowIndex = 1 To dataRowCount
+            intervalCode = UCase$(Trim$(CStr(data(dataRowIndex, colIntervalCached))))
 
-            includeRow = TaskPassesForecastFilter(row, tbl, intervalCode, _
+            includeRow = TaskPassesForecastFilterFromData(data, dataRowIndex, intervalCode, _
                 forecastHours, forecastDays, forecastNumber, lifeHoursFraction, daysUntilDue, _
                 colLRHours, colLRNumber, colDaysDue)
             If Not includeRow Then GoTo NextCollectRow
 
             sortCount = sortCount + 1
-            sortEntries(sortCount).ListRowIndex = row.Index
+            sortEntries(sortCount).ListRowIndex = dataRowIndex
             sortEntries(sortCount).IntervalCode = intervalCode
             sortEntries(sortCount).GroupOrder = SITSIntervalGroupOrder(intervalCode)
-            sortEntries(sortCount).SortKey = SITSTaskSortKey(row, tbl, intervalCode, _
+            sortEntries(sortCount).SortKey = SITSTaskSortKeyFromData(data, dataRowIndex, intervalCode, _
                 colLRHours, colLRNumber, colDaysDue, colTaskCode)
             sortEntries(sortCount).LifeHoursFraction = lifeHoursFraction
             sortEntries(sortCount).DaysUntilDue = daysUntilDue
 
 NextCollectRow:
-        Next row
+        Next dataRowIndex
 
         If sortCount > 0 Then
             ReDim Preserve sortEntries(1 To sortCount)
@@ -764,6 +775,8 @@ NextCollectRow:
             Dim descCol As Long
             Dim hasComments As Boolean
             Dim arrayCol As Long
+            Dim warnColor As Long
+            Dim isManual As Boolean
 
             colCount = viewColumns.Count
             ReDim values(1 To sortCount, 1 To colCount)
@@ -782,11 +795,12 @@ NextCollectRow:
 
             Application.StatusBar = "Building SITS view data…"
             For entryIndex = 1 To sortCount
-                Set row = tbl.ListRows(sortEntries(entryIndex).ListRowIndex)
+                dataRowIndex = sortEntries(entryIndex).ListRowIndex
                 intervalCode = sortEntries(entryIndex).IntervalCode
 
                 For arrayCol = 1 To colCount
-                    BuildSITSViewCellPayload row, tbl, intervalCode, colNames(arrayCol), colMap, _
+                    BuildSITSViewCellPayloadFromData data, dataRowIndex, intervalCode, _
+                        colNames(arrayCol), colMap, colOrn, _
                         cellValue, cellFormat, commentText
                     If IsEmpty(cellValue) Then
                         values(entryIndex, arrayCol) = Empty
@@ -794,11 +808,16 @@ NextCollectRow:
                         values(entryIndex, arrayCol) = cellValue
                     End If
                     formats(entryIndex, arrayCol) = cellFormat
-                    If arrayCol = descCol And Len(commentText) > 0 Then
+                Next arrayCol
+
+                ' Comments are not in Value arrays — read only for visible description cells.
+                If descCol > 0 And colDesc > 0 Then
+                    commentText = GetCellCommentText(tbl.DataBodyRange.Cells(dataRowIndex, colDesc))
+                    If Len(commentText) > 0 Then
                         comments(entryIndex) = commentText
                         hasComments = True
                     End If
-                Next arrayCol
+                End If
             Next entryIndex
 
             lastDataRow = SITS_VIEW_DATA_START_ROW + sortCount - 1
@@ -821,17 +840,25 @@ NextCollectRow:
 
             Application.StatusBar = "Applying SITS warning colours…"
             For entryIndex = 1 To sortCount
-                Set row = tbl.ListRows(sortEntries(entryIndex).ListRowIndex)
-                ApplySITSViewRowWarnings wsView, _
-                    SITS_VIEW_DATA_START_ROW + entryIndex - 1, SITS_VISIBLE_COLUMN_COUNT, _
-                    sortEntries(entryIndex).IntervalCode, _
-                    sortEntries(entryIndex).LifeHoursFraction, _
-                    sortEntries(entryIndex).DaysUntilDue, _
-                    warnHoursFraction, warnDays, row, colManualFlag
+                dataRowIndex = sortEntries(entryIndex).ListRowIndex
+                isManual = False
+                If colManualFlag > 0 Then
+                    isManual = ConvertToBoolean(data(dataRowIndex, colManualFlag))
+                End If
+                warnColor = ResolveSITSViewWarningColorValues( _
+                    sortEntries(entryIndex).IntervalCode, warnHoursFraction, warnDays, _
+                    isManual, data, dataRowIndex, colLRHours, colDaysDue)
+                If warnColor <> 0 Then
+                    wsView.Range( _
+                        wsView.Cells(SITS_VIEW_DATA_START_ROW + entryIndex - 1, 1), _
+                        wsView.Cells(SITS_VIEW_DATA_START_ROW + entryIndex - 1, SITS_VISIBLE_COLUMN_COUNT) _
+                        ).Interior.Color = warnColor
+                End If
             Next entryIndex
 
             outputRow = lastDataRow + 1
         End If
+AfterDataBody:
     End If
 
     lastDataRow = outputRow - 1
@@ -1211,20 +1238,89 @@ Private Function SITSTaskSortKey(ByVal row As ListRow, _
     SITSTaskSortKey = SITS_SORT_KEY_MISSING
 End Function
 
+Private Function SITSTaskSortKeyFromData(ByRef data As Variant, _
+                                         ByVal rowIndex As Long, _
+                                         ByVal intervalCode As String, _
+                                         ByVal colLRHours As Long, _
+                                         ByVal colLRNumber As Long, _
+                                         ByVal colDaysDue As Long, _
+                                         ByVal colTaskCode As Long) As Double
+    Dim dueValue As Variant
+
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_E1, TYPE_E2, TYPE_HH
+            If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
+                SITSTaskSortKeyFromData = CDbl(data(rowIndex, colLRHours))
+                Exit Function
+            End If
+
+        Case TYPE_DD
+            If colDaysDue > 0 Then
+                dueValue = data(rowIndex, colDaysDue)
+                If LooksLikeAbsoluteDueDate(dueValue) Then
+                    SITSTaskSortKeyFromData = CDbl(CDate(dueValue))
+                    Exit Function
+                ElseIf IsNumeric(dueValue) Then
+                    SITSTaskSortKeyFromData = CDbl(dueValue)
+                    Exit Function
+                End If
+            End If
+
+        Case Else
+            If colLRNumber > 0 And IsNumeric(data(rowIndex, colLRNumber)) Then
+                SITSTaskSortKeyFromData = CDbl(data(rowIndex, colLRNumber))
+                Exit Function
+            End If
+
+            If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
+                SITSTaskSortKeyFromData = CDbl(data(rowIndex, colLRHours))
+                Exit Function
+            End If
+
+            If colTaskCode > 0 Then
+                SITSTaskSortKeyFromData = 1E+15 + Len(CStr(data(rowIndex, colTaskCode)))
+                Exit Function
+            End If
+    End Select
+
+    SITSTaskSortKeyFromData = SITS_SORT_KEY_MISSING
+End Function
+
 Private Sub SortSITSViewEntries(ByRef entries() As SITSViewSortEntry)
+    If UBound(entries) <= LBound(entries) Then Exit Sub
+    QuickSortSITSViewEntries entries, LBound(entries), UBound(entries)
+End Sub
+
+Private Sub QuickSortSITSViewEntries(ByRef entries() As SITSViewSortEntry, _
+                                     ByVal lowIndex As Long, _
+                                     ByVal highIndex As Long)
     Dim i As Long
     Dim j As Long
+    Dim pivot As SITSViewSortEntry
     Dim temp As SITSViewSortEntry
 
-    For i = LBound(entries) To UBound(entries) - 1
-        For j = i + 1 To UBound(entries)
-            If SITSViewEntryLess(entries(j), entries(i)) Then
-                temp = entries(i)
-                entries(i) = entries(j)
-                entries(j) = temp
-            End If
-        Next j
-    Next i
+    i = lowIndex
+    j = highIndex
+    pivot = entries((lowIndex + highIndex) \ 2)
+
+    Do While i <= j
+        Do While SITSViewEntryLess(entries(i), pivot)
+            i = i + 1
+        Loop
+        Do While SITSViewEntryLess(pivot, entries(j))
+            j = j - 1
+        Loop
+        If i <= j Then
+            temp = entries(i)
+            entries(i) = entries(j)
+            entries(j) = temp
+            i = i + 1
+            j = j - 1
+        End If
+    Loop
+
+    If lowIndex < j Then QuickSortSITSViewEntries entries, lowIndex, j
+    If i < highIndex Then QuickSortSITSViewEntries entries, i, highIndex
 End Sub
 
 Private Function SITSViewEntryLess(ByRef leftEntry As SITSViewSortEntry, _
@@ -1305,6 +1401,72 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
                 End If
             Else
                 TaskPassesForecastFilter = True
+            End If
+    End Select
+End Function
+
+Private Function TaskPassesForecastFilterFromData(ByRef data As Variant, _
+                                                  ByVal rowIndex As Long, _
+                                                  ByVal intervalCode As String, _
+                                                  ByVal forecastHours As Double, _
+                                                  ByVal forecastDays As Long, _
+                                                  ByVal forecastNumber As Long, _
+                                                  ByRef lifeHoursFraction As Double, _
+                                                  ByRef daysUntilDue As Long, _
+                                                  ByVal colLRHours As Long, _
+                                                  ByVal colLRNumber As Long, _
+                                                  ByVal colDaysDue As Long) As Boolean
+    Dim dueValue As Variant
+    Dim lifeNumber As Double
+
+    lifeHoursFraction = -1#
+    daysUntilDue = -1
+
+    Select Case intervalCode
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
+                lifeHoursFraction = CDbl(data(rowIndex, colLRHours))
+            End If
+            If forecastHours <= 0# Then
+                TaskPassesForecastFilterFromData = True
+            ElseIf lifeHoursFraction < 0# Then
+                TaskPassesForecastFilterFromData = True
+            Else
+                TaskPassesForecastFilterFromData = (lifeHoursFraction <= (forecastHours / 24#))
+            End If
+
+        Case TYPE_DD
+            If colDaysDue > 0 Then
+                dueValue = data(rowIndex, colDaysDue)
+                If LooksLikeAbsoluteDueDate(dueValue) Then
+                    daysUntilDue = CLng(DateDiff("d", Date, CDate(dueValue)))
+                ElseIf IsNumeric(dueValue) Then
+                    daysUntilDue = CLng(CDbl(dueValue))
+                End If
+            End If
+            If forecastDays <= 0 Then
+                TaskPassesForecastFilterFromData = True
+            ElseIf daysUntilDue < 0 Then
+                TaskPassesForecastFilterFromData = True
+            Else
+                TaskPassesForecastFilterFromData = (daysUntilDue <= forecastDays)
+            End If
+
+        Case Else
+            If IsNumberBasedSITSInterval(intervalCode) Then
+                lifeNumber = -1#
+                If colLRNumber > 0 And IsNumeric(data(rowIndex, colLRNumber)) Then
+                    lifeNumber = CDbl(data(rowIndex, colLRNumber))
+                End If
+                If forecastNumber <= 0 Then
+                    TaskPassesForecastFilterFromData = True
+                ElseIf lifeNumber < 0# Then
+                    TaskPassesForecastFilterFromData = True
+                Else
+                    TaskPassesForecastFilterFromData = (lifeNumber <= forecastNumber)
+                End If
+            Else
+                TaskPassesForecastFilterFromData = True
             End If
     End Select
 End Function
@@ -2200,6 +2362,167 @@ Private Sub BuildSITSViewCellPayload(ByVal sourceRow As ListRow, _
     outFormat = FORMAT_GENERAL
 End Sub
 
+Private Sub BuildSITSViewCellPayloadFromData(ByRef data As Variant, _
+                                             ByVal rowIndex As Long, _
+                                             ByVal intervalCode As String, _
+                                             ByVal columnName As String, _
+                                             ByVal colMap As Object, _
+                                             ByVal colOrn As Long, _
+                                             ByRef outValue As Variant, _
+                                             ByRef outFormat As String, _
+                                             ByRef outComment As String)
+    Dim colIndex As Long
+    Dim value As Variant
+
+    outValue = Empty
+    outFormat = FORMAT_GENERAL
+    outComment = ""
+
+    If StrComp(columnName, HDR_VIEW_LIFE_REMAINING, vbTextCompare) = 0 Then
+        BuildSITSViewLifeRemainingPayloadFromData data, rowIndex, intervalCode, colMap, outValue, outFormat
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_SELECTOR, vbTextCompare) = 0 Then
+        If colOrn > 0 Then
+            If Len(Trim$(CStr(data(rowIndex, colOrn)))) > 0 Then
+                outValue = SITS_IN_WORK_TEXT
+                outFormat = FORMAT_GENERAL
+                Exit Sub
+            End If
+        End If
+        outValue = False
+        outFormat = SITS_CHECKBOX_HIDE_FORMAT
+        Exit Sub
+    End If
+
+    colIndex = LookupColumnIndex(colMap, columnName)
+    If colIndex = 0 Then Exit Sub
+    value = data(rowIndex, colIndex)
+
+    If StrComp(columnName, HDR_SERIAL, vbTextCompare) = 0 Or _
+       StrComp(columnName, HDR_END_ITEM_SERIAL, vbTextCompare) = 0 Then
+        outValue = NormalizeSerialText(value)
+        outFormat = FORMAT_TEXT
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_ACTUAL_INTERVAL, vbTextCompare) = 0 Or _
+       StrComp(columnName, HDR_EXTENSION, vbTextCompare) = 0 Or _
+       StrComp(columnName, HDR_WARNING_INTERVAL, vbTextCompare) = 0 Then
+        BuildSITSViewIntervalPayloadFromValue value, intervalCode, outValue, outFormat
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_CURRENT_USAGE_HOURS, vbTextCompare) = 0 Then
+        If SITSViewUsesHourFormat(intervalCode) Then
+            BuildSITSViewIntervalPayloadFromValue value, intervalCode, outValue, outFormat
+        End If
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_CURRENT_USAGE_NUMBER, vbTextCompare) = 0 Then
+        If SITSViewUsesHourFormat(intervalCode) Then
+            Exit Sub
+        ElseIf IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
+            Exit Sub
+        Else
+            outValue = CDbl(NzSITSNumber(value))
+            outFormat = FORMAT_DECIMAL
+        End If
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_PROJECTED_DUE_DATE, vbTextCompare) = 0 Then
+        If IsDate(value) Then
+            outValue = CDate(value)
+            outFormat = FORMAT_DATE
+        End If
+        Exit Sub
+    End If
+
+    If StrComp(columnName, HDR_TASK_DESCRIPTION, vbTextCompare) = 0 Then
+        outValue = value
+        outFormat = FORMAT_GENERAL
+        Exit Sub
+    End If
+
+    outValue = value
+    outFormat = FORMAT_GENERAL
+End Sub
+
+Private Sub BuildSITSViewLifeRemainingPayloadFromData(ByRef data As Variant, _
+                                                      ByVal rowIndex As Long, _
+                                                      ByVal intervalCode As String, _
+                                                      ByVal colMap As Object, _
+                                                      ByRef outValue As Variant, _
+                                                      ByRef outFormat As String)
+    Dim colIndex As Long
+    Dim value As Variant
+
+    outValue = Empty
+    outFormat = FORMAT_GENERAL
+
+    If SITSViewUsesHourFormat(intervalCode) Then
+        colIndex = LookupColumnIndex(colMap, HDR_HOURS_LIFE_REMAINING)
+        If colIndex = 0 Then Exit Sub
+        value = data(rowIndex, colIndex)
+        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
+            Exit Sub
+        ElseIf IsNumeric(value) And CDbl(value) < 0# Then
+            outValue = FormatElapsedHoursFromDayFraction(CDbl(value))
+            outFormat = FORMAT_GENERAL
+        Else
+            BuildSITSViewIntervalPayloadFromValue value, intervalCode, outValue, outFormat
+        End If
+        Exit Sub
+    End If
+
+    If intervalCode = TYPE_DD Then
+        colIndex = LookupColumnIndex(colMap, HDR_DAYS_WHEN_DUE)
+        If colIndex = 0 Then Exit Sub
+        value = data(rowIndex, colIndex)
+        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then
+            Exit Sub
+        ElseIf LooksLikeAbsoluteDueDate(value) Then
+            outValue = CDbl(DateDiff("d", Date, CDate(value)))
+            outFormat = FORMAT_DECIMAL
+        ElseIf IsNumeric(value) Then
+            outValue = CDbl(value)
+            outFormat = FORMAT_DECIMAL
+        End If
+        Exit Sub
+    End If
+
+    colIndex = LookupColumnIndex(colMap, HDR_NUMBER_LIFE_REMAINING)
+    If colIndex = 0 Then Exit Sub
+    value = data(rowIndex, colIndex)
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Sub
+    outValue = CDbl(NzSITSNumber(value))
+    outFormat = FORMAT_DECIMAL
+End Sub
+
+Private Sub BuildSITSViewIntervalPayloadFromValue(ByVal value As Variant, _
+                                                  ByVal intervalCode As String, _
+                                                  ByRef outValue As Variant, _
+                                                  ByRef outFormat As String)
+    Dim storedValue As Double
+
+    outValue = Empty
+    outFormat = FORMAT_GENERAL
+
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Sub
+
+    If SITSViewUsesHourFormat(intervalCode) Then
+        storedValue = CoerceUsageStorageValue(value, FORMAT_TYPE_HOURS)
+        outValue = storedValue
+        outFormat = UsageNumberFormatPattern(FORMAT_TYPE_HOURS, storedValue)
+    Else
+        outValue = CDbl(NzSITSNumber(value))
+        outFormat = FORMAT_DECIMAL
+    End If
+End Sub
+
 Private Sub BuildSITSViewSelectorPayload(ByVal sourceRow As ListRow, _
                                          ByVal tbl As ListObject, _
                                          ByVal colMap As Object, _
@@ -2626,6 +2949,67 @@ Private Function ResolveSITSViewWarningColor(ByVal intervalCode As String, _
                 ResolveSITSViewWarningColor = COLOR_WARN_PINK
             ElseIf lifeValue <= CDbl(warnDays) Then
                 ResolveSITSViewWarningColor = COLOR_WARN_AMBER
+            End If
+    End Select
+End Function
+
+' Array-path warning colour — avoids ListRow COM during full refresh.
+Private Function ResolveSITSViewWarningColorValues(ByVal intervalCode As String, _
+                                                   ByVal warnHoursFraction As Double, _
+                                                   ByVal warnDays As Long, _
+                                                   ByVal isManual As Boolean, _
+                                                   ByRef data As Variant, _
+                                                   ByVal rowIndex As Long, _
+                                                   ByVal colLRHours As Long, _
+                                                   ByVal colDaysDue As Long) As Long
+    Dim lifeValue As Double
+    Dim hasLife As Boolean
+    Dim rawValue As Variant
+
+    ResolveSITSViewWarningColorValues = 0
+
+    If isManual Then
+        ResolveSITSViewWarningColorValues = COLOR_MANUAL_BLUE
+        Exit Function
+    End If
+
+    hasLife = False
+    Select Case intervalCode
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            If colLRHours > 0 Then
+                rawValue = data(rowIndex, colLRHours)
+                If Not IsEmpty(rawValue) And Len(Trim$(CStr(rawValue))) > 0 And IsNumeric(rawValue) Then
+                    lifeValue = CDbl(rawValue)
+                    hasLife = True
+                End If
+            End If
+            If hasLife Then
+                If lifeValue < 0# Then
+                    ResolveSITSViewWarningColorValues = COLOR_WARN_PINK
+                ElseIf lifeValue <= warnHoursFraction Then
+                    ResolveSITSViewWarningColorValues = COLOR_WARN_AMBER
+                End If
+            End If
+
+        Case TYPE_DD
+            If colDaysDue > 0 Then
+                rawValue = data(rowIndex, colDaysDue)
+                If Not IsEmpty(rawValue) And Len(Trim$(CStr(rawValue))) > 0 Then
+                    If LooksLikeAbsoluteDueDate(rawValue) Then
+                        lifeValue = CDbl(DateDiff("d", Date, CDate(rawValue)))
+                        hasLife = True
+                    ElseIf IsNumeric(rawValue) Then
+                        lifeValue = CDbl(rawValue)
+                        hasLife = True
+                    End If
+                End If
+            End If
+            If hasLife Then
+                If lifeValue < 0# Then
+                    ResolveSITSViewWarningColorValues = COLOR_WARN_PINK
+                ElseIf lifeValue <= CDbl(warnDays) Then
+                    ResolveSITSViewWarningColorValues = COLOR_WARN_AMBER
+                End If
             End If
     End Select
 End Function
