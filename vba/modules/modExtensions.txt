@@ -318,8 +318,8 @@ NextMax:
                   "User: " & CurrentUserName()
 
     On Error GoTo ErrorHandler
+    BeginBusyUI "Applying extensions…"
     SetExcelState "disable"
-    Application.StatusBar = "Applying extensions…"
 
     For Each rowId In selectedIds.Keys
         Set sitsRow = ResolveSITSRowById(rowIndex, tbl, CStr(rowId))
@@ -338,8 +338,11 @@ NextApply:
     Next rowId
 
     ClearSelectedSITSSelectorsExt selectedIds, tbl, rowIndex
+    UpdateBusyUI "Recalculating SITS…"
     RecalculateSITS skipTableFormats:=True
+    UpdateBusyUI "Refreshing SITS view…"
     RefreshSITSView
+    UpdateBusyUI "Updating Dashboard…"
     RefreshDashboardStatusCounts
 
     LogAction "EXTENSION_APPLIED", snowAuth, _
@@ -348,7 +351,7 @@ NextApply:
               "; Authoriser=" & authoriser
 
     SetExcelState "enable"
-    Application.StatusBar = False
+    EndBusyUI
 
     If showDialogs Then
         MsgBox "Extension applied to " & applied & " task(s).", vbInformation, APP_NAME
@@ -357,7 +360,7 @@ NextApply:
     Exit Function
 
 ErrorHandler:
-    Application.StatusBar = False
+    EndBusyUI
     SetExcelState "force-enable"
     LogError PROC_NAME, Err.Number, Err.Description
     If showDialogs Then
@@ -499,8 +502,8 @@ Public Function ApplyDeferralToSelection(ByVal rowId As String, _
                   "User: " & CurrentUserName()
 
     On Error GoTo ErrorHandler
+    BeginBusyUI "Applying deferral…"
     SetExcelState "disable"
-    Application.StatusBar = "Applying deferral…"
 
     existingExt = ExtensionValueAsDouble(ExtGetExtension(sitsRow, tbl), formatType)
     If extensionDelta < 0# Then extensionDelta = 0#
@@ -521,15 +524,18 @@ Public Function ApplyDeferralToSelection(ByVal rowId As String, _
     clearIds(rowId) = True
     ClearSelectedSITSSelectorsExt clearIds, tbl, rowIndex
 
+    UpdateBusyUI "Recalculating SITS…"
     RecalculateSITS skipTableFormats:=True
+    UpdateBusyUI "Refreshing SITS view…"
     RefreshSITSView
+    UpdateBusyUI "Updating Dashboard…"
     RefreshDashboardStatusCounts
 
     LogAction "DEFERRAL_APPLIED", snowAuth, _
               "Task=" & taskCode & "; Due=" & dueDisplay & "; Authoriser=" & authoriser
 
     SetExcelState "enable"
-    Application.StatusBar = False
+    EndBusyUI
 
     If showDialogs Then
         MsgBox "Deferral applied to " & taskCode & ".", vbInformation, APP_NAME
@@ -538,7 +544,7 @@ Public Function ApplyDeferralToSelection(ByVal rowId As String, _
     Exit Function
 
 ErrorHandler:
-    Application.StatusBar = False
+    EndBusyUI
     SetExcelState "force-enable"
     LogError PROC_NAME, Err.Number, Err.Description
     If showDialogs Then

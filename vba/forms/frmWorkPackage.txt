@@ -30,9 +30,12 @@ Private Sub cmdDelete_Click()
     orn = SelectedORN()
     If Len(orn) = 0 Then Exit Sub
 
+    ' Hide before long delete so the modeless progress form can show.
+    Me.Hide
     If DeleteWorkPackage(orn, True) Then
         RefreshForm
     End If
+    Me.Show
 End Sub
 
 Private Sub cmdRemoveTask_Click()
@@ -43,9 +46,12 @@ Private Sub cmdRemoveTask_Click()
     rowId = SelectedTaskRowId()
     If Len(orn) = 0 Or Len(rowId) = 0 Then Exit Sub
 
+    ' Hide before long remove so the modeless progress form can show.
+    Me.Hide
     If RemoveTaskFromWorkPackage(orn, rowId, True) Then
         RefreshForm
     End If
+    Me.Show
 End Sub
 
 Private Sub cmdCloseWP_Click()
@@ -54,9 +60,12 @@ Private Sub cmdCloseWP_Click()
     orn = SelectedORN()
     If Len(orn) = 0 Then Exit Sub
 
+    ' Hide before long close so the modeless progress form can show.
+    Me.Hide
     If CloseWorkPackage(orn, True) Then
         RefreshForm
     End If
+    Me.Show
 End Sub
 
 Private Sub cmdCloseForm_Click()

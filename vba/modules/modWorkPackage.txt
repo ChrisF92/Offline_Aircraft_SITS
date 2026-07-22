@@ -222,27 +222,28 @@ Public Function CreateWorkPackageFromSelection() As Boolean
     EnsureWorkPackageSITSColumns tblSITS
 
     On Error GoTo ErrorHandler
+    BeginBusyUI "Reading SITS selection…"
     SetExcelState "disable"
-    Application.StatusBar = "Reading SITS selection…"
 
     Set rowIndex = BuildSITSRowIdIndex(tblSITS)
     Set selectedIds = CollectSelectedFromSITSView(tblSITS, rowIndex)
 
     If selectedIds.Count = 0 Then
         SetExcelState "enable"
+        EndBusyUI
         MsgBox "Tick one or more tasks on the SITS view, then click Create Work Package.", _
                vbExclamation, APP_NAME
         Exit Function
     End If
 
-    Application.StatusBar = "Checking associated tasks…"
+    UpdateBusyUI "Checking associated tasks…"
     Set linkIndex = BuildAssociatedLinkIndex(tblSITS)
     Set expandedIds = ExpandSelectionWithAssociatedTasks(selectedIds, tblSITS, autoClaimed, _
                                                          rowIndex, linkIndex)
 
     ' Dialogs need a responsive UI — briefly restore Excel state.
     SetExcelState "enable"
-    Application.StatusBar = False
+    EndBusyUI
 
     claimMsg = DescribeAssociatedClaims(autoClaimed)
     If Len(claimMsg) > 0 Then
@@ -264,9 +265,9 @@ Public Function CreateWorkPackageFromSelection() As Boolean
     End If
 
     On Error GoTo ErrorHandler
+    BeginBusyUI "Creating work package…"
     SetExcelState "disable"
     SuspendWorkbookProtection
-    Application.StatusBar = "Creating work package…"
 
     RemoveWPTaskRows orn
     WriteWorkPackageHeader orn
@@ -275,17 +276,17 @@ Public Function CreateWorkPackageFromSelection() As Boolean
     ClearSelectedSITSSelectors expandedIds, tblSITS, rowIndex
 
     ' Keep the existing SITS view — replace claimed selectors with IN WORK.
-    Application.StatusBar = "Updating SITS selectors…"
+    UpdateBusyUI "Updating SITS selectors…"
     MarkSITSViewRowsInWork expandedIds
 
     LogAction "WP_CREATED", orn, "Tasks=" & expandedIds.Count
 
-    Application.StatusBar = "Updating Dashboard…"
+    UpdateBusyUI "Updating Dashboard…"
     RefreshDashboardStatusCounts
 
     ResumeWorkbookProtection
     SetExcelState "enable"
-    Application.StatusBar = False
+    EndBusyUI
 
     MsgBox "Work package " & orn & " created with " & expandedIds.Count & " task(s).", _
            vbInformation, APP_NAME
@@ -297,7 +298,7 @@ ErrorHandler:
     Dim errDesc As String
     errNum = Err.Number
     errDesc = Err.Description
-    Application.StatusBar = False
+    EndBusyUI
     ForceResumeWorkbookProtection
     SetExcelState "force-enable"
     LogError PROC_NAME, errNum, errDesc
@@ -344,9 +345,9 @@ Public Function DeleteWorkPackage(ByVal orn As String, _
     End If
 
     On Error GoTo ErrorHandler
+    BeginBusyUI "Deleting work package…"
     SetExcelState "disable"
     SuspendWorkbookProtection
-    Application.StatusBar = "Deleting work package…"
 
     ClearORNFromSITSTasks orn, taskIds, tblSITS
     RemoveWPTaskRows orn
@@ -358,16 +359,17 @@ Public Function DeleteWorkPackage(ByVal orn As String, _
     For Each item In taskIds
         taskIdDict(CStr(item)) = True
     Next item
+    UpdateBusyUI "Updating SITS selectors…"
     RestoreSITSViewSelectorsForRowIds taskIdDict
 
     LogAction "WP_DELETED", orn, "Tasks released=" & taskIds.Count
 
-    Application.StatusBar = "Updating Dashboard…"
+    UpdateBusyUI "Updating Dashboard…"
     RefreshDashboardStatusCounts
 
     ResumeWorkbookProtection
     SetExcelState "enable"
-    Application.StatusBar = False
+    EndBusyUI
     DeleteWorkPackage = True
     Exit Function
 
@@ -380,7 +382,7 @@ ErrorHandler:
     Dim errDesc As String
     errNum = Err.Number
     errDesc = Err.Description
-    Application.StatusBar = False
+    EndBusyUI
     ForceResumeWorkbookProtection
     SetExcelState "force-enable"
     LogError PROC_NAME, errNum, errDesc
@@ -442,9 +444,9 @@ Public Function RemoveTaskFromWorkPackage(ByVal orn As String, _
     End If
 
     On Error GoTo ErrorHandler
+    BeginBusyUI "Removing task from work package…"
     SetExcelState "disable"
     SuspendWorkbookProtection
-    Application.StatusBar = "Removing task from work package…"
 
     RemoveSingleWPTaskRow orn, rowId
     If Not sitsRow Is Nothing Then
@@ -455,6 +457,7 @@ Public Function RemoveTaskFromWorkPackage(ByVal orn As String, _
     Set released = CreateObject("Scripting.Dictionary")
     released.CompareMode = 1
     released(rowId) = True
+    UpdateBusyUI "Updating SITS selectors…"
     RestoreSITSViewSelectorsForRowIds released
 
     Set taskIds = CollectWPTaskRowIds(orn)
@@ -466,10 +469,11 @@ Public Function RemoveTaskFromWorkPackage(ByVal orn As String, _
         LogAction "WP_TASK_REMOVED", orn, "Task=" & taskCode & "; Remaining=" & taskIds.Count
     End If
 
+    UpdateBusyUI "Updating Dashboard…"
     RefreshDashboardStatusCounts
     ResumeWorkbookProtection
     SetExcelState "enable"
-    Application.StatusBar = False
+    EndBusyUI
 
     If showDialogs Then
         If emptied Then
@@ -490,7 +494,7 @@ ErrorHandler:
     Dim errDesc As String
     errNum = Err.Number
     errDesc = Err.Description
-    Application.StatusBar = False
+    EndBusyUI
     ForceResumeWorkbookProtection
     SetExcelState "force-enable"
     LogError PROC_NAME, errNum, errDesc
@@ -557,7 +561,7 @@ Public Function CloseWorkPackage(ByVal orn As String, _
                   "User: " & userName
 
     On Error GoTo ErrorHandler
-    Application.StatusBar = "Closing work package…"
+    BeginBusyUI "Closing work package…"
     SetExcelState "disable"
     SuspendWorkbookProtection
 
@@ -604,15 +608,15 @@ NextCloseTask:
 
     ' Full rebuild so reforecasted life remaining re-sorts the view
     ' (in-place updates left completed tasks in their old due-soon position).
-    Application.StatusBar = "Refreshing SITS view…"
+    UpdateBusyUI "Refreshing SITS view…"
     RefreshSITSView
 
-    Application.StatusBar = "Updating Dashboard…"
+    UpdateBusyUI "Updating Dashboard…"
     RefreshDashboardStatusCounts
 
     ResumeWorkbookProtection
     SetExcelState "enable"
-    Application.StatusBar = False
+    EndBusyUI
 
     If showDialogs Then
         Dim msg As String
@@ -636,7 +640,7 @@ ErrorHandler:
     Dim errDesc As String
     errNum = Err.Number
     errDesc = Err.Description
-    Application.StatusBar = False
+    EndBusyUI
     ForceResumeWorkbookProtection
     SetExcelState "force-enable"
     LogError PROC_NAME, errNum, errDesc

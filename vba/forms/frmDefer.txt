@@ -54,10 +54,21 @@ Private Sub UserForm_Initialize()
 End Sub
 
 Private Sub cmdApply_Click()
+    Dim dueText As String
+    Dim snowText As String
+    Dim authoriserText As String
+
     ' Use ControlText — Default/Enter can fire before TextBox.Value is committed.
-    If ApplyDeferralToSelection(mRowId, ControlText(txtDue), ControlText(txtSNOW), _
-                                ControlText(txtAuthoriser), True) Then
+    dueText = ControlText(txtDue)
+    snowText = ControlText(txtSNOW)
+    authoriserText = ControlText(txtAuthoriser)
+
+    ' Hide before long apply so the modeless progress form can show.
+    Me.Hide
+    If ApplyDeferralToSelection(mRowId, dueText, snowText, authoriserText, True) Then
         Unload Me
+    Else
+        Me.Show
     End If
 End Sub
 

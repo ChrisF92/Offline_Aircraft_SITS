@@ -19,10 +19,21 @@ Private Sub UserForm_Initialize()
 End Sub
 
 Private Sub cmdApply_Click()
+    Dim hoursText As String
+    Dim daysText As String
+    Dim numberText As String
+
     ' Use ControlText — Default/Enter can fire before TextBox.Value is committed.
-    If ApplyHorizonSettings(ControlText(txtHours), ControlText(txtDays), _
-                            ControlText(txtNumber), True) Then
+    hoursText = ControlText(txtHours)
+    daysText = ControlText(txtDays)
+    numberText = ControlText(txtNumber)
+
+    ' Hide before refresh so the modeless progress form can show.
+    Me.Hide
+    If ApplyHorizonSettings(hoursText, daysText, numberText, True) Then
         Unload Me
+    Else
+        Me.Show
     End If
 End Sub
 

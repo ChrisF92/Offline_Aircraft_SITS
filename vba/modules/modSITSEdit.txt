@@ -61,16 +61,18 @@ Public Function AddSITSTaskManually() As Boolean
     If Not ConfirmManualSITSTask(draft) Then Exit Function
 
     On Error GoTo ErrorHandler
+    BeginBusyUI "Adding SITS task…"
     SetExcelState "disable"
     SuspendWorkbookProtection
-    Application.StatusBar = "Adding SITS task…"
 
     rowId = GenerateNextSITSRowId(tbl)
     Set newRow = tbl.ListRows.Add
     WriteManualSITSTaskRow tbl, newRow, draft, rowId
 
+    UpdateBusyUI "Recalculating SITS…"
     ApplyWorkbookDataFormats
     RecalculateSITS skipTableFormats:=True
+    UpdateBusyUI "Refreshing SITS view…"
     RefreshSITSView
 
     LogAction "SITS_TASK_ADDED", "", _
@@ -78,6 +80,7 @@ Public Function AddSITSTaskManually() As Boolean
               "; Seq=" & draft.TaskSequence & "; Interval=" & draft.IntervalTypeCode
     ResumeWorkbookProtection
     SetExcelState "enable"
+    EndBusyUI
 
     AddSITSTaskManually = True
     MsgBox "Task added (" & rowId & ")." & vbCrLf & vbCrLf & _
@@ -90,8 +93,9 @@ ErrorHandler:
     Dim errDesc As String
     errNum = Err.Number
     errDesc = Err.Description
+    EndBusyUI
     ForceResumeWorkbookProtection
-    SetExcelState "enable"
+    SetExcelState "force-enable"
     LogError PROC_NAME, errNum, errDesc
     MsgBox "Add task error: " & errNum & " - " & errDesc, vbCritical, APP_NAME
 End Function
@@ -190,9 +194,9 @@ NextConfirmRow:
         APP_NAME) <> vbYes Then Exit Function
 
     On Error GoTo ErrorHandler
+    BeginBusyUI "Removing SITS task(s)…"
     SetExcelState "disable"
     SuspendWorkbookProtection
-    Application.StatusBar = "Removing SITS task(s)…"
 
     ' Delete highest ListRow.Index first so earlier indices stay valid.
     Set rowIndex = BuildSITSRowIdIndex(tbl)
@@ -211,12 +215,14 @@ NextConfirmRow:
         deletedCount = deletedCount + 1
     Next deleteRow
 
+    UpdateBusyUI "Refreshing SITS view…"
     RefreshSITSView
 
     LogAction "SITS_TASKS_REMOVED", "", _
               "Count=" & deletedCount & "; " & Left$(detailParts, 180)
     ResumeWorkbookProtection
     SetExcelState "enable"
+    EndBusyUI
 
     RemoveSelectedSITSTasks = True
     MsgBox "Removed " & deletedCount & " task(s) from SITS.", vbInformation, APP_NAME
@@ -227,8 +233,9 @@ ErrorHandler:
     Dim errDesc As String
     errNum = Err.Number
     errDesc = Err.Description
+    EndBusyUI
     ForceResumeWorkbookProtection
-    SetExcelState "enable"
+    SetExcelState "force-enable"
     LogError PROC_NAME, errNum, errDesc
     MsgBox "Remove task error: " & errNum & " - " & errDesc, vbCritical, APP_NAME
 End Function

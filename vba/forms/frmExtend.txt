@@ -67,10 +67,21 @@ Private Sub txtAmount_Change()
 End Sub
 
 Private Sub cmdApply_Click()
+    Dim amountText As String
+    Dim snowText As String
+    Dim authoriserText As String
+
     ' Use ControlText — Default/Enter can fire before TextBox.Value is committed.
-    If ApplyExtensionsToSelection(mSelectedIds, ControlText(txtAmount), ControlText(txtSNOW), _
-                                  ControlText(txtAuthoriser), True) Then
+    amountText = ControlText(txtAmount)
+    snowText = ControlText(txtSNOW)
+    authoriserText = ControlText(txtAuthoriser)
+
+    ' Hide before long apply so the modeless progress form can show.
+    Me.Hide
+    If ApplyExtensionsToSelection(mSelectedIds, amountText, snowText, authoriserText, True) Then
         Unload Me
+    Else
+        Me.Show
     End If
 End Sub
 
