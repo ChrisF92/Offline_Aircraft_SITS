@@ -610,8 +610,10 @@ Private Function NormalizeTableDataArray(ByVal raw As Variant, _
     End If
 
     If rowCount = 1 Then
+        c = 0
         On Error Resume Next
         c = UBound(raw, 2)
+        If Err.Number <> 0 Then c = 0
         On Error GoTo 0
         If c >= 1 Then
             NormalizeTableDataArray = raw
