@@ -39,6 +39,17 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
     Dim taskCode As String
     Dim lifeRemaining As Variant
     Dim newRow As ListRow
+    Dim destColMap As Object
+    Dim colSelector As Long
+    Dim colIntervalDest As Long
+    Dim colTaskCodeDest As Long
+    Dim colTaskSequence As Long
+    Dim colTaskDescription As Long
+    Dim colSerial As Long
+    Dim colEndItemSerial As Long
+    Dim colExtension As Long
+    Dim colActualInterval As Long
+    Dim colSitsRowId As Long
 
     ImportSITSFromFile = -1
 
@@ -124,6 +135,22 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
 
     ClearTableData tbl
 
+    ' Ensure structural columns exist before caching indexes for the import loop.
+    EnsureSITSBaselineColumns tbl
+    EnsureWorkPackageSITSColumns tbl
+
+    Set destColMap = BuildTableColumnIndexMap(tbl)
+    colSelector = LookupColumnIndex(destColMap, HDR_SELECTOR)
+    colIntervalDest = LookupColumnIndex(destColMap, HDR_INTERVAL_TYPE_CODE)
+    colTaskCodeDest = LookupColumnIndex(destColMap, HDR_TASK_CODE)
+    colTaskSequence = LookupColumnIndex(destColMap, HDR_TASK_SEQUENCE)
+    colTaskDescription = LookupColumnIndex(destColMap, HDR_TASK_DESCRIPTION)
+    colSerial = LookupColumnIndex(destColMap, HDR_SERIAL)
+    colEndItemSerial = LookupColumnIndex(destColMap, HDR_END_ITEM_SERIAL)
+    colExtension = LookupColumnIndex(destColMap, HDR_EXTENSION)
+    colActualInterval = LookupColumnIndex(destColMap, HDR_ACTUAL_INTERVAL)
+    colSitsRowId = LookupColumnIndex(destColMap, HDR_SITS_ROW_ID)
+
     For rowIndex = firstDataRow To lastRow
         If Not SITSRowHasData(srcWs, rowIndex, colMap) Then GoTo NextRow
 
@@ -142,32 +169,32 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
 
         Set newRow = tbl.ListRows.Add
         With newRow.Range
-            .Cells(1, GetTableColumnIndex(tbl, HDR_SELECTOR)).Value = False
-            .Cells(1, GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)).Value = intervalCode
-            .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_CODE)).Value = taskCode
-            .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_SEQUENCE)).Value = _
+            .Cells(1, colSelector).Value = False
+            .Cells(1, colIntervalDest).Value = intervalCode
+            .Cells(1, colTaskCodeDest).Value = taskCode
+            .Cells(1, colTaskSequence).Value = _
                 srcWs.Cells(rowIndex, colMap("Task Sequence")).Value
-            .Cells(1, GetTableColumnIndex(tbl, HDR_TASK_DESCRIPTION)).Value = _
+            .Cells(1, colTaskDescription).Value = _
                 srcWs.Cells(rowIndex, colMap("Task Description")).Value
-            WriteSerialCell .Cells(1, GetTableColumnIndex(tbl, HDR_SERIAL)), _
+            WriteSerialCell .Cells(1, colSerial), _
                 srcWs.Cells(rowIndex, colMap("Serial")).Value, _
                 srcWs.Cells(rowIndex, colMap("Serial")).Text
-            WriteSerialCell .Cells(1, GetTableColumnIndex(tbl, HDR_END_ITEM_SERIAL)), _
+            WriteSerialCell .Cells(1, colEndItemSerial), _
                 srcWs.Cells(rowIndex, colMap("End Item Serial")).Value, _
                 srcWs.Cells(rowIndex, colMap("End Item Serial")).Text
-            ApplyImportedExtension .Cells(1, GetTableColumnIndex(tbl, HDR_EXTENSION)), _
+            ApplyImportedExtension .Cells(1, colExtension), _
                 intervalCode, taskCode, optCols, srcWs, rowIndex, _
                 srcWs.Cells(rowIndex, colMap("Extension")).Value, _
                 srcWs.Cells(rowIndex, colMap("Extension")).Text
 
-            ApplyActualIntervalValue .Cells(1, GetTableColumnIndex(tbl, HDR_ACTUAL_INTERVAL)), _
+            ApplyActualIntervalValue .Cells(1, colActualInterval), _
                 srcWs.Cells(rowIndex, colMap("Actual Interval")).Value, intervalCode, _
                 srcWs.Cells(rowIndex, colMap("Actual Interval")).Text
             ApplyLifeRemainingValues tbl, newRow, intervalCode, lifeRemaining, _
-                srcWs.Cells(rowIndex, colMap("Life Remaining")).Text
-            ApplyOptionalSITSColumns tbl, newRow, optCols, srcWs, rowIndex
-            CaptureTaskBaselineFromImport tbl, newRow, intervalCode
-            .Cells(1, GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)).Value = _
+                srcWs.Cells(rowIndex, colMap("Life Remaining")).Text, destColMap
+            ApplyOptionalSITSColumns tbl, newRow, optCols, srcWs, rowIndex, destColMap
+            CaptureTaskBaselineFromImport tbl, newRow, intervalCode, destColMap
+            .Cells(1, colSitsRowId).Value = _
                 "SITS-" & Format$(importedRows + 1, "00000")
         End With
 
@@ -179,7 +206,7 @@ NextRow:
     srcWb.Close SaveChanges:=False
     ApplyWorkbookDataFormats
     SnapshotUsageForSITS
-    RecalculateSITS
+    RecalculateSITS skipTableFormats:=True
     RefreshSITSView
 
     LogAction "SITS_IMPORTED", "", "Imported " & importedRows & " rows (skipped " & skippedRows & ") from " & filePath
@@ -360,15 +387,16 @@ Private Sub ApplyLifeRemainingValues(ByVal tbl As ListObject, _
                                      ByVal newRow As ListRow, _
                                      ByVal intervalCode As String, _
                                      ByVal rawValue As Variant, _
-                                     ByVal displayText As String)
+                                     ByVal displayText As String, _
+                                     Optional ByVal colMap As Object = Nothing)
     Dim colHours As Long
     Dim colNumber As Long
     Dim colDays As Long
     Dim parsedTime As Variant
 
-    colHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
-    colNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
-    colDays = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+    colHours = ResolveTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING, colMap)
+    colNumber = ResolveTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING, colMap)
+    colDays = ResolveTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE, colMap)
 
     If InStr(displayText, ":") > 0 Or (IsHourBasedIntervalType(intervalCode) And intervalCode <> TYPE_DD) Then
         parsedTime = ParseTimeUsageValue(rawValue, displayText)
@@ -390,35 +418,36 @@ Private Sub ApplyOptionalSITSColumns(ByVal tbl As ListObject, _
                                      ByVal newRow As ListRow, _
                                      ByVal optCols As Object, _
                                      ByVal srcWs As Worksheet, _
-                                     ByVal rowIndex As Long)
+                                     ByVal rowIndex As Long, _
+                                     Optional ByVal colMap As Object = Nothing)
     Dim parsedDate As Variant
     Dim colIndex As Long
 
     If optCols Is Nothing Then Exit Sub
 
     If optCols.Exists(OPT_INTERVAL_TYPE) Then
-        colIndex = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE)
+        colIndex = ResolveTableColumnIndex(tbl, HDR_INTERVAL_TYPE, colMap)
         If colIndex > 0 Then
             newRow.Range.Cells(1, colIndex).Value = srcWs.Cells(rowIndex, optCols(OPT_INTERVAL_TYPE)).Value
         End If
     End If
 
     If optCols.Exists(OPT_TASK_TYPE_CODE) Then
-        colIndex = GetTableColumnIndex(tbl, HDR_TASK_TYPE_CODE)
+        colIndex = ResolveTableColumnIndex(tbl, HDR_TASK_TYPE_CODE, colMap)
         If colIndex > 0 Then
             newRow.Range.Cells(1, colIndex).Value = srcWs.Cells(rowIndex, optCols(OPT_TASK_TYPE_CODE)).Value
         End If
     End If
 
     If optCols.Exists(OPT_WARNING_INTERVAL) Then
-        colIndex = GetTableColumnIndex(tbl, HDR_WARNING_INTERVAL)
+        colIndex = ResolveTableColumnIndex(tbl, HDR_WARNING_INTERVAL, colMap)
         If colIndex > 0 Then
             newRow.Range.Cells(1, colIndex).Value = srcWs.Cells(rowIndex, optCols(OPT_WARNING_INTERVAL)).Value
         End If
     End If
 
     If optCols.Exists(OPT_PROJECTED_DUE) Then
-        colIndex = GetTableColumnIndex(tbl, HDR_PROJECTED_DUE_DATE)
+        colIndex = ResolveTableColumnIndex(tbl, HDR_PROJECTED_DUE_DATE, colMap)
         If colIndex > 0 Then
             parsedDate = ParseDMYDateValue( _
                 srcWs.Cells(rowIndex, optCols(OPT_PROJECTED_DUE)).Value, _

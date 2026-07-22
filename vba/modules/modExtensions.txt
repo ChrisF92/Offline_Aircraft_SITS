@@ -338,7 +338,7 @@ NextApply:
     Next rowId
 
     ClearSelectedSITSSelectorsExt selectedIds, tbl, rowIndex
-    RecalculateSITS
+    RecalculateSITS skipTableFormats:=True
     RefreshSITSView
     RefreshDashboardStatusCounts
 
@@ -521,7 +521,7 @@ Public Function ApplyDeferralToSelection(ByVal rowId As String, _
     clearIds(rowId) = True
     ClearSelectedSITSSelectorsExt clearIds, tbl, rowIndex
 
-    RecalculateSITS
+    RecalculateSITS skipTableFormats:=True
     RefreshSITSView
     RefreshDashboardStatusCounts
 

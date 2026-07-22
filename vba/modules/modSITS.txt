@@ -245,11 +245,12 @@ Private Function EstimateSITSViewRowFromCheckboxTop(ByVal ws As Worksheet, _
     EstimateSITSViewRowFromCheckboxTop = estimatedRow
 End Function
 
-Public Sub RefreshSITS(Optional ByVal skipRecalculate As Boolean = False)
+Public Sub RefreshSITS(Optional ByVal skipRecalculate As Boolean = False, _
+                       Optional ByVal skipTableFormats As Boolean = False)
     If Not ValidateWorkbookStructure(showDialogs:=False) Then Exit Sub
     SaveForecastSettingsFromView
     EnsureForecastConfigDefaults
-    If Not skipRecalculate Then RecalculateSITS
+    If Not skipRecalculate Then RecalculateSITS skipTableFormats:=skipTableFormats
     RefreshSITSView
 End Sub
 
@@ -331,6 +332,10 @@ Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
     Dim removeRow As Long
     Dim viewColumns As Collection
     Dim sitsIndex As Object
+    Dim colMap As Object
+    Dim colLRHours As Long
+    Dim colLRNumber As Long
+    Dim colDaysDue As Long
 
     Set wsView = GetWorksheet(SHEET_SITS, showError:=False)
     Set wsData = GetWorksheet(SHEET_DATA_SITS, showError:=False)
@@ -349,8 +354,13 @@ Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
     forecastNumber = GetForecastNumberSetting()
     warnHoursFraction = ParseWarnHoursSetting()
     warnDays = CLng(NzSITSNumber(GetConfigValue(CFG_WARN_DAYS, 7)))
-    colManualFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
-    colInterval = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)
+
+    Set colMap = BuildTableColumnIndexMap(tbl)
+    colManualFlag = LookupColumnIndex(colMap, HDR_NEEDS_MANUAL_UPDATE)
+    colInterval = LookupColumnIndex(colMap, HDR_INTERVAL_TYPE_CODE)
+    colLRHours = LookupColumnIndex(colMap, HDR_HOURS_LIFE_REMAINING)
+    colLRNumber = LookupColumnIndex(colMap, HDR_NUMBER_LIFE_REMAINING)
+    colDaysDue = LookupColumnIndex(colMap, HDR_DAYS_WHEN_DUE)
 
     ' PT2/PT3 deleted from data — remove from view if present.
     If Not deletedRowIds Is Nothing Then
@@ -375,12 +385,13 @@ Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
 
             intervalCode = UCase$(Trim$(CStr(sitsRow.Range.Cells(1, colInterval).Value)))
             includeRow = TaskPassesForecastFilter(sitsRow, tbl, intervalCode, _
-                forecastHours, forecastDays, forecastNumber, lifeHoursFraction, daysUntilDue)
+                forecastHours, forecastDays, forecastNumber, lifeHoursFraction, daysUntilDue, _
+                colLRHours, colLRNumber, colDaysDue)
 
             If Not includeRow Then
                 rowsToRemove.Add viewRow
             Else
-                RewriteSITSViewDataRow wsView, viewRow, sitsRow, tbl, intervalCode, viewColumns
+                RewriteSITSViewDataRow wsView, viewRow, sitsRow, tbl, intervalCode, viewColumns, colMap
                 ApplySITSViewRowWarnings wsView, viewRow, SITS_VISIBLE_COLUMN_COUNT, _
                     intervalCode, lifeHoursFraction, daysUntilDue, _
                     warnHoursFraction, warnDays, sitsRow, colManualFlag
@@ -404,7 +415,9 @@ NextClosedView:
     End If
 End Sub
 
-Public Sub RecalculateSITS()
+' skipTableFormats:=True for day-to-day paths (sortie / extend / defer) where
+' column NumberFormats were already applied at import or repair.
+Public Sub RecalculateSITS(Optional ByVal skipTableFormats As Boolean = False)
     Dim wsData As Worksheet
     Dim tbl As ListObject
     Dim row As ListRow
@@ -522,7 +535,7 @@ Public Sub RecalculateSITS()
         End If
     Next row
 
-    ApplySITSTableFormats
+    If Not skipTableFormats Then ApplySITSTableFormats
     SetExcelState "enable"
 End Sub
 
@@ -533,7 +546,6 @@ Public Sub RefreshSITSView()
     Dim row As ListRow
     Dim viewColumns As Collection
     Dim columnName As Variant
-    Dim colIndex As Long
     Dim outputCol As Long
     Dim outputRow As Long
     Dim intervalCode As String
@@ -547,6 +559,12 @@ Public Sub RefreshSITSView()
     Dim lastDataRow As Long
     Dim colManualFlag As Long
     Dim suspended As Boolean
+    Dim colMap As Object
+    Dim colLRHours As Long
+    Dim colLRNumber As Long
+    Dim colDaysDue As Long
+    Dim colTaskCode As Long
+    Dim colIntervalCached As Long
 
     On Error GoTo CleanFail
 
@@ -563,7 +581,14 @@ Public Sub RefreshSITSView()
     forecastNumber = GetForecastNumberSetting()
     warnHoursFraction = ParseWarnHoursSetting()
     warnDays = CLng(NzSITSNumber(GetConfigValue(CFG_WARN_DAYS, 7)))
-    colManualFlag = GetTableColumnIndex(tbl, HDR_NEEDS_MANUAL_UPDATE)
+
+    Set colMap = BuildTableColumnIndexMap(tbl)
+    colManualFlag = LookupColumnIndex(colMap, HDR_NEEDS_MANUAL_UPDATE)
+    colIntervalCached = LookupColumnIndex(colMap, HDR_INTERVAL_TYPE_CODE)
+    colLRHours = LookupColumnIndex(colMap, HDR_HOURS_LIFE_REMAINING)
+    colLRNumber = LookupColumnIndex(colMap, HDR_NUMBER_LIFE_REMAINING)
+    colDaysDue = LookupColumnIndex(colMap, HDR_DAYS_WHEN_DUE)
+    colTaskCode = LookupColumnIndex(colMap, HDR_TASK_CODE)
 
     SetExcelState "disable"
     Application.StatusBar = "Refreshing SITS view…"
@@ -607,9 +632,7 @@ Public Sub RefreshSITSView()
         Dim sortCount As Long
         Dim entryIndex As Long
         Dim includeRow As Boolean
-        Dim colIntervalCached As Long
 
-        colIntervalCached = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)
         sortCount = 0
         ReDim sortEntries(1 To tbl.ListRows.Count)
 
@@ -617,14 +640,16 @@ Public Sub RefreshSITSView()
             intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, colIntervalCached).Value)))
 
             includeRow = TaskPassesForecastFilter(row, tbl, intervalCode, _
-                forecastHours, forecastDays, forecastNumber, lifeHoursFraction, daysUntilDue)
+                forecastHours, forecastDays, forecastNumber, lifeHoursFraction, daysUntilDue, _
+                colLRHours, colLRNumber, colDaysDue)
             If Not includeRow Then GoTo NextCollectRow
 
             sortCount = sortCount + 1
             sortEntries(sortCount).ListRowIndex = row.Index
             sortEntries(sortCount).IntervalCode = intervalCode
             sortEntries(sortCount).GroupOrder = SITSIntervalGroupOrder(intervalCode)
-            sortEntries(sortCount).SortKey = SITSTaskSortKey(row, tbl, intervalCode)
+            sortEntries(sortCount).SortKey = SITSTaskSortKey(row, tbl, intervalCode, _
+                colLRHours, colLRNumber, colDaysDue, colTaskCode)
             sortEntries(sortCount).LifeHoursFraction = lifeHoursFraction
             sortEntries(sortCount).DaysUntilDue = daysUntilDue
 
@@ -644,7 +669,7 @@ NextCollectRow:
                 outputCol = 1
                 For Each columnName In viewColumns
                     WriteSITSViewCell row, tbl, intervalCode, CStr(columnName), _
-                        wsView.Cells(outputRow, outputCol)
+                        wsView.Cells(outputRow, outputCol), colMap
                     outputCol = outputCol + 1
                 Next columnName
 
@@ -752,7 +777,8 @@ SnapshotFail:
 End Sub
 
 Public Sub CaptureTaskBaselineFromImport(ByVal tbl As ListObject, ByVal newRow As ListRow, _
-                                         ByVal intervalCode As String)
+                                         ByVal intervalCode As String, _
+                                         Optional ByVal colMap As Object = Nothing)
     Dim colLRHours As Long
     Dim colLRNumber As Long
     Dim colDaysDue As Long
@@ -765,15 +791,22 @@ Public Sub CaptureTaskBaselineFromImport(ByVal tbl As ListObject, ByVal newRow A
 
     EnsureSITSBaselineColumns tbl
 
-    colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
-    colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
-    colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
-    colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
-    colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
-    colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
+    ' Baseline columns may have been added — rebuild map if caller passed a stale one.
+    If Not colMap Is Nothing Then
+        If LookupColumnIndex(colMap, HDR_BASELINE_LR_HOURS) = 0 Then
+            Set colMap = BuildTableColumnIndexMap(tbl)
+        End If
+    End If
+
+    colLRHours = ResolveTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING, colMap)
+    colLRNumber = ResolveTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING, colMap)
+    colDaysDue = ResolveTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE, colMap)
+    colBaseHours = ResolveTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS, colMap)
+    colBaseNumber = ResolveTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER, colMap)
+    colBaseDue = ResolveTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE, colMap)
 
     If intervalCode = TYPE_DD Then
-        colProjected = GetTableColumnIndex(tbl, HDR_PROJECTED_DUE_DATE)
+        colProjected = ResolveTableColumnIndex(tbl, HDR_PROJECTED_DUE_DATE, colMap)
         If colProjected > 0 Then
             projectedDue = newRow.Range.Cells(1, colProjected).Value
             If LooksLikeAbsoluteDueDate(projectedDue) Then
@@ -905,23 +938,23 @@ End Function
 
 Private Function SITSTaskSortKey(ByVal row As ListRow, _
                                  ByVal tbl As ListObject, _
-                                 ByVal intervalCode As String) As Double
-    Dim colLRHours As Long
-    Dim colLRNumber As Long
-    Dim colDaysDue As Long
-    Dim colTaskCode As Long
+                                 ByVal intervalCode As String, _
+                                 Optional ByVal colLRHours As Long = 0, _
+                                 Optional ByVal colLRNumber As Long = 0, _
+                                 Optional ByVal colDaysDue As Long = 0, _
+                                 Optional ByVal colTaskCode As Long = 0) As Double
     Dim dueValue As Variant
 
     Select Case UCase$(Trim$(intervalCode))
         Case TYPE_E1, TYPE_E2, TYPE_HH
-            colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+            If colLRHours = 0 Then colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
             If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
                 SITSTaskSortKey = CDbl(row.Range.Cells(1, colLRHours).Value)
                 Exit Function
             End If
 
         Case TYPE_DD
-            colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+            If colDaysDue = 0 Then colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
             dueValue = row.Range.Cells(1, colDaysDue).Value
             If LooksLikeAbsoluteDueDate(dueValue) Then
                 SITSTaskSortKey = CDbl(CDate(dueValue))
@@ -932,19 +965,19 @@ Private Function SITSTaskSortKey(ByVal row As ListRow, _
             End If
 
         Case Else
-            colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+            If colLRNumber = 0 Then colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
             If colLRNumber > 0 And IsNumeric(row.Range.Cells(1, colLRNumber).Value) Then
                 SITSTaskSortKey = CDbl(row.Range.Cells(1, colLRNumber).Value)
                 Exit Function
             End If
 
-            colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+            If colLRHours = 0 Then colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
             If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
                 SITSTaskSortKey = CDbl(row.Range.Cells(1, colLRHours).Value)
                 Exit Function
             End If
 
-            colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
+            If colTaskCode = 0 Then colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
             If colTaskCode > 0 Then
                 SITSTaskSortKey = 1E+15 + Len(CStr(row.Range.Cells(1, colTaskCode).Value))
                 Exit Function
@@ -992,10 +1025,10 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
                                           ByVal forecastDays As Long, _
                                           ByVal forecastNumber As Long, _
                                           ByRef lifeHoursFraction As Double, _
-                                          ByRef daysUntilDue As Long) As Boolean
-    Dim colLRHours As Long
-    Dim colLRNumber As Long
-    Dim colDaysDue As Long
+                                          ByRef daysUntilDue As Long, _
+                                          Optional ByVal colLRHours As Long = 0, _
+                                          Optional ByVal colLRNumber As Long = 0, _
+                                          Optional ByVal colDaysDue As Long = 0) As Boolean
     Dim dueValue As Variant
     Dim lifeNumber As Double
 
@@ -1004,7 +1037,7 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
 
     Select Case intervalCode
         Case TYPE_HH, TYPE_E1, TYPE_E2
-            colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+            If colLRHours = 0 Then colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
             If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
                 lifeHoursFraction = CDbl(row.Range.Cells(1, colLRHours).Value)
             End If
@@ -1017,7 +1050,7 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
             End If
 
         Case TYPE_DD
-            colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+            If colDaysDue = 0 Then colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
             dueValue = row.Range.Cells(1, colDaysDue).Value
             If LooksLikeAbsoluteDueDate(dueValue) Then
                 daysUntilDue = CLng(DateDiff("d", Date, CDate(dueValue)))
@@ -1034,7 +1067,7 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
 
         Case Else
             If IsNumberBasedSITSInterval(intervalCode) Then
-                colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+                If colLRNumber = 0 Then colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
                 lifeNumber = -1#
                 If colLRNumber > 0 And IsNumeric(row.Range.Cells(1, colLRNumber).Value) Then
                     lifeNumber = CDbl(row.Range.Cells(1, colLRNumber).Value)
@@ -1341,11 +1374,12 @@ End Sub
 
 Private Sub WriteSITSViewSelectorCell(ByVal sourceRow As ListRow, _
                                       ByVal tbl As ListObject, _
-                                      ByVal target As Range)
+                                      ByVal target As Range, _
+                                      Optional ByVal colMap As Object = Nothing)
     Dim colOrn As Long
     Dim inWorkOrn As String
 
-    colOrn = GetTableColumnIndex(tbl, HDR_ORN_INWORK)
+    colOrn = ResolveTableColumnIndex(tbl, HDR_ORN_INWORK, colMap)
     If colOrn > 0 Then
         inWorkOrn = Trim$(CStr(sourceRow.Range.Cells(1, colOrn).Value))
     End If
@@ -1654,16 +1688,19 @@ Private Sub RewriteSITSViewDataRow(ByVal wsView As Worksheet, _
                                    ByVal sitsRow As ListRow, _
                                    ByVal tbl As ListObject, _
                                    ByVal intervalCode As String, _
-                                   ByVal viewColumns As Collection)
+                                   ByVal viewColumns As Collection, _
+                                   Optional ByVal colMap As Object = Nothing)
     Dim columnName As Variant
     Dim outputCol As Long
+
+    If colMap Is Nothing Then Set colMap = BuildTableColumnIndexMap(tbl)
 
     outputCol = 1
     For Each columnName In viewColumns
         ' Selector handled separately by caller.
         If StrComp(CStr(columnName), HDR_SELECTOR, vbTextCompare) <> 0 Then
             WriteSITSViewCell sitsRow, tbl, intervalCode, CStr(columnName), _
-                wsView.Cells(viewRow, outputCol)
+                wsView.Cells(viewRow, outputCol), colMap
         End If
         outputCol = outputCol + 1
     Next columnName
@@ -1828,7 +1865,8 @@ Private Sub WriteSITSViewCell(ByVal sourceRow As ListRow, _
                               ByVal tbl As ListObject, _
                               ByVal intervalCode As String, _
                               ByVal columnName As String, _
-                              ByVal target As Range)
+                              ByVal target As Range, _
+                              Optional ByVal colMap As Object = Nothing)
     Dim sourceCell As Range
     Dim colIndex As Long
     Dim value As Variant
@@ -1836,17 +1874,17 @@ Private Sub WriteSITSViewCell(ByVal sourceRow As ListRow, _
     target.WrapText = False
 
     If StrComp(columnName, HDR_VIEW_LIFE_REMAINING, vbTextCompare) = 0 Then
-        WriteSITSViewLifeRemaining sourceRow, tbl, intervalCode, target
+        WriteSITSViewLifeRemaining sourceRow, tbl, intervalCode, target, colMap
         Exit Sub
     End If
 
-    colIndex = GetTableColumnIndex(tbl, columnName)
+    colIndex = ResolveTableColumnIndex(tbl, columnName, colMap)
     If colIndex = 0 Then Exit Sub
 
     Set sourceCell = sourceRow.Range.Cells(1, colIndex)
 
     If StrComp(columnName, HDR_SELECTOR, vbTextCompare) = 0 Then
-        WriteSITSViewSelectorCell sourceRow, tbl, target
+        WriteSITSViewSelectorCell sourceRow, tbl, target, colMap
         Exit Sub
     End If
 
@@ -1916,13 +1954,14 @@ End Sub
 Private Sub WriteSITSViewLifeRemaining(ByVal sourceRow As ListRow, _
                                        ByVal tbl As ListObject, _
                                        ByVal intervalCode As String, _
-                                       ByVal target As Range)
+                                       ByVal target As Range, _
+                                       Optional ByVal colMap As Object = Nothing)
     Dim sourceCell As Range
     Dim colIndex As Long
     Dim value As Variant
 
     If SITSViewUsesHourFormat(intervalCode) Then
-        colIndex = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+        colIndex = ResolveTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING, colMap)
         If colIndex = 0 Then Exit Sub
         Set sourceCell = sourceRow.Range.Cells(1, colIndex)
         value = sourceCell.Value
@@ -1939,7 +1978,7 @@ Private Sub WriteSITSViewLifeRemaining(ByVal sourceRow As ListRow, _
     End If
 
     If intervalCode = TYPE_DD Then
-        colIndex = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+        colIndex = ResolveTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE, colMap)
         If colIndex = 0 Then Exit Sub
         Set sourceCell = sourceRow.Range.Cells(1, colIndex)
         value = sourceCell.Value
@@ -1958,7 +1997,7 @@ Private Sub WriteSITSViewLifeRemaining(ByVal sourceRow As ListRow, _
         Exit Sub
     End If
 
-    colIndex = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
+    colIndex = ResolveTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING, colMap)
     If colIndex = 0 Then Exit Sub
     Set sourceCell = sourceRow.Range.Cells(1, colIndex)
     If IsEmpty(sourceCell.Value) Or Len(Trim$(CStr(sourceCell.Value))) = 0 Then

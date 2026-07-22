@@ -116,6 +116,42 @@ Public Function GetTableColumnIndex(ByVal tbl As ListObject, _
     Next col
 End Function
 
+' Build once per operation and pass through hot loops — avoids repeated
+' ListColumns scans via GetTableColumnIndex inside per-row / per-cell work.
+Public Function BuildTableColumnIndexMap(ByVal tbl As ListObject) As Object
+    Dim dict As Object
+    Dim col As ListColumn
+
+    Set dict = CreateObject("Scripting.Dictionary")
+    dict.CompareMode = 1 ' vbTextCompare
+
+    If Not tbl Is Nothing Then
+        For Each col In tbl.ListColumns
+            If Not dict.Exists(col.Name) Then dict.Add col.Name, col.Index
+        Next col
+    End If
+
+    Set BuildTableColumnIndexMap = dict
+End Function
+
+Public Function LookupColumnIndex(ByVal colMap As Object, _
+                                  ByVal columnName As String) As Long
+    LookupColumnIndex = 0
+    If colMap Is Nothing Then Exit Function
+    If colMap.Exists(columnName) Then LookupColumnIndex = CLng(colMap(columnName))
+End Function
+
+' Prefer a cached map when present; fall back to a single ListColumns scan.
+Public Function ResolveTableColumnIndex(ByVal tbl As ListObject, _
+                                        ByVal columnName As String, _
+                                        Optional ByVal colMap As Object = Nothing) As Long
+    If Not colMap Is Nothing Then
+        ResolveTableColumnIndex = LookupColumnIndex(colMap, columnName)
+        If ResolveTableColumnIndex > 0 Or tbl Is Nothing Then Exit Function
+    End If
+    ResolveTableColumnIndex = GetTableColumnIndex(tbl, columnName)
+End Function
+
 Public Function SheetExists(ByVal sheetName As String) As Boolean
     On Error Resume Next
     SheetExists = Not ThisWorkbook.Worksheets(sheetName) Is Nothing

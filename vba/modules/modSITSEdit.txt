@@ -70,7 +70,7 @@ Public Function AddSITSTaskManually() As Boolean
     WriteManualSITSTaskRow tbl, newRow, draft, rowId
 
     ApplyWorkbookDataFormats
-    RecalculateSITS
+    RecalculateSITS skipTableFormats:=True
     RefreshSITSView
 
     LogAction "SITS_TASK_ADDED", "", _

@@ -555,9 +555,11 @@ Public Function CommitSortie(ByVal sortieDate As Date, _
 NextItem:
     Next mergeKey
 
-    ApplyUsageTableFormats
+    ' Touched current/log rows are formatted as they are written — skip the full
+    ' FormatAllUsageDataTables walk (grows with every sortie).
     RefreshUsageView
-    RefreshSITS
+    ' Life remaining must recalc + view rebuild; skip column-wide SITS reformat.
+    RefreshSITS skipTableFormats:=True
 
     LogAction "SORTIE_LOGGED", "", _
               "Sortie " & Format$(sortieDate, FORMAT_DATE) & _
