@@ -595,8 +595,8 @@ Public Sub RefreshSITSView()
     SuspendWorkbookProtection
     suspended = True
 
-    ' Selectors must be rebuilt (row set changes). Action buttons are preserved.
-    ClearSITSViewSelectorCheckboxes wsView
+    ' Keep existing selector checkboxes — SyncSITSViewSelectorCheckboxes reuses them
+    ' after the data rewrite (delete/recreate is the slow part of a full refresh).
 
     On Error Resume Next
     If wsView.AutoFilterMode Then wsView.AutoFilterMode = False
@@ -754,8 +754,10 @@ NextCollectRow:
     ApplySITSViewColumnPresentation wsView, lastDataRow, viewColumns.Count
 
     If lastDataRow >= SITS_VIEW_DATA_START_ROW Then
-        Application.StatusBar = "Building SITS selectors…"
-        AddSITSViewSelectorCheckboxes wsView, SITS_VIEW_DATA_START_ROW, lastDataRow
+        Application.StatusBar = "Syncing SITS selectors…"
+        SyncSITSViewSelectorCheckboxes wsView, SITS_VIEW_DATA_START_ROW, lastDataRow
+    Else
+        ClearSITSViewSelectorCheckboxes wsView
     End If
 
     ' Range.Clear above resets cell Locked=True; restore selector unlocks so
@@ -1435,19 +1437,58 @@ End Sub
 Private Sub AddSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
                                           ByVal firstDataRow As Long, _
                                           ByVal lastDataRow As Long)
-    Dim rowIndex As Long
+    ' Full recreate path — prefer SyncSITSViewSelectorCheckboxes on day-to-day refresh.
+    ClearSITSViewSelectorCheckboxes ws
+    SyncSITSViewSelectorCheckboxes ws, firstDataRow, lastDataRow
+End Sub
+
+' Reuse existing Form Control checkboxes when the visible row set changes.
+' Creating/deleting hundreds of CheckBoxes dominates RefreshSITSView wall time.
+Private Sub SyncSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
+                                           ByVal firstDataRow As Long, _
+                                           ByVal lastDataRow As Long)
+    Dim pool As Collection
     Dim cb As CheckBox
     Dim linkCell As Range
+    Dim rowIndex As Long
+    Dim i As Long
+    Dim actionName As String
+    Dim bangPos As Long
     Dim leftPos As Double
     Dim widthPos As Double
     Dim heightPos As Double
     Dim cellText As String
+    Dim poolIndex As Long
+    Dim needed As Long
 
-    If lastDataRow < firstDataRow Then Exit Sub
+    If ws Is Nothing Then Exit Sub
+
+    If lastDataRow < firstDataRow Then
+        ClearSITSViewSelectorCheckboxes ws
+        Exit Sub
+    End If
+
+    Set pool = New Collection
+    On Error Resume Next
+    For i = ws.CheckBoxes.Count To 1 Step -1
+        Set cb = ws.CheckBoxes(i)
+        actionName = Trim$(CStr(cb.OnAction))
+        bangPos = InStrRev(actionName, "!")
+        If bangPos > 0 Then actionName = Mid$(actionName, bangPos + 1)
+
+        If Left$(cb.Name, 8) = "SITS_SEL" Or _
+           StrComp(actionName, "SITSSelectorCheckboxChanged", vbTextCompare) = 0 Then
+            ' Free SITS_SEL_* names so rows can reclaim them without collisions.
+            cb.Name = "SITS_POOL_" & CStr(pool.Count + 1)
+            pool.Add cb
+        End If
+    Next i
+    On Error GoTo 0
 
     leftPos = ws.Cells(firstDataRow, SITS_SELECTOR_COL).Left
     widthPos = ws.Cells(firstDataRow, SITS_SELECTOR_COL).Width
     heightPos = ws.Cells(firstDataRow, SITS_SELECTOR_COL).Height
+    poolIndex = 1
 
     For rowIndex = firstDataRow To lastDataRow
         Set linkCell = ws.Cells(rowIndex, SITS_SELECTOR_COL)
@@ -1459,23 +1500,42 @@ Private Sub AddSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
             linkCell.HorizontalAlignment = xlCenter
             linkCell.Font.Bold = True
             linkCell.Font.Color = RGB(192, 0, 0)
-            GoTo NextSelectorRow
+            GoTo NextSyncRow
+        End If
+
+        If poolIndex <= pool.Count Then
+            Set cb = pool(poolIndex)
+            poolIndex = poolIndex + 1
+            cb.Left = leftPos
+            cb.Top = linkCell.Top
+            cb.Width = widthPos
+            cb.Height = heightPos
+        Else
+            Set cb = ws.CheckBoxes.Add(leftPos, linkCell.Top, widthPos, heightPos)
         End If
 
         linkCell.Value = False
         linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
+        linkCell.Font.Bold = False
+        linkCell.Font.Color = vbBlack
         linkCell.Locked = False
-        Set cb = ws.CheckBoxes.Add(leftPos, linkCell.Top, widthPos, heightPos)
+
         cb.Name = SITSCheckboxName(rowIndex)
         cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
         cb.OnAction = "SITSSelectorCheckboxChanged"
         cb.Caption = ""
         cb.Placement = xlMove
         cb.Display3DShading = False
-        ' Form Controls default Locked=True; must be False on a protected sheet.
         cb.Locked = False
-NextSelectorRow:
+NextSyncRow:
     Next rowIndex
+
+    ' Delete unused pooled controls (fewer visible rows, or more IN WORK rows).
+    On Error Resume Next
+    For i = pool.Count To poolIndex Step -1
+        pool(i).Delete
+    Next i
+    On Error GoTo 0
 End Sub
 
 Private Function SITSCheckboxName(ByVal viewRow As Long) As String
