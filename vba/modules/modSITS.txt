@@ -1727,6 +1727,7 @@ Private Sub EnsureSITSViewActionButtons(ByVal ws As Worksheet, _
     EnsureSheetButton ws, "Defer", "RunDeferFromSelection", "F3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
     EnsureSheetButton ws, "Add Task", "RunAddSITSTask", "H3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
     EnsureSheetButton ws, "Remove Task", "RunRemoveSITSTasks", "J3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Manual Update", "RunManualUpdateSITSTasks", "L3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
 End Sub
 
 Private Sub AddSITSViewActionButtons(ByVal ws As Worksheet)

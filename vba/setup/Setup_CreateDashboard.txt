@@ -268,6 +268,10 @@ Private Sub SyncUserActionButtons(ByVal ws As Worksheet, ByVal forceAdd As Boole
     RemoveDashboardButtonForMacro ws, "RunExtendFromSelection"
     RemoveDashboardButtonForMacro ws, "RunDeferFromSelection"
 
+    ' View Help moves between pre-setup (row 14 col 1) and post-setup (row 15 col 1).
+    ' Always remove then re-add so it never overlaps Work Packages after Setup Wizard.
+    RemoveDashboardButtonForMacro ws, "ViewHelp"
+
     If IsPreSetupUserMode() Then
         RemoveDashboardButtonForMacro ws, "RunLogSortie"
         RemoveDashboardButtonForMacro ws, "RunManageWorkPackages"

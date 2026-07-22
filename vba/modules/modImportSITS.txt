@@ -35,6 +35,7 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
     Dim rowIndex As Long
     Dim importedRows As Long
     Dim skippedRows As Long
+    Dim skippedGenRows As Long
     Dim intervalCode As String
     Dim taskCode As String
     Dim lifeRemaining As Variant
@@ -158,6 +159,11 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
         taskCode = Trim$(CStr(srcWs.Cells(rowIndex, colMap("Task Code")).Value))
         lifeRemaining = srcWs.Cells(rowIndex, colMap("Life Remaining")).Value
 
+        If ShouldSkipGenPrefixedTaskCode(taskCode) Then
+            skippedGenRows = skippedGenRows + 1
+            GoTo NextRow
+        End If
+
         If ShouldSkipNumberBasedSITSImportRow(intervalCode, _
                 srcWs.Cells(rowIndex, colMap("Actual Interval")).Value, _
                 srcWs.Cells(rowIndex, colMap("Actual Interval")).Text, _
@@ -209,7 +215,8 @@ NextRow:
     RecalculateSITS skipTableFormats:=True
     RefreshSITSView
 
-    LogAction "SITS_IMPORTED", "", "Imported " & importedRows & " rows (skipped " & skippedRows & ") from " & filePath
+    LogAction "SITS_IMPORTED", "", "Imported " & importedRows & " rows (skipped " & _
+              skippedRows & " number-based, " & skippedGenRows & " Gen/) from " & filePath
     ResumeWorkbookProtection
     SetExcelState "enable"
 
@@ -218,6 +225,9 @@ NextRow:
     If showDialogs Then
         Dim msg As String
         msg = "Imported " & importedRows & " SITS task(s) for " & tailNumber & "."
+        If skippedGenRows > 0 Then
+            msg = msg & vbCrLf & skippedGenRows & " Gen/ task code row(s) were skipped."
+        End If
         If skippedRows > 0 Then
             msg = msg & vbCrLf & skippedRows & " number-based row(s) were skipped " & _
                   "(actual interval and life remaining were not both zero)."
@@ -470,6 +480,12 @@ Private Function ShouldSkipNumberBasedSITSImportRow(ByVal intervalCode As String
     ShouldSkipNumberBasedSITSImportRow = Not ( _
         IsImportedScalarZero(actualIntervalValue, actualIntervalText) And _
         IsImportedScalarZero(lifeRemainingValue, lifeRemainingText))
+End Function
+
+' GOLDesp generic / generated task codes (e.g. Gen/XXXX) are not imported.
+Private Function ShouldSkipGenPrefixedTaskCode(ByVal taskCode As String) As Boolean
+    ShouldSkipGenPrefixedTaskCode = _
+        (StrComp(Left$(Trim$(taskCode), 4), "Gen/", vbTextCompare) = 0)
 End Function
 
 Private Function IsImportedScalarZero(ByVal rawValue As Variant, ByVal displayText As String) As Boolean

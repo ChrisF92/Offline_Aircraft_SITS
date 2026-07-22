@@ -7,12 +7,13 @@ Option Explicit
 ' See vba/forms/WORK_PACKAGE_FORM_LAYOUT.txt for control names and layout.
 ' ========================================================================
 
-Private Sub UserForm_Activate()
-    CenterUserFormOnExcel Me
-End Sub
-
 Private Sub UserForm_Initialize()
     RefreshForm
+End Sub
+
+Private Sub UserForm_Activate()
+    CenterUserFormOnExcel Me
+    LayoutWorkPackageListHeaders
 End Sub
 
 Private Sub cboORN_Change()
@@ -114,6 +115,7 @@ Private Sub PopulateTaskList()
     lstTasks.Clear
     lstTasks.ColumnCount = 3
     lstTasks.ColumnWidths = "160 pt;280 pt;0 pt"
+    LayoutWorkPackageListHeaders
 
     orn = SelectedORN()
     If Len(orn) = 0 Then Exit Sub
@@ -125,6 +127,37 @@ Private Sub PopulateTaskList()
         lstTasks.List(lstTasks.ListCount - 1, 1) = CStr(rowData(1))
         lstTasks.List(lstTasks.ListCount - 1, 2) = CStr(rowData(2))
     Next i
+End Sub
+
+' ColumnHeads only works with RowSource. These lists use AddItem, so align
+' Labels above lstTasks to the visible ColumnWidths instead.
+Private Sub LayoutWorkPackageListHeaders()
+    Const GAP As Double = 2
+    Const HDR_HEIGHT As Double = 12
+    Dim leftPos As Double
+    Dim topPos As Double
+
+    leftPos = lstTasks.Left
+    topPos = lstTasks.Top - HDR_HEIGHT - GAP
+
+    With lblHdrTaskCode
+        .Caption = "Task Code"
+        .Left = leftPos
+        .Top = topPos
+        .Width = 160
+        .Height = HDR_HEIGHT
+        .Font.Bold = True
+    End With
+    leftPos = leftPos + 160
+
+    With lblHdrDescription
+        .Caption = "Description"
+        .Left = leftPos
+        .Top = topPos
+        .Width = 280
+        .Height = HDR_HEIGHT
+        .Font.Bold = True
+    End With
 End Sub
 
 Private Sub UpdateActionButtons()

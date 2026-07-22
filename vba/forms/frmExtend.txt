@@ -11,9 +11,11 @@ Private mSelectedIds As Object
 Private mIntervalCode As String
 Private mActualInterval As Variant
 Private mFormatType As String
+Private mCurrentExtension As Double
 
 Private Sub UserForm_Activate()
     CenterUserFormOnExcel Me
+    LayoutExtendListHeaders
 End Sub
 
 Private Sub UserForm_Initialize()
@@ -22,6 +24,9 @@ Private Sub UserForm_Initialize()
     Dim i As Long
     Dim rowData As Variant
     Dim metaOk As Boolean
+    Dim currentExt As Variant
+    Dim currentExtDisplay As String
+    Dim lifeRemainingDisplay As String
 
     Set mSelectedIds = GetPendingExtendSelection()
     If mSelectedIds Is Nothing Then
@@ -31,22 +36,31 @@ Private Sub UserForm_Initialize()
     End If
 
     metaOk = GetExtendSelectionMeta(mSelectedIds, mIntervalCode, mActualInterval, _
-                                    mFormatType, amountHint)
+                                    mFormatType, amountHint, currentExt, _
+                                    currentExtDisplay, lifeRemainingDisplay)
     If Not metaOk Then
         MsgBox "Could not read selected task details.", vbExclamation, APP_NAME
         Unload Me
         Exit Sub
     End If
 
+    If IsEmpty(currentExt) Or Not IsNumeric(currentExt) Then
+        mCurrentExtension = 0#
+    Else
+        mCurrentExtension = CDbl(currentExt)
+    End If
+
     lblInterval.Caption = "Interval: " & mIntervalCode & _
                           "   Actual Interval: " & _
-                          FormatExtensionAmountForDisplay(mActualInterval, mIntervalCode)
+                          FormatExtensionAmountForDisplay(mActualInterval, mIntervalCode) & _
+                          "   Life Remaining: " & lifeRemainingDisplay
     lblAmountHint.Caption = amountHint
     lblPctHint.Caption = "Warnings at >10% and >20% of Actual Interval (total including existing)."
 
     lstTasks.Clear
-    lstTasks.ColumnCount = 3
-    lstTasks.ColumnWidths = "140 pt;260 pt;80 pt"
+    lstTasks.ColumnCount = 4
+    lstTasks.ColumnWidths = "120 pt;200 pt;80 pt;80 pt"
+    LayoutExtendListHeaders
 
     Set rows = GetExtendSelectionDisplayRows(mSelectedIds)
     For i = 1 To rows.Count
@@ -54,16 +68,17 @@ Private Sub UserForm_Initialize()
         lstTasks.AddItem CStr(rowData(0))
         lstTasks.List(lstTasks.ListCount - 1, 1) = CStr(rowData(1))
         lstTasks.List(lstTasks.ListCount - 1, 2) = CStr(rowData(3))
+        lstTasks.List(lstTasks.ListCount - 1, 3) = CStr(rowData(4))
     Next i
 
     txtAmount.Value = ""
     txtSNOW.Value = ""
     txtAuthoriser.Value = ""
-    UpdateLivePercent
+    UpdateExtensionSummaryLabels
 End Sub
 
 Private Sub txtAmount_Change()
-    UpdateLivePercent
+    UpdateExtensionSummaryLabels
 End Sub
 
 Private Sub cmdApply_Click()
@@ -108,14 +123,18 @@ Private Function ControlText(ByVal ctl As Object) As String
     End If
 End Function
 
-Private Sub UpdateLivePercent()
+' Format: "Current Extension: 27:00 (1.26%)" / "Total Extension: 28:00 (2.25%)"
+Private Sub UpdateExtensionSummaryLabels()
     Dim incrementValue As Variant
-    Dim totalPct As Double
+    Dim totalExt As Double
     Dim amountText As String
+
+    lblCurrentExt.Caption = "Current Extension: " & _
+        FormatExtensionAmountWithPercent(mCurrentExtension, mIntervalCode, mActualInterval)
 
     amountText = ControlText(txtAmount)
     If Len(amountText) = 0 Then
-        lblLivePct.Caption = "Total extension %: —"
+        lblLivePct.Caption = "Total Extension: —"
         Exit Sub
     End If
 
@@ -126,17 +145,62 @@ Private Sub UpdateLivePercent()
     End If
 
     If IsEmpty(incrementValue) Or CDbl(incrementValue) <= 0# Then
-        lblLivePct.Caption = "Total extension %: (invalid amount)"
+        lblLivePct.Caption = "Total Extension: (invalid amount)"
         Exit Sub
     End If
 
-    If IsEmpty(mActualInterval) Or CDbl(mActualInterval) <= 0# Then
-        lblLivePct.Caption = "Total extension %: (no Actual Interval)"
-        Exit Sub
+    totalExt = mCurrentExtension + CDbl(incrementValue)
+    lblLivePct.Caption = "Total Extension: " & _
+        FormatExtensionAmountWithPercent(totalExt, mIntervalCode, mActualInterval)
+End Sub
+
+Private Function FormatExtensionAmountWithPercent(ByVal amountValue As Double, _
+                                                  ByVal intervalCode As String, _
+                                                  ByVal actualInterval As Variant) As String
+    Dim amountText As String
+    Dim pctText As String
+
+    amountText = FormatExtensionAmountForDisplay(amountValue, intervalCode)
+    If Len(amountText) = 0 Then amountText = "0"
+
+    If IsEmpty(actualInterval) Or Not IsNumeric(actualInterval) Or CDbl(actualInterval) <= 0# Then
+        FormatExtensionAmountWithPercent = amountText & " (—%)"
+        Exit Function
     End If
 
-    ' Preview uses this increment only; apply warnings use total including existing.
-    totalPct = CDbl(incrementValue) / CDbl(mActualInterval)
-    lblLivePct.Caption = "This increment ≈ " & Format$(totalPct * 100#, "0.0") & _
-                         "% of Actual Interval (warnings use total including existing)."
+    pctText = Format$((amountValue / CDbl(actualInterval)) * 100#, "0.00")
+    FormatExtensionAmountWithPercent = amountText & " (" & pctText & "%)"
+End Function
+
+' ColumnHeads only works with RowSource. These lists use AddItem, so align
+' Labels above lstTasks to the visible ColumnWidths instead.
+Private Sub LayoutExtendListHeaders()
+    Const GAP As Double = 2
+    Const HDR_HEIGHT As Double = 12
+    Dim leftPos As Double
+    Dim topPos As Double
+
+    leftPos = lstTasks.Left
+    topPos = lstTasks.Top - HDR_HEIGHT - GAP
+
+    PlaceListHeaderLabel lblHdrTaskCode, "Task Code", leftPos, topPos, 120, HDR_HEIGHT
+    leftPos = leftPos + 120
+    PlaceListHeaderLabel lblHdrDescription, "Description", leftPos, topPos, 200, HDR_HEIGHT
+    leftPos = leftPos + 200
+    PlaceListHeaderLabel lblHdrActualInterval, "Actual Interval", leftPos, topPos, 80, HDR_HEIGHT
+    leftPos = leftPos + 80
+    PlaceListHeaderLabel lblHdrLifeRemaining, "Life Remaining", leftPos, topPos, 80, HDR_HEIGHT
+End Sub
+
+Private Sub PlaceListHeaderLabel(ByVal lbl As Object, ByVal captionText As String, _
+                                 ByVal leftPos As Double, ByVal topPos As Double, _
+                                 ByVal widthPos As Double, ByVal heightPos As Double)
+    With lbl
+        .Caption = captionText
+        .Left = leftPos
+        .Top = topPos
+        .Width = widthPos
+        .Height = heightPos
+        .Font.Bold = True
+    End With
 End Sub

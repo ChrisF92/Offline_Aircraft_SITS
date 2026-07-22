@@ -1,4 +1,4 @@
-Offline Aircraft SITS — Build Instructions (v1.0.0)
+Offline Aircraft SITS — Build Instructions (v1.1.0)
 ==================================================
 
 You maintain the .xlsm workbook locally from the .txt VBA sources in this folder.
@@ -107,6 +107,7 @@ Work Packages:
 
 Extend / Defer / Horizon:
 1. Create frmExtend, frmDefer, frmHorizon from the matching LAYOUT + code files
+   (frmExtend needs lblCurrentExt — see EXTEND_FORM_LAYOUT.txt upgrade note)
 
 Progress (busy dialog):
 1. Insert > UserForm, Name = frmProgress
@@ -139,7 +140,8 @@ SITS view:
 1. Open the **SITS** sheet after setup or import.
 2. Click **Horizon** and set forecast hours / days / number to filter the view.
 3. Use **Refresh View** / **Create Work Package** / **Manage Work Packages** /
-   **Horizon** / **Extend** / **Defer** / **Add Task** / **Remove Task** buttons.
+   **Horizon** / **Extend** / **Defer** / **Add Task** / **Remove Task** /
+   **Manual Update** buttons.
 4. Use the **AutoFilter** dropdowns on the header row (row 7).
 5. Life remaining highlighting:
    - Amber when due soon (within warn thresholds: default 10:00 hours / 7 days)
@@ -150,16 +152,19 @@ Work packages:
 1. Tick Selector checkboxes on SITS → Create Work Package (ORN ####TAILDDMMYY).
 2. Manage Work Packages: Delete (undo), Remove task, or Close (reforecast).
 
-Extend / Defer:
-- Extend: scheduled tasks sharing Interval Type + Actual Interval; SNOW + authoriser.
+Extend / Defer / Manual Update:
+- Extend: scheduled tasks sharing Interval Type + Actual Interval + Life Remaining;
+  form shows Current/Total Extension as amount (percent); SNOW + authoriser.
 - Defer: exactly one PT2/PT3; HH due (h:mm) or date due (dd/mm/yyyy).
+- Manual Update: zero Actual Interval tasks only; step-by-step prompts for due
+  date or hours/number until due; clears the Needs Manual Update flag.
 
 Dashboard
 ---------
   Open work packages / manual-update / warning / overdue counts
   Pre-setup / master: **Setup Wizard** + **View Help** under User Actions
   After setup: Log Sortie, Work Packages, View Audit Log, View Help
-  Extend / Defer are on the **SITS sheet only**
+  Extend / Defer / Manual Update are on the **SITS sheet only**
   Import SITS and Refresh Usage live under Developer Tools
   Help sheet explains each part of the system (Rebuild Help Sheet)
 
@@ -204,16 +209,16 @@ What this release includes
 - Log Sortie, Usage matrix, SITS forecast view + Horizon filter
 - Work packages (create / manage / close / remove task)
 - Extend / Defer (modExtensions, frmExtend, frmDefer)
+- Manual Update for zero-interval tasks (modSITSEdit step-by-step prompts)
 - Add Task / Remove Task on the SITS sheet
 - Help sheet + Dashboard View Help
 - Reset to Master (Dev Tools) via modReset
 - Workbook protection with Suspend/Resume for table ops
 - Audit: EXTENSION_APPLIED / DEFERRAL_APPLIED / WP_TASK_REMOVED / SITS_HORIZON_SET /
-  RESET_MASTER / SITS_TASK_ADDED / SITS_TASKS_REMOVED
+  RESET_MASTER / SITS_TASK_ADDED / SITS_TASKS_REMOVED / SITS_MANUAL_UPDATE
 
 What is NOT included yet
 ------------------------
-- Protected-sheet manual life-remaining edit form for zero-interval tasks
 - Sortie correction / reversal UI (CorrectedFrom column reserved)
 
 SITS life remaining model
@@ -231,6 +236,7 @@ Import rules (strict — abort if any required column missing)
 SITS Long Forecast:
   Interval Type Code, Life Remaining, Task Code, Task Sequence,
   Task Description, Serial, Actual Interval, Extension, End Item Serial
+  Task codes beginning with Gen/ are skipped.
   Number-based interval types (excluding DD) are skipped on import unless both
   Actual Interval and Life Remaining are zero.
 
@@ -272,6 +278,21 @@ Note: modUtility still includes legacy sheet helpers (`ReuseSheetAs`, etc.) so a
 partial paste does not brick compile mid-upgrade. New code does not call them;
 delete the retired Phase 0 modules and ignore those helpers.
 
+Upgrade — v1.1.0 (from v1.0.0)
+------------------------------
+1. Paste updated modules: CONFIG, Setup_CreateDashboard, Setup_CreateHelpSheet,
+   modImportSITS, modExtensions, modSITS, modSITSEdit.
+2. Update frmExtend: add Label `lblCurrentExt`, set ColumnCount=4 on lstTasks,
+   add header Labels (`lblHdrTaskCode`, `lblHdrDescription`,
+   `lblHdrActualInterval`, `lblHdrLifeRemaining`), paste `vba/forms/frmExtend.txt`
+   (see EXTEND_FORM_LAYOUT.txt).
+   Update frmWorkPackage: add header Labels `lblHdrTaskCode` /
+   `lblHdrDescription`, paste `vba/forms/frmWorkPackage.txt`.
+3. Compile VBAProject.
+4. Alt+F8 → **EnableDevTools** → **Ensure Missing Buttons** (adds Manual Update
+   on SITS; fixes View Help placement after Setup Wizard).
+5. Optional: **Rebuild Help Sheet**.
+
 Pre-release notes (former 2.3.x)
 --------------------------------
 Historical Phase 0 / Setup_RunAll / Setup_CreateSheets / Setup_CreateTables steps
@@ -279,7 +300,7 @@ are obsolete. For older workbooks still on those builds:
 
 1. Bring VBA up to late pre-release behaviour first if needed (protection, Help sheet,
    Extend/Defer, Usage matrix, Dev Tools), using a known-good Master as the base.
-2. Then apply the v1.0.0 steps above.
+2. Then apply the v1.0.0 steps above, then v1.1.0.
 3. Named ranges: **Rebuild Dashboard** now refreshes them automatically
    (or run Setup_CreateNamedRanges).
 4. Help sheet: Dev Tools → Rebuild Help Sheet.
@@ -346,10 +367,13 @@ ORN rejected on create
   -> Must be ####TAILDDMMYY with this aircraft's tail and a real DDMMYY date.
 
 Extend rejected — mixed intervals
-  -> All ticked tasks must share Interval Type Code and Actual Interval.
+  -> All ticked tasks must share Interval Type Code, Actual Interval, and Life Remaining.
 
 Extend rejected — PT2/PT3
   -> Use Defer for deferred faults.
+
+Manual Update rejected — non-zero interval
+  -> Only Actual Interval = 0 tasks can be updated via Manual Update.
 
 Defer rejected — more than one task
   -> Defer exactly one PT2/PT3 at a time.
@@ -360,4 +384,4 @@ Compile error: Sub or Function not defined (Setup_RunAll / ReuseSheetAs / AddSet
      Use Reset to Master for data wipe. Ensure Missing Buttons removes the Phase 0
      Dashboard button.
 
-Build marker: v1.0.0-first-release
+Build marker: v1.1.0-manual-update-extend-import
