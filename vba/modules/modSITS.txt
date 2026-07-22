@@ -420,7 +420,9 @@ End Sub
 Public Sub RecalculateSITS(Optional ByVal skipTableFormats As Boolean = False)
     Dim wsData As Worksheet
     Dim tbl As ListObject
-    Dim row As ListRow
+    Dim data As Variant
+    Dim rowCount As Long
+    Dim rowIndex As Long
     Dim intervalCode As String
     Dim taskCode As String
     Dim formatType As String
@@ -429,7 +431,6 @@ Public Sub RecalculateSITS(Optional ByVal skipTableFormats As Boolean = False)
     Dim usageDelta As Double
     Dim baselineHours As Variant
     Dim baselineNumber As Variant
-    Dim baselineDue As Variant
     Dim newLifeHours As Double
     Dim newLifeNumber As Double
     Dim colInterval As Long
@@ -442,8 +443,11 @@ Public Sub RecalculateSITS(Optional ByVal skipTableFormats As Boolean = False)
     Dim colBaseHours As Long
     Dim colBaseNumber As Long
     Dim colBaseDue As Long
+    Dim colProjected As Long
     Dim usageByInterval As Object
     Dim snapshotByInterval As Object
+    Dim snapshotDate As Variant
+    Dim colMap As Object
 
     Set wsData = GetWorksheet(SHEET_DATA_SITS, showError:=False)
     If wsData Is Nothing Then Exit Sub
@@ -454,90 +458,176 @@ Public Sub RecalculateSITS(Optional ByVal skipTableFormats As Boolean = False)
     EnsureSITSBaselineColumns tbl
     EnsureWorkPackageSITSColumns tbl
 
-    colInterval = GetTableColumnIndex(tbl, HDR_INTERVAL_TYPE_CODE)
-    colTaskCode = GetTableColumnIndex(tbl, HDR_TASK_CODE)
-    colCurHours = GetTableColumnIndex(tbl, HDR_CURRENT_USAGE_HOURS)
-    colCurNumber = GetTableColumnIndex(tbl, HDR_CURRENT_USAGE_NUMBER)
-    colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
-    colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
-    colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
-    colBaseHours = GetTableColumnIndex(tbl, HDR_BASELINE_LR_HOURS)
-    colBaseNumber = GetTableColumnIndex(tbl, HDR_BASELINE_LR_NUMBER)
-    colBaseDue = GetTableColumnIndex(tbl, HDR_BASELINE_DAYS_DUE)
+    Set colMap = BuildTableColumnIndexMap(tbl)
+    colInterval = LookupColumnIndex(colMap, HDR_INTERVAL_TYPE_CODE)
+    colTaskCode = LookupColumnIndex(colMap, HDR_TASK_CODE)
+    colCurHours = LookupColumnIndex(colMap, HDR_CURRENT_USAGE_HOURS)
+    colCurNumber = LookupColumnIndex(colMap, HDR_CURRENT_USAGE_NUMBER)
+    colLRHours = LookupColumnIndex(colMap, HDR_HOURS_LIFE_REMAINING)
+    colLRNumber = LookupColumnIndex(colMap, HDR_NUMBER_LIFE_REMAINING)
+    colDaysDue = LookupColumnIndex(colMap, HDR_DAYS_WHEN_DUE)
+    colBaseHours = LookupColumnIndex(colMap, HDR_BASELINE_LR_HOURS)
+    colBaseNumber = LookupColumnIndex(colMap, HDR_BASELINE_LR_NUMBER)
+    colBaseDue = LookupColumnIndex(colMap, HDR_BASELINE_DAYS_DUE)
+    colProjected = LookupColumnIndex(colMap, HDR_PROJECTED_DUE_DATE)
 
     If tbl.DataBodyRange Is Nothing Then Exit Sub
+    If colInterval = 0 Or colTaskCode = 0 Then Exit Sub
+
+    data = NormalizeTableDataArray(tbl.DataBodyRange.Value, tbl.ListRows.Count, tbl.ListColumns.Count)
+    If Not IsArray(data) Then Exit Sub
+    rowCount = UBound(data, 1)
 
     SetExcelState "disable"
     Set usageByInterval = BuildUsageCurrentLookup()
     Set snapshotByInterval = BuildUsageSnapshotLookup()
+    snapshotDate = GetConfigValue(CFG_SITS_SNAPSHOT_DATE, "")
 
-    For Each row In tbl.ListRows
-        intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, colInterval).Value)))
-        taskCode = Trim$(CStr(row.Range.Cells(1, colTaskCode).Value))
+    For rowIndex = 1 To rowCount
+        intervalCode = UCase$(Trim$(CStr(data(rowIndex, colInterval))))
+        taskCode = Trim$(CStr(data(rowIndex, colTaskCode)))
 
         If intervalCode = TYPE_DD Then
-            ApplyDDTaskRecalc row, tbl, colCurHours, colCurNumber, colLRHours, colLRNumber, _
-                colDaysDue, colBaseDue
+            ApplyDDTaskRecalcToArray data, rowIndex, colCurHours, colCurNumber, _
+                colLRHours, colLRNumber, colDaysDue, colBaseDue, colProjected, snapshotDate
         ElseIf IsHourUsageInterval(intervalCode) Or _
                (IsHourBasedIntervalType(intervalCode) And Not IsSecondsCountInterval(intervalCode)) Then
             formatType = FORMAT_TYPE_HOURS
             currentUsage = LookupDictUsage(usageByInterval, intervalCode, formatType)
             snapshotUsage = LookupDictSnapshot(snapshotByInterval, intervalCode)
 
-            WriteCurrentUsageHours row.Range.Cells(1, colCurHours), currentUsage, formatType
-            row.Range.Cells(1, colCurNumber).ClearContents
+            If colCurHours > 0 Then
+                If IsMissingUsageValue(currentUsage) Then
+                    data(rowIndex, colCurHours) = Empty
+                Else
+                    data(rowIndex, colCurHours) = CoerceUsageStorageValue( _
+                        currentUsage, formatType)
+                End If
+            End If
+            If colCurNumber > 0 Then data(rowIndex, colCurNumber) = Empty
 
-            baselineHours = row.Range.Cells(1, colBaseHours).Value
+            baselineHours = Empty
+            If colBaseHours > 0 Then baselineHours = data(rowIndex, colBaseHours)
             If IsEmptyBaselineValue(baselineHours) Then
-                baselineHours = row.Range.Cells(1, colLRHours).Value
-                If Not IsEmptyBaselineValue(baselineHours) Then
-                    WriteFormattedUsageValue row.Range.Cells(1, colBaseHours), baselineHours, formatType
+                If colLRHours > 0 Then baselineHours = data(rowIndex, colLRHours)
+                If Not IsEmptyBaselineValue(baselineHours) And colBaseHours > 0 Then
+                    data(rowIndex, colBaseHours) = CoerceUsageStorageValue( _
+                        baselineHours, formatType)
                 End If
             End If
 
             If Not IsEmptyBaselineValue(baselineHours) And Not IsMissingUsageValue(currentUsage) And _
-               Not IsMissingUsageValue(snapshotUsage) Then
+               Not IsMissingUsageValue(snapshotUsage) And colLRHours > 0 Then
                 usageDelta = UsageValueAsDayFraction(currentUsage, formatType) - _
                              UsageValueAsDayFraction(snapshotUsage, formatType)
                 newLifeHours = UsageValueAsDayFraction(baselineHours, formatType) - usageDelta
-                ' Keep negatives so overdue tasks can be highlighted red.
-                WriteFormattedUsageValue row.Range.Cells(1, colLRHours), newLifeHours, formatType
+                data(rowIndex, colLRHours) = newLifeHours
             End If
 
-            row.Range.Cells(1, colDaysDue).ClearContents
+            If colDaysDue > 0 Then data(rowIndex, colDaysDue) = Empty
         Else
             formatType = ResolveUsageFormatType(intervalCode, taskCode)
             currentUsage = LookupDictUsage(usageByInterval, intervalCode, formatType)
             snapshotUsage = LookupDictSnapshot(snapshotByInterval, intervalCode)
 
-            row.Range.Cells(1, colCurHours).ClearContents
-            WriteCurrentUsageNumber row.Range.Cells(1, colCurNumber), currentUsage, formatType
+            If colCurHours > 0 Then data(rowIndex, colCurHours) = Empty
+            If colCurNumber > 0 Then
+                If IsMissingUsageValue(currentUsage) Then
+                    data(rowIndex, colCurNumber) = "---"
+                ElseIf StrComp(formatType, FORMAT_TYPE_NUMBER, vbTextCompare) = 0 Then
+                    data(rowIndex, colCurNumber) = CDbl(NzSITSNumber(currentUsage))
+                Else
+                    data(rowIndex, colCurNumber) = CoerceUsageStorageValue( _
+                        currentUsage, formatType)
+                End If
+            End If
 
-            baselineNumber = row.Range.Cells(1, colBaseNumber).Value
+            baselineNumber = Empty
+            If colBaseNumber > 0 Then baselineNumber = data(rowIndex, colBaseNumber)
             If IsEmptyBaselineValue(baselineNumber) Then
-                baselineNumber = row.Range.Cells(1, colLRNumber).Value
-                If Not IsEmptyBaselineValue(baselineNumber) Then
-                    row.Range.Cells(1, colBaseNumber).Value = CDbl(baselineNumber)
-                    row.Range.Cells(1, colBaseNumber).NumberFormat = FORMAT_DECIMAL
+                If colLRNumber > 0 Then baselineNumber = data(rowIndex, colLRNumber)
+                If Not IsEmptyBaselineValue(baselineNumber) And colBaseNumber > 0 Then
+                    data(rowIndex, colBaseNumber) = CDbl(baselineNumber)
                 End If
             End If
 
             If Not IsEmptyBaselineValue(baselineNumber) And Not IsMissingUsageValue(currentUsage) And _
-               Not IsMissingUsageValue(snapshotUsage) Then
+               Not IsMissingUsageValue(snapshotUsage) And colLRNumber > 0 Then
                 usageDelta = CDbl(NzSITSNumber(currentUsage)) - CDbl(NzSITSNumber(snapshotUsage))
                 newLifeNumber = CDbl(NzSITSNumber(baselineNumber)) - usageDelta
-                ' Keep negatives so overdue tasks can be highlighted red.
-                row.Range.Cells(1, colLRNumber).Value = newLifeNumber
-                row.Range.Cells(1, colLRNumber).NumberFormat = FORMAT_DECIMAL
+                data(rowIndex, colLRNumber) = newLifeNumber
             End If
 
-            row.Range.Cells(1, colDaysDue).ClearContents
+            If colDaysDue > 0 Then data(rowIndex, colDaysDue) = Empty
         End If
-    Next row
+    Next rowIndex
+
+    tbl.DataBodyRange.Value = data
+    ApplyRecalcColumnNumberFormats tbl, colCurHours, colCurNumber, colLRHours, _
+        colLRNumber, colDaysDue, colBaseHours, colBaseNumber, colBaseDue
 
     If Not skipTableFormats Then ApplySITSTableFormats
     SetExcelState "enable"
 End Sub
+
+' Column-wide formats after bulk value write — cheap vs per-cell NumberFormat.
+Private Sub ApplyRecalcColumnNumberFormats(ByVal tbl As ListObject, _
+                                           ByVal colCurHours As Long, _
+                                           ByVal colCurNumber As Long, _
+                                           ByVal colLRHours As Long, _
+                                           ByVal colLRNumber As Long, _
+                                           ByVal colDaysDue As Long, _
+                                           ByVal colBaseHours As Long, _
+                                           ByVal colBaseNumber As Long, _
+                                           ByVal colBaseDue As Long)
+    On Error Resume Next
+    If colCurHours > 0 Then tbl.ListColumns(colCurHours).DataBodyRange.NumberFormat = FORMAT_TIME_HOURS
+    If colCurNumber > 0 Then tbl.ListColumns(colCurNumber).DataBodyRange.NumberFormat = FORMAT_DECIMAL
+    If colLRHours > 0 Then tbl.ListColumns(colLRHours).DataBodyRange.NumberFormat = FORMAT_TIME_HOURS
+    If colLRNumber > 0 Then tbl.ListColumns(colLRNumber).DataBodyRange.NumberFormat = FORMAT_DECIMAL
+    If colDaysDue > 0 Then tbl.ListColumns(colDaysDue).DataBodyRange.NumberFormat = FORMAT_DECIMAL
+    If colBaseHours > 0 Then tbl.ListColumns(colBaseHours).DataBodyRange.NumberFormat = FORMAT_TIME_HOURS
+    If colBaseNumber > 0 Then tbl.ListColumns(colBaseNumber).DataBodyRange.NumberFormat = FORMAT_DECIMAL
+    ' Absolute DD due dates and day-counts may share this column — General displays both.
+    If colBaseDue > 0 Then tbl.ListColumns(colBaseDue).DataBodyRange.NumberFormat = FORMAT_GENERAL
+    On Error GoTo 0
+End Sub
+
+' Excel returns a 1D array for a single-row DataBodyRange — normalize to 2D.
+Private Function NormalizeTableDataArray(ByVal raw As Variant, _
+                                         ByVal rowCount As Long, _
+                                         ByVal colCount As Long) As Variant
+    Dim data As Variant
+    Dim c As Long
+
+    If rowCount < 1 Or colCount < 1 Then Exit Function
+
+    If Not IsArray(raw) Then
+        ReDim data(1 To 1, 1 To 1)
+        data(1, 1) = raw
+        NormalizeTableDataArray = data
+        Exit Function
+    End If
+
+    If rowCount = 1 Then
+        On Error Resume Next
+        c = UBound(raw, 2)
+        On Error GoTo 0
+        If c >= 1 Then
+            NormalizeTableDataArray = raw
+            Exit Function
+        End If
+
+        ReDim data(1 To 1, 1 To colCount)
+        For c = 1 To colCount
+            data(1, c) = raw(c)
+        Next c
+        NormalizeTableDataArray = data
+        Exit Function
+    End If
+
+    NormalizeTableDataArray = raw
+End Function
 
 Public Sub RefreshSITSView()
     Dim wsView As Worksheet
@@ -900,6 +990,76 @@ Public Sub CaptureTaskBaselineFromImport(ByVal tbl As ListObject, ByVal newRow A
             newRow.Range.Cells(1, colBaseNumber).Value = newRow.Range.Cells(1, colLRNumber).Value
             newRow.Range.Cells(1, colBaseNumber).NumberFormat = newRow.Range.Cells(1, colLRNumber).NumberFormat
         End If
+    End If
+End Sub
+
+Private Sub ApplyDDTaskRecalcToArray(ByRef data As Variant, _
+                                     ByVal rowIndex As Long, _
+                                     ByVal colCurHours As Long, _
+                                     ByVal colCurNumber As Long, _
+                                     ByVal colLRHours As Long, _
+                                     ByVal colLRNumber As Long, _
+                                     ByVal colDaysDue As Long, _
+                                     ByVal colBaseDue As Long, _
+                                     ByVal colProjected As Long, _
+                                     ByVal snapshotDate As Variant)
+    Dim baselineDue As Variant
+    Dim projectedDue As Variant
+    Dim elapsedDays As Long
+    Dim daysRemaining As Double
+    Dim absoluteDue As Date
+    Dim haveAbsoluteDue As Boolean
+
+    If colCurHours > 0 Then data(rowIndex, colCurHours) = Empty
+    If colCurNumber > 0 Then data(rowIndex, colCurNumber) = Empty
+    If colLRHours > 0 Then data(rowIndex, colLRHours) = Empty
+    If colLRNumber > 0 Then data(rowIndex, colLRNumber) = Empty
+
+    haveAbsoluteDue = False
+    If colProjected > 0 Then
+        projectedDue = data(rowIndex, colProjected)
+        If LooksLikeAbsoluteDueDate(projectedDue) Then
+            absoluteDue = CDate(projectedDue)
+            haveAbsoluteDue = True
+        End If
+    End If
+
+    baselineDue = Empty
+    If colBaseDue > 0 Then baselineDue = data(rowIndex, colBaseDue)
+    If Not haveAbsoluteDue Then
+        If LooksLikeAbsoluteDueDate(baselineDue) Then
+            absoluteDue = CDate(baselineDue)
+            haveAbsoluteDue = True
+        ElseIf IsEmptyBaselineValue(baselineDue) Then
+            If colDaysDue > 0 Then baselineDue = data(rowIndex, colDaysDue)
+            If LooksLikeAbsoluteDueDate(baselineDue) Then
+                absoluteDue = CDate(baselineDue)
+                haveAbsoluteDue = True
+            End If
+        End If
+    End If
+
+    If haveAbsoluteDue Then
+        If colBaseDue > 0 Then data(rowIndex, colBaseDue) = absoluteDue
+        daysRemaining = CDbl(DateDiff("d", Date, absoluteDue))
+        If colDaysDue > 0 Then data(rowIndex, colDaysDue) = daysRemaining
+        Exit Sub
+    End If
+
+    If IsEmptyBaselineValue(baselineDue) Then
+        If colDaysDue > 0 Then baselineDue = data(rowIndex, colDaysDue)
+        If IsNumeric(baselineDue) And Len(Trim$(CStr(baselineDue))) > 0 And colBaseDue > 0 Then
+            data(rowIndex, colBaseDue) = CDbl(baselineDue)
+        End If
+    End If
+
+    If IsNumeric(baselineDue) And Len(Trim$(CStr(baselineDue))) > 0 Then
+        daysRemaining = CDbl(baselineDue)
+        If IsDate(snapshotDate) Then
+            elapsedDays = DateDiff("d", CDate(snapshotDate), Date)
+            daysRemaining = daysRemaining - CDbl(elapsedDays)
+        End If
+        If colDaysDue > 0 Then data(rowIndex, colDaysDue) = daysRemaining
     End If
 End Sub
 
