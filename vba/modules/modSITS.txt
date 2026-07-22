@@ -247,19 +247,43 @@ End Function
 
 Public Sub RefreshSITS(Optional ByVal skipRecalculate As Boolean = False, _
                        Optional ByVal skipTableFormats As Boolean = False)
-    If Not ValidateWorkbookStructure(showDialogs:=False) Then Exit Sub
+    Dim ownsBusy As Boolean
+
+    On Error GoTo CleanFail
+    ownsBusy = Not BusyUIActive()
+    If ownsBusy Then BeginBusyUI "Refreshing SITS…"
+    If Not ValidateWorkbookStructure(showDialogs:=False) Then GoTo CleanExit
     SaveForecastSettingsFromView
     EnsureForecastConfigDefaults
-    If Not skipRecalculate Then RecalculateSITS skipTableFormats:=skipTableFormats
+    If Not skipRecalculate Then
+        UpdateBusyUI "Recalculating life remaining…"
+        RecalculateSITS skipTableFormats:=skipTableFormats
+    End If
+    UpdateBusyUI "Refreshing SITS view…"
     RefreshSITSView
+CleanExit:
+    If ownsBusy Then EndBusyUI
+    Exit Sub
+CleanFail:
+    If ownsBusy Then EndBusyUI
 End Sub
 
 ' Lightweight refresh after WP create/delete — no life-remaining maths needed.
 Public Sub RefreshSITSViewOnly()
-    If Not ValidateWorkbookStructure(showDialogs:=False) Then Exit Sub
+    Dim ownsBusy As Boolean
+
+    On Error GoTo CleanFail
+    ownsBusy = Not BusyUIActive()
+    If ownsBusy Then BeginBusyUI "Refreshing SITS view…"
+    If Not ValidateWorkbookStructure(showDialogs:=False) Then GoTo CleanExit
     SaveForecastSettingsFromView
     EnsureForecastConfigDefaults
     RefreshSITSView
+CleanExit:
+    If ownsBusy Then EndBusyUI
+    Exit Sub
+CleanFail:
+    If ownsBusy Then EndBusyUI
 End Sub
 
 ' Mark visible SITS rows as IN WORK (remove checkbox, show text) without rebuild.
@@ -682,7 +706,7 @@ Public Sub RefreshSITSView()
     colTaskCode = LookupColumnIndex(colMap, HDR_TASK_CODE)
 
     SetExcelState "disable"
-    Application.StatusBar = "Refreshing SITS view…"
+    UpdateBusyUI "Refreshing SITS view…"
     SuspendWorkbookProtection
     suspended = True
 
@@ -739,6 +763,7 @@ Public Sub RefreshSITSView()
         sortCount = 0
         ReDim sortEntries(1 To dataRowCount)
 
+        UpdateBusyUI "Filtering SITS tasks…"
         For dataRowIndex = 1 To dataRowCount
             intervalCode = UCase$(Trim$(CStr(data(dataRowIndex, colIntervalCached))))
 
@@ -793,7 +818,7 @@ NextCollectRow:
                 arrayCol = arrayCol + 1
             Next columnName
 
-            Application.StatusBar = "Building SITS view data…"
+            UpdateBusyUI "Building SITS view data…"
             For entryIndex = 1 To sortCount
                 dataRowIndex = sortEntries(entryIndex).ListRowIndex
                 intervalCode = sortEntries(entryIndex).IntervalCode
@@ -838,7 +863,7 @@ NextCollectRow:
                 Next entryIndex
             End If
 
-            Application.StatusBar = "Applying SITS warning colours…"
+            UpdateBusyUI "Applying SITS warning colours…"
             For entryIndex = 1 To sortCount
                 dataRowIndex = sortEntries(entryIndex).ListRowIndex
                 isManual = False
@@ -873,7 +898,7 @@ AfterDataBody:
     ApplySITSViewColumnPresentation wsView, lastDataRow, viewColumns.Count
 
     If lastDataRow >= SITS_VIEW_DATA_START_ROW Then
-        Application.StatusBar = "Syncing SITS selectors…"
+        UpdateBusyUI "Syncing SITS selectors…"
         SyncSITSViewSelectorCheckboxes wsView, SITS_VIEW_DATA_START_ROW, lastDataRow
     Else
         ClearSITSViewSelectorCheckboxes wsView
@@ -887,12 +912,10 @@ AfterDataBody:
     If ActiveSheet Is wsView Then ApplySITSViewFreezePanes wsView
     ResumeWorkbookProtection
     suspended = False
-    Application.StatusBar = False
     SetExcelState "enable"
     Exit Sub
 
 CleanFail:
-    Application.StatusBar = False
     If suspended Then ResumeWorkbookProtection
     SetExcelState "force-enable"
 End Sub
@@ -2158,8 +2181,11 @@ Private Sub SortLongCollectionDescending(ByRef values As Collection)
 End Sub
 
 Private Sub ApplySITSViewFreezePanes(ByVal ws As Worksheet)
+    ' Caller only invokes when ActiveSheet is already the SITS view — do not
+    ' Activate another sheet (that contributed to focus jumps mid-refresh).
+    If ws Is Nothing Then Exit Sub
+    If Not ActiveSheet Is ws Then Exit Sub
     On Error Resume Next
-    ws.Activate
     ws.Range("A" & CStr(SITS_VIEW_DATA_START_ROW)).Select
     ActiveWindow.FreezePanes = True
     On Error GoTo 0

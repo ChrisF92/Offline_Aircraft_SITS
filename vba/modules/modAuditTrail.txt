@@ -25,6 +25,7 @@ Public Sub LogAction(ByVal actionType As String, _
     Dim savedWidths(1 To AUDIT_COL_COUNT) As Double
     Dim col As Long
     Dim widthsCaptured As Boolean
+    Dim prevSheet As Object
 
     Set wsAudit = GetWorksheet(SHEET_AUDIT, showError:=False)
     If wsAudit Is Nothing Then Exit Sub
@@ -34,6 +35,11 @@ Public Sub LogAction(ByVal actionType As String, _
 
     userName = Environ$("USERNAME")
     If Len(userName) = 0 Then userName = "Unknown"
+
+    ' ListRows.Add can activate the Audit sheet — remember where the user was.
+    On Error Resume Next
+    Set prevSheet = Application.ActiveSheet
+    On Error GoTo 0
 
     ' Capture widths before ListRows.Add (Excel may auto-expand columns).
     widthsCaptured = False
@@ -66,10 +72,25 @@ Public Sub LogAction(ByVal actionType As String, _
         On Error GoTo 0
     End If
     ResumeWorkbookProtection
+    RestoreSheetAfterAudit prevSheet
     Exit Sub
 
 LogFail:
     ResumeWorkbookProtection
+    RestoreSheetAfterAudit prevSheet
+End Sub
+
+Private Sub RestoreSheetAfterAudit(ByVal prevSheet As Object)
+    Dim ws As Worksheet
+
+    On Error Resume Next
+    If prevSheet Is Nothing Then Exit Sub
+    If TypeName(prevSheet) <> "Worksheet" Then Exit Sub
+    Set ws = prevSheet
+    If ws.Parent Is ThisWorkbook Then
+        If ws.Visible = xlSheetVisible Then ws.Activate
+    End If
+    On Error GoTo 0
 End Sub
 
 Public Sub LogSetupComplete(ByVal tailNumber As String, _

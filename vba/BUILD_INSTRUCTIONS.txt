@@ -108,6 +108,12 @@ Work Packages:
 Extend / Defer / Horizon:
 1. Create frmExtend, frmDefer, frmHorizon from the matching LAYOUT + code files
 
+Progress (busy dialog):
+1. Insert > UserForm, Name = frmProgress
+2. Add controls per vba/forms/PROGRESS_FORM_LAYOUT.txt (ShowModal = False)
+3. Paste vba/forms/frmProgress.txt into the form code module
+   Used by Refresh View / Log Sortie to show status without ghosting Excel.
+
 Aircraft setup (Setup Wizard)
 -----------------------------
 1. Open the master template.

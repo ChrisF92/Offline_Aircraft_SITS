@@ -15,6 +15,12 @@ Private mSavedStatusBar As Variant
 ' rows/columns, ClearTableData, create tables) while a sheet is protected.
 Private mProtectionSuspendDepth As Long
 
+' Busy UI: modeless progress form + restore ActiveSheet when work finishes.
+' ListRows.Add on Audit (and similar) can steal focus mid-operation.
+Private mBusyDepth As Long
+Private mSavedActiveSheet As Object
+Private mProgressLoaded As Boolean
+
 ' Center a UserForm over the Excel window so it opens on the same monitor.
 ' Call from UserForm_Activate (StartUpPosition/CenterOwner is unreliable with
 ' multiple screens). No WinAPI — uses Application.Left/Top/Width/Height.
@@ -23,6 +29,86 @@ Public Sub CenterUserFormOnExcel(ByVal frm As Object)
     frm.StartUpPosition = 0
     frm.Left = Application.Left + ((Application.Width - frm.Width) / 2#)
     frm.Top = Application.Top + ((Application.Height - frm.Height) / 2#)
+End Sub
+
+' Start a busy session: remember the active sheet and show a modeless progress
+' form. Nested calls only update the message. Pair with EndBusyUI.
+Public Sub BeginBusyUI(Optional ByVal message As String = "Working…")
+    If mBusyDepth = 0 Then
+        On Error Resume Next
+        Set mSavedActiveSheet = Application.ActiveSheet
+        On Error GoTo 0
+        ShowBusyProgressForm message
+    Else
+        UpdateBusyUI message
+    End If
+    mBusyDepth = mBusyDepth + 1
+End Sub
+
+' Update the progress label. Cheap — call only at stage boundaries.
+' DoEvents lets the modeless form paint and stops Windows ghosting Excel.
+Public Sub UpdateBusyUI(ByVal message As String)
+    On Error Resume Next
+    Application.StatusBar = message
+    On Error GoTo 0
+
+    If mBusyDepth = 0 Then Exit Sub
+    ShowBusyProgressForm message
+End Sub
+
+' End a busy session. When nesting returns to zero, hide the progress form
+' and restore the sheet the user was on when BeginBusyUI was first called.
+Public Sub EndBusyUI()
+    If mBusyDepth > 0 Then mBusyDepth = mBusyDepth - 1
+    If mBusyDepth > 0 Then Exit Sub
+
+    HideBusyProgressForm
+    RestoreSavedActiveSheet
+    Set mSavedActiveSheet = Nothing
+End Sub
+
+Public Function BusyUIActive() As Boolean
+    BusyUIActive = (mBusyDepth > 0)
+End Function
+
+Private Sub ShowBusyProgressForm(ByVal message As String)
+    On Error GoTo FailShow
+
+    Load frmProgress
+    mProgressLoaded = True
+    frmProgress.SetMessage message
+    If Not frmProgress.Visible Then
+        CenterUserFormOnExcel frmProgress
+        frmProgress.Show vbModeless
+    End If
+    DoEvents
+    Exit Sub
+
+FailShow:
+    ' Form missing from workbook — StatusBar still carries the message.
+    mProgressLoaded = False
+End Sub
+
+Private Sub HideBusyProgressForm()
+    On Error Resume Next
+    If mProgressLoaded Then
+        Unload frmProgress
+    End If
+    mProgressLoaded = False
+    On Error GoTo 0
+End Sub
+
+Private Sub RestoreSavedActiveSheet()
+    Dim ws As Worksheet
+
+    On Error Resume Next
+    If mSavedActiveSheet Is Nothing Then Exit Sub
+    If TypeName(mSavedActiveSheet) <> "Worksheet" Then Exit Sub
+    Set ws = mSavedActiveSheet
+    If ws.Parent Is ThisWorkbook Then
+        If ws.Visible = xlSheetVisible Then ws.Activate
+    End If
+    On Error GoTo 0
 End Sub
 
 Public Sub SetExcelState(ByVal action As String)

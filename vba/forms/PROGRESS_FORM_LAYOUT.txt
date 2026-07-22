@@ -1,0 +1,28 @@
+Progress UserForm — Control Layout (frmProgress)
+================================================
+
+Create a UserForm in the VBA IDE named exactly: frmProgress
+Set the form Caption to: Please wait
+Suggested form size: Width ~ 360, Height ~ 110
+ShowModal property: False (code also shows vbModeless)
+
+Purpose
+-------
+Modeless “busy” dialog during Refresh View / Log Sortie and similar long
+operations. Keeps Excel pumping messages (via DoEvents on updates) so the
+main window does not ghost as Not Responding, and shows a short status line.
+
+Static controls (Name property must match exactly)
+--------------------------------------------------
+Control Name   Type     Caption / Notes
+-------------  -------  ------------------------------------------
+lblMessage     Label    Status text (e.g. Refreshing SITS view…)
+
+Suggested positions
+-------------------
+Form Width 360, Height 110
+  lblMessage   Left=18  Top=28  Width=320  Height=40
+               Font: size 10, WordWrap = True
+
+No buttons — the form is closed by VBA when the operation finishes.
+Paste vba/forms/frmProgress.txt into the form code module.

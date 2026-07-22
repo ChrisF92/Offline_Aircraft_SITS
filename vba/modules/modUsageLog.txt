@@ -524,6 +524,7 @@ Public Function CommitSortie(ByVal sortieDate As Date, _
     End If
 
     On Error GoTo ErrorHandler
+    BeginBusyUI "Logging sortie…"
     SetExcelState "disable"
     SuspendWorkbookProtection
 
@@ -557,8 +558,10 @@ NextItem:
 
     ' Touched current/log rows are formatted as they are written — skip the full
     ' FormatAllUsageDataTables walk (grows with every sortie).
+    UpdateBusyUI "Updating usage matrix…"
     RefreshUsageView
     ' Life remaining must recalc + view rebuild; skip column-wide SITS reformat.
+    UpdateBusyUI "Refreshing SITS…"
     RefreshSITS skipTableFormats:=True
 
     LogAction "SORTIE_LOGGED", "", _
@@ -567,6 +570,7 @@ NextItem:
               "; increments=" & loggedCount
     ResumeWorkbookProtection
     SetExcelState "enable"
+    EndBusyUI
 
     CommitSortie = True
 
@@ -579,6 +583,7 @@ NextItem:
 ValidationFailed:
     ResumeWorkbookProtection
     SetExcelState "enable"
+    EndBusyUI
     If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
     Exit Function
 
@@ -589,6 +594,7 @@ ErrorHandler:
     errDesc = Err.Description
     ForceResumeWorkbookProtection
     SetExcelState "enable"
+    EndBusyUI
     LogError PROC_NAME, errNum, errDesc
     If showDialogs Then
         MsgBox "Sortie log error: " & errNum & " - " & errDesc, vbCritical, APP_NAME

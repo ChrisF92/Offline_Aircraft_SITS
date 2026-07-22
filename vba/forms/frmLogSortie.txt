@@ -61,9 +61,13 @@ Private Sub cmdSubmit_Click()
         Exit Sub
     End If
 
+    ' Hide before long CommitSortie so the modeless progress form can show.
+    Me.Hide
     If CommitSortie(sortieDate, humsOpNumber, pending, True) Then
         Set mRows = Nothing
         Unload Me
+    Else
+        Me.Show
     End If
 End Sub
 

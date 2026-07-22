@@ -1,0 +1,19 @@
+Option Explicit
+
+' ========================================================================
+' PROGRESS USERFORM — Offline Aircraft SITS v2
+' ========================================================================
+' Modeless busy dialog. Create the UserForm manually in the VBA IDE and
+' paste this code. See vba/forms/PROGRESS_FORM_LAYOUT.txt for layout.
+' Shown/hidden by BeginBusyUI / UpdateBusyUI / EndBusyUI in modUtility.
+' ========================================================================
+
+Private Sub UserForm_Activate()
+    CenterUserFormOnExcel Me
+End Sub
+
+Public Sub SetMessage(ByVal message As String)
+    On Error Resume Next
+    lblMessage.Caption = message
+    On Error GoTo 0
+End Sub
