@@ -53,7 +53,6 @@ Private Sub UserForm_Initialize()
                           "   Actual Interval: " & _
                           FormatExtensionAmountForDisplay(mActualInterval, mIntervalCode) & _
                           "   Life Remaining: " & lifeRemainingDisplay
-    lblCurrentExt.Caption = "Current extension: " & currentExtDisplay
     lblAmountHint.Caption = amountHint
     lblPctHint.Caption = "Warnings at >10% and >20% of Actual Interval (total including existing)."
 
@@ -73,11 +72,11 @@ Private Sub UserForm_Initialize()
     txtAmount.Value = ""
     txtSNOW.Value = ""
     txtAuthoriser.Value = ""
-    UpdateLivePercent
+    UpdateExtensionSummaryLabels
 End Sub
 
 Private Sub txtAmount_Change()
-    UpdateLivePercent
+    UpdateExtensionSummaryLabels
 End Sub
 
 Private Sub cmdApply_Click()
@@ -122,15 +121,18 @@ Private Function ControlText(ByVal ctl As Object) As String
     End If
 End Function
 
-Private Sub UpdateLivePercent()
+' Format: "Current Extension: 27:00 (1.26%)" / "Total Extension: 28:00 (2.25%)"
+Private Sub UpdateExtensionSummaryLabels()
     Dim incrementValue As Variant
     Dim totalExt As Double
-    Dim totalPct As Double
     Dim amountText As String
+
+    lblCurrentExt.Caption = "Current Extension: " & _
+        FormatExtensionAmountWithPercent(mCurrentExtension, mIntervalCode, mActualInterval)
 
     amountText = ControlText(txtAmount)
     If Len(amountText) = 0 Then
-        lblLivePct.Caption = "Total extension %: —"
+        lblLivePct.Caption = "Total Extension: —"
         Exit Sub
     End If
 
@@ -141,17 +143,29 @@ Private Sub UpdateLivePercent()
     End If
 
     If IsEmpty(incrementValue) Or CDbl(incrementValue) <= 0# Then
-        lblLivePct.Caption = "Total extension %: (invalid amount)"
-        Exit Sub
-    End If
-
-    If IsEmpty(mActualInterval) Or CDbl(mActualInterval) <= 0# Then
-        lblLivePct.Caption = "Total extension %: (no Actual Interval)"
+        lblLivePct.Caption = "Total Extension: (invalid amount)"
         Exit Sub
     End If
 
     totalExt = mCurrentExtension + CDbl(incrementValue)
-    totalPct = totalExt / CDbl(mActualInterval)
-    lblLivePct.Caption = "Total extension ≈ " & Format$(totalPct * 100#, "0.0") & _
-                         "% of Actual Interval (current + this)."
+    lblLivePct.Caption = "Total Extension: " & _
+        FormatExtensionAmountWithPercent(totalExt, mIntervalCode, mActualInterval)
 End Sub
+
+Private Function FormatExtensionAmountWithPercent(ByVal amountValue As Double, _
+                                                  ByVal intervalCode As String, _
+                                                  ByVal actualInterval As Variant) As String
+    Dim amountText As String
+    Dim pctText As String
+
+    amountText = FormatExtensionAmountForDisplay(amountValue, intervalCode)
+    If Len(amountText) = 0 Then amountText = "0"
+
+    If IsEmpty(actualInterval) Or Not IsNumeric(actualInterval) Or CDbl(actualInterval) <= 0# Then
+        FormatExtensionAmountWithPercent = amountText & " (—%)"
+        Exit Function
+    End If
+
+    pctText = Format$((amountValue / CDbl(actualInterval)) * 100#, "0.00")
+    FormatExtensionAmountWithPercent = amountText & " (" & pctText & "%)"
+End Function

@@ -12,11 +12,11 @@ Control Name      Type           Caption / Notes
 lblTasks          Label          Selected tasks (must share Interval Type + Actual Interval + Life Remaining):
 lstTasks          ListBox        ColumnCount = 4 (Task Code | Description | Actual Interval | Life Remaining)
 lblInterval       Label          Interval / Actual Interval / Life Remaining summary (set in code)
-lblCurrentExt     Label          Current extension (set in code)
+lblCurrentExt     Label          Current Extension: 27:00 (1.26%) — set in code
 lblAmount         Label          Extension amount:
 txtAmount         TextBox        h:mm for HH/E1/E2; days for DD; number otherwise
 lblAmountHint     Label          Format hint (set in code)
-lblLivePct        Label          Live total % preview (set in code)
+lblLivePct        Label          Total Extension: 28:00 (2.25%) — set in code
 lblPctHint        Label          Authority tier hint (set in code)
 lblSNOW           Label          SNOW:
 txtSNOW           TextBox        Required authorisation reference

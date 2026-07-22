@@ -208,7 +208,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "When to use", _
         "SITS sheet only. Selected tasks must share Interval Type Code, Actual Interval, and Life Remaining. Not for PT2/PT3 (use Defer). Blocked if IN WORK."
     WriteHelpRow ws, r, "Inputs", _
-        "Extension amount (h:mm / days / number to match interval), SNOW authorisation, and authoriser name. Form shows Current extension and live total %."
+        "Extension amount (h:mm / days / number to match interval), SNOW authorisation, and authoriser name. Form shows Current Extension and Total Extension as amount (percent of Actual Interval)."
     WriteHelpRow ws, r, "Warnings", _
         "Warns if total Extension (existing + this) exceeds 10% or 20% of Actual Interval. Apply bumps life remaining and audits EXTENSION_APPLIED."
 
