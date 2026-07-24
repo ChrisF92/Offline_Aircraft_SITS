@@ -182,7 +182,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "Purpose", _
         "Working forecast view of scheduled tasks and deferred faults for this aircraft."
     WriteHelpRow ws, r, "Horizon", _
-        "Filters the view by forecast hours / days / number. Set a value to 0 to show all of that type. Current values are summarised on row 3 (edit only via Horizon)."
+        "Filters HH/E1/E2 by forecast hours and DD by forecast days (0 = show all). Number-based interval types use fixed per-type horizons in code; types not listed are skipped on import. If no E1/E2 falls inside the hours horizon, the next E1 and E2 task are still shown. Current hours/days are summarised on row 3 (edit via Horizon)."
     WriteHelpRow ws, r, "Refresh View", _
         "Recalculates life remaining and rebuilds the visible rows. Does not reset column widths or button placement."
     WriteHelpRow ws, r, "Selector", _
@@ -250,7 +250,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
 
     WriteHelpSection ws, r, "Import reminders"
     WriteHelpRow ws, r, "SITS Long Forecast", _
-        "Required columns: Interval Type Code, Life Remaining, Task Code, Task Sequence, Task Description, Serial, Actual Interval, Extension, End Item Serial. Import aborts if any are missing. Task codes beginning with Gen/ are skipped. Number-based interval types (excluding DD) are skipped unless Actual Interval and Life Remaining are both zero."
+        "Required columns: Interval Type Code, Life Remaining, Task Code, Task Sequence, Task Description, Serial, Actual Interval, Extension, End Item Serial. Import aborts if any are missing. Task codes beginning with Gen/ are skipped. Number-based interval types not in the forecast allowlist (GetNumberIntervalForecastHorizon) are skipped."
     WriteHelpRow ws, r, "Usage exports", _
         "Interval Type, Task Code, Life Used, Top Serial. Engine usage must include SM and SN after merge."
 

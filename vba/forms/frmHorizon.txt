@@ -5,6 +5,10 @@ Option Explicit
 ' ========================================================================
 ' Create this UserForm manually in the VBA IDE and paste this code.
 ' See vba/forms/HORIZON_FORM_LAYOUT.txt for control names and layout.
+'
+' Number-based interval horizons are fixed in code
+' (GetNumberIntervalForecastHorizon) — Hours/Days only are editable here.
+' Older forms may still have lblNumber/txtNumber; they are ignored.
 ' ========================================================================
 
 Private Sub UserForm_Activate()
@@ -15,22 +19,20 @@ Private Sub UserForm_Initialize()
     EnsureForecastConfigDefaults
     txtHours.Value = CStr(GetForecastHoursSetting())
     txtDays.Value = CStr(GetForecastDaysSetting())
-    txtNumber.Value = CStr(GetForecastNumberSetting())
+    HideLegacyNumberControls
 End Sub
 
 Private Sub cmdApply_Click()
     Dim hoursText As String
     Dim daysText As String
-    Dim numberText As String
 
     ' Use ControlText — Default/Enter can fire before TextBox.Value is committed.
     hoursText = ControlText(txtHours)
     daysText = ControlText(txtDays)
-    numberText = ControlText(txtNumber)
 
     ' Hide before refresh so the modeless progress form can show.
     Me.Hide
-    If ApplyHorizonSettings(hoursText, daysText, numberText, True) Then
+    If ApplyHorizonSettings(hoursText, daysText, True) Then
         Unload Me
     Else
         Me.Show
@@ -39,6 +41,13 @@ End Sub
 
 Private Sub cmdCancel_Click()
     Unload Me
+End Sub
+
+Private Sub HideLegacyNumberControls()
+    On Error Resume Next
+    lblNumber.Visible = False
+    txtNumber.Visible = False
+    On Error GoTo 0
 End Sub
 
 ' Prefer .Text while the control still has focus (Value may be stale on Enter).
