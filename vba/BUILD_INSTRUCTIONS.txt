@@ -152,14 +152,15 @@ SITS view:
 
 Print SITS report (SITS sheet only):
 1. Set the Horizon filter to the window you want (e.g. 50h / 90d).
-2. Click **Print** — recalculates life remaining, then opens Excel Print Preview
-   in landscape titled **Simplified Item Task Schedule**.
-3. Header/subtitle fields: Tail Number, Airframe Hours (HH), Report Date/Time,
-   Page N of M. Table columns: When Due, When Due from Report Run DTG (life
-   remaining), Interval Type Code, Task Code, Sequence, Actual Interval,
-   Task Description, Extension, Serial Number.
-4. Print or Print to PDF from the preview dialog. The temporary print sheet is
-   discarded when the preview closes (Excel-native — no Word required).
+2. Click **Print** — recalculates life remaining, then opens a landscape
+   Word document titled **Simplified Item Task Schedule**.
+3. Header fields: Tail Number, Airframe Hours (HH), Report Date/Time.
+   Footer: Page N of M. The table fills page width and flows across as
+   many pages as needed (table header repeats). Columns: When Due, When
+   Due from Report Run DTG (life remaining), Interval Type Code, Task
+   Code, Sequence, Actual Interval, Task Description, Extension, Serial
+   Number.
+4. Print / Print to PDF / Save As from Word. Microsoft Word is required.
 
 Work packages:
 1. Tick Selector checkboxes on SITS → Create Work Package (ORN ####TAILDDMMYY).

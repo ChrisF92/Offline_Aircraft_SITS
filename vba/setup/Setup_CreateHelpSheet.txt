@@ -184,7 +184,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "Horizon", _
         "Filters the view by forecast hours / days / number. Set a value to 0 to show all of that type. Current values are summarised on row 3 (edit only via Horizon)."
     WriteHelpRow ws, r, "Print", _
-        "SITS sheet only. Builds a landscape printable snapshot of tasks in the current Horizon (Excel Print Preview — no Word required). Title: Simplified Item Task Schedule. Header shows Tail Number, Airframe Hours (HH), Report Date/Time, and Page N of M. Columns: When Due, When Due from Report Run DTG (life remaining), Interval Type Code, Task Code, Sequence, Actual Interval, Task Description, Extension, Serial Number."
+        "SITS sheet only. Requires Microsoft Word. Builds a landscape Word document of tasks in the current Horizon. Title: Simplified Item Task Schedule. Header shows Tail Number, Airframe Hours (HH), and Report Date/Time; footer shows Page N of M. The table fills page width and continues across pages (header row repeats). Columns: When Due, When Due from Report Run DTG (life remaining), Interval Type Code, Task Code, Sequence, Actual Interval, Task Description, Extension, Serial Number."
     WriteHelpRow ws, r, "Refresh View", _
         "Recalculates life remaining and rebuilds the visible rows. Does not reset column widths or button placement."
     WriteHelpRow ws, r, "Selector", _

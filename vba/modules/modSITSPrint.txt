@@ -3,22 +3,42 @@ Option Explicit
 ' ========================================================================
 ' SITS PRINT MODULE — Offline Aircraft SITS v2
 ' ========================================================================
-' Builds a landscape printable snapshot of tasks in the current Horizon
-' (Excel-native — no Word dependency). Page setup carries title metadata
-' and "Page N of M"; the table lists When Due, life remaining from report
-' DTG, and the required task columns.
+' Builds a landscape Word document snapshot of tasks in the current Horizon.
+' The table fills page width and flows naturally across multiple pages
+' (header row repeats). Late-bound Word.Application — no VBA reference.
 '
 ' Entry point: RunPrintSITSReport (SITS sheet Print button only).
 ' ========================================================================
 
-Private Const PRINT_SHEET_NAME As String = "_SITS_PRINT"
 Private Const PRINT_COL_COUNT As Long = 9
-Private Const PRINT_TITLE_ROW As Long = 1
-Private Const PRINT_META_ROW As Long = 2
-Private Const PRINT_HORIZON_ROW As Long = 3
-Private Const PRINT_HEADER_ROW As Long = 5
-Private Const PRINT_DATA_START_ROW As Long = 6
 Private Const PRINT_SORT_KEY_MISSING As Double = 9.9E+307
+
+' Late-bound Word constants
+Private Const WD_ORIENT_LANDSCAPE As Long = 1
+Private Const WD_PAPER_A4 As Long = 7
+Private Const WD_HEADER_FOOTER_PRIMARY As Long = 1
+Private Const WD_ALIGN_PARAGRAPH_CENTER As Long = 1
+Private Const WD_ALIGN_PARAGRAPH_LEFT As Long = 0
+Private Const WD_ALIGN_PARAGRAPH_RIGHT As Long = 2
+Private Const WD_ALIGN_CELL_CENTER As Long = 1
+Private Const WD_COLLAPSE_END As Long = 0
+Private Const WD_COLLAPSE_START As Long = 1
+Private Const WD_FIELD_PAGE As Long = 33
+Private Const WD_FIELD_NUM_PAGES As Long = 26
+Private Const WD_AUTO_FIT_WINDOW As Long = 2
+Private Const WD_PREFERRED_WIDTH_PERCENT As Long = 2
+Private Const WD_LINE_STYLE_SINGLE As Long = 1
+Private Const WD_COLOR_AUTOMATIC As Long = -16777216
+Private Const WD_BORDER_TOP As Long = -1
+Private Const WD_BORDER_LEFT As Long = -2
+Private Const WD_BORDER_BOTTOM As Long = -3
+Private Const WD_BORDER_RIGHT As Long = -4
+Private Const WD_BORDER_HORIZONTAL As Long = -5
+Private Const WD_BORDER_VERTICAL As Long = -6
+Private Const WD_SEEK_MAIN_DOCUMENT As Long = 0
+Private Const WD_SEEK_CURRENT_PAGE_HEADER As Long = 9
+Private Const WD_SEEK_CURRENT_PAGE_FOOTER As Long = 10
+Private Const WD_FORMAT_DOCUMENT_DEFAULT As Long = 16
 
 Private Type PrintSortEntry
     DataRowIndex As Long
@@ -29,15 +49,14 @@ End Type
 
 ' SITS sheet Print button.
 Public Sub RunPrintSITSReport()
-    Dim wsPrint As Worksheet
-    Dim prevSheet As Object
     Dim reportDTG As Date
     Dim airframeHHDisplay As String
     Dim rowCount As Long
-    Dim suspended As Boolean
+    Dim reportRows As Variant
     Dim ownsBusy As Boolean
     Dim errNum As Long
     Dim errDesc As String
+    Dim wordOk As Boolean
 
     On Error GoTo CleanFail
 
@@ -48,9 +67,12 @@ Public Sub RunPrintSITSReport()
         Exit Sub
     End If
 
-    On Error Resume Next
-    Set prevSheet = Application.ActiveSheet
-    On Error GoTo CleanFail
+    If Not WordIsAvailable() Then
+        MsgBox "Microsoft Word is required to generate the SITS printable report." & vbCrLf & vbCrLf & _
+               "Install Word (or repair the Office installation), then try again.", _
+               vbExclamation, APP_NAME
+        Exit Sub
+    End If
 
     ownsBusy = Not BusyUIActive()
     If ownsBusy Then BeginBusyUI "Preparing SITS print report…"
@@ -62,44 +84,28 @@ Public Sub RunPrintSITSReport()
     reportDTG = Now
     airframeHHDisplay = FormatAirframeHHForPrint()
 
-    SuspendWorkbookProtection
-    suspended = True
+    UpdateBusyUI "Collecting Horizon tasks…"
+    reportRows = CollectPrintReportRows(rowCount)
 
-    UpdateBusyUI "Building print sheet…"
-    Set wsPrint = CreateOrResetPrintSheet()
-    rowCount = PopulatePrintSheet(wsPrint, reportDTG, airframeHHDisplay)
-    ConfigurePrintPageSetup wsPrint, reportDTG, airframeHHDisplay
+    UpdateBusyUI "Building Word document…"
+    wordOk = BuildWordPrintDocument(reportRows, rowCount, reportDTG, airframeHHDisplay)
 
     If ownsBusy Then
         EndBusyUI
         ownsBusy = False
     End If
 
-    ResumeWorkbookProtection
-    suspended = False
+    If Not wordOk Then
+        MsgBox "Unable to build the Word SITS report. Check that Word can open normally.", _
+               vbCritical, APP_NAME
+        Exit Sub
+    End If
 
     LogAction "SITS_PRINT_REPORT", "", _
               "Tasks=" & CStr(rowCount) & "; HorizonHours=" & CStr(GetForecastHoursSetting()) & _
               "; HorizonDays=" & CStr(GetForecastDaysSetting()) & _
               "; HorizonNumber=" & CStr(GetForecastNumberSetting()) & _
-              "; AirframeHH=" & airframeHHDisplay
-
-    On Error Resume Next
-    wsPrint.Activate
-    On Error GoTo CleanFail
-
-    wsPrint.PrintPreview
-
-    ' Discard the temporary print sheet after preview/print closes.
-    SuspendWorkbookProtection
-    suspended = True
-    DeleteSheetIfExists PRINT_SHEET_NAME
-    ResumeWorkbookProtection
-    suspended = False
-
-    On Error Resume Next
-    If Not prevSheet Is Nothing Then prevSheet.Activate
-    On Error GoTo 0
+              "; AirframeHH=" & airframeHHDisplay & "; Format=Word"
     Exit Sub
 
 CleanFail:
@@ -107,11 +113,6 @@ CleanFail:
     errDesc = Err.Description
     On Error Resume Next
     If ownsBusy Then EndBusyUI
-    If suspended Then
-        DeleteSheetIfExists PRINT_SHEET_NAME
-        ResumeWorkbookProtection
-    End If
-    If Not prevSheet Is Nothing Then prevSheet.Activate
     On Error GoTo 0
     If errNum <> 0 Then
         MsgBox "Unable to build the SITS print report." & vbCrLf & vbCrLf & _
@@ -120,21 +121,23 @@ CleanFail:
     End If
 End Sub
 
-Private Function CreateOrResetPrintSheet() As Worksheet
-    Dim ws As Worksheet
+Private Function WordIsAvailable() As Boolean
+    Dim wdApp As Object
 
-    DeleteSheetIfExists PRINT_SHEET_NAME
+    On Error Resume Next
+    Set wdApp = CreateObject("Word.Application")
+    On Error GoTo 0
+    If wdApp Is Nothing Then Exit Function
 
-    Set ws = ThisWorkbook.Worksheets.Add(After:=ThisWorkbook.Worksheets(ThisWorkbook.Worksheets.Count))
-    ws.Name = PRINT_SHEET_NAME
-    ws.Visible = xlSheetVisible
-    ws.Cells.Clear
-    Set CreateOrResetPrintSheet = ws
+    On Error Resume Next
+    wdApp.Quit
+    Set wdApp = Nothing
+    On Error GoTo 0
+    WordIsAvailable = True
 End Function
 
-Private Function PopulatePrintSheet(ByVal ws As Worksheet, _
-                                    ByVal reportDTG As Date, _
-                                    ByVal airframeHHDisplay As String) As Long
+' Returns 1-based 2D array (rows x PRINT_COL_COUNT). rowCount = data rows (0 if none).
+Private Function CollectPrintReportRows(ByRef rowCount As Long) As Variant
     Dim wsData As Worksheet
     Dim tbl As ListObject
     Dim colMap As Object
@@ -151,9 +154,7 @@ Private Function PopulatePrintSheet(ByVal ws As Worksheet, _
     Dim sortEntries() As PrintSortEntry
     Dim sortCount As Long
     Dim entryIndex As Long
-    Dim outputRow As Long
-    Dim headers As Variant
-    Dim col As Long
+    Dim reportRows As Variant
     Dim colInterval As Long
     Dim colLRHours As Long
     Dim colLRNumber As Long
@@ -167,6 +168,9 @@ Private Function PopulatePrintSheet(ByVal ws As Worksheet, _
     Dim colCurHours As Long
     Dim colCurNumber As Long
     Dim colProjected As Long
+
+    rowCount = 0
+    CollectPrintReportRows = Empty
 
     Set wsData = GetWorksheet(SHEET_DATA_SITS, showError:=False)
     If wsData Is Nothing Then Exit Function
@@ -187,164 +191,315 @@ Private Function PopulatePrintSheet(ByVal ws As Worksheet, _
     colCurHours = LookupColumnIndex(colMap, HDR_CURRENT_USAGE_HOURS)
     colCurNumber = LookupColumnIndex(colMap, HDR_CURRENT_USAGE_NUMBER)
     colProjected = LookupColumnIndex(colMap, HDR_PROJECTED_DUE_DATE)
-
     If colInterval = 0 Then Exit Function
 
     forecastHours = GetForecastHoursSetting()
     forecastDays = GetForecastDaysSetting()
     forecastNumber = GetForecastNumberSetting()
 
-    WritePrintTitleBlock ws, reportDTG, airframeHHDisplay, forecastHours, forecastDays, forecastNumber
-
-    headers = PrintColumnHeaders()
-    For col = 1 To PRINT_COL_COUNT
-        ws.Cells(PRINT_HEADER_ROW, col).Value = CStr(headers(col - 1))
-    Next col
-
-    With ws.Range(ws.Cells(PRINT_HEADER_ROW, 1), ws.Cells(PRINT_HEADER_ROW, PRINT_COL_COUNT))
-        .Font.Bold = True
-        .Font.Color = vbWhite
-        .Interior.Color = COLOR_HEADER_BLUE
-        .HorizontalAlignment = xlCenter
-        .VerticalAlignment = xlCenter
-        .WrapText = True
-    End With
-    ws.Rows(PRINT_HEADER_ROW).RowHeight = 32
-
     sortCount = 0
-    If Not tbl.DataBodyRange Is Nothing Then
-        data = NormalizePrintDataArray(tbl.DataBodyRange.Value, _
-            tbl.ListRows.Count, tbl.ListColumns.Count)
-        If IsArray(data) Then
-            dataRowCount = UBound(data, 1)
-            ReDim sortEntries(1 To dataRowCount)
+    If tbl.DataBodyRange Is Nothing Then Exit Function
 
-            For dataRowIndex = 1 To dataRowCount
-                intervalCode = UCase$(Trim$(CStr(data(dataRowIndex, colInterval))))
-                includeRow = PrintTaskPassesHorizon(data, dataRowIndex, intervalCode, _
-                    forecastHours, forecastDays, forecastNumber, _
-                    lifeHoursFraction, daysUntilDue, _
-                    colLRHours, colLRNumber, colDaysDue)
+    data = NormalizePrintDataArray(tbl.DataBodyRange.Value, _
+        tbl.ListRows.Count, tbl.ListColumns.Count)
+    If Not IsArray(data) Then Exit Function
 
-                If includeRow Then
-                    sortCount = sortCount + 1
-                    sortEntries(sortCount).DataRowIndex = dataRowIndex
-                    sortEntries(sortCount).IntervalCode = intervalCode
-                    sortEntries(sortCount).GroupOrder = PrintIntervalGroupOrder(intervalCode)
-                    sortEntries(sortCount).SortKey = PrintTaskSortKey(data, dataRowIndex, _
-                        intervalCode, colLRHours, colLRNumber, colDaysDue, colTaskCode)
-                End If
-            Next dataRowIndex
+    dataRowCount = UBound(data, 1)
+    ReDim sortEntries(1 To dataRowCount)
+
+    For dataRowIndex = 1 To dataRowCount
+        intervalCode = UCase$(Trim$(CStr(data(dataRowIndex, colInterval))))
+        includeRow = PrintTaskPassesHorizon(data, dataRowIndex, intervalCode, _
+            forecastHours, forecastDays, forecastNumber, _
+            lifeHoursFraction, daysUntilDue, _
+            colLRHours, colLRNumber, colDaysDue)
+
+        If includeRow Then
+            sortCount = sortCount + 1
+            sortEntries(sortCount).DataRowIndex = dataRowIndex
+            sortEntries(sortCount).IntervalCode = intervalCode
+            sortEntries(sortCount).GroupOrder = PrintIntervalGroupOrder(intervalCode)
+            sortEntries(sortCount).SortKey = PrintTaskSortKey(data, dataRowIndex, _
+                intervalCode, colLRHours, colLRNumber, colDaysDue, colTaskCode)
         End If
-    End If
+    Next dataRowIndex
 
-    outputRow = PRINT_DATA_START_ROW
-    If sortCount > 0 Then
-        ReDim Preserve sortEntries(1 To sortCount)
-        SortPrintEntries sortEntries
+    If sortCount = 0 Then Exit Function
 
-        For entryIndex = 1 To sortCount
-            dataRowIndex = sortEntries(entryIndex).DataRowIndex
-            intervalCode = sortEntries(entryIndex).IntervalCode
-            WritePrintDataRow ws, outputRow, data, dataRowIndex, intervalCode, _
-                colCurHours, colCurNumber, colLRHours, colLRNumber, colDaysDue, _
-                colProjected, colInterval, colTaskCode, colSequence, colActual, _
-                colDesc, colExtension, colSerial
-            outputRow = outputRow + 1
-        Next entryIndex
-    Else
-        ws.Cells(outputRow, 1).Value = "No tasks within the current Horizon."
-        ws.Range(ws.Cells(outputRow, 1), ws.Cells(outputRow, PRINT_COL_COUNT)).Merge
-        ws.Cells(outputRow, 1).Font.Italic = True
-        outputRow = outputRow + 1
-    End If
+    ReDim Preserve sortEntries(1 To sortCount)
+    SortPrintEntries sortEntries
 
-    ApplyPrintColumnWidths ws
-    If outputRow > PRINT_DATA_START_ROW Then
-        With ws.Range(ws.Cells(PRINT_DATA_START_ROW, 1), _
-                      ws.Cells(outputRow - 1, PRINT_COL_COUNT))
-            .VerticalAlignment = xlTop
-            .WrapText = True
-            .Borders.LineStyle = xlContinuous
-            .Borders.Color = RGB(166, 166, 166)
-        End With
-    End If
+    ReDim reportRows(1 To sortCount, 1 To PRINT_COL_COUNT)
+    For entryIndex = 1 To sortCount
+        dataRowIndex = sortEntries(entryIndex).DataRowIndex
+        intervalCode = sortEntries(entryIndex).IntervalCode
+        reportRows(entryIndex, 1) = BuildPrintWhenDueText(data, dataRowIndex, intervalCode, _
+            colCurHours, colCurNumber, colLRHours, colLRNumber, colDaysDue, colProjected)
+        reportRows(entryIndex, 2) = BuildPrintLifeRemainingText(data, dataRowIndex, intervalCode, _
+            colLRHours, colLRNumber, colDaysDue)
+        reportRows(entryIndex, 3) = intervalCode
+        If colTaskCode > 0 Then reportRows(entryIndex, 4) = Trim$(CStr(data(dataRowIndex, colTaskCode)))
+        If colSequence > 0 Then reportRows(entryIndex, 5) = Trim$(CStr(data(dataRowIndex, colSequence)))
+        reportRows(entryIndex, 6) = BuildPrintIntervalText(data, dataRowIndex, intervalCode, colActual)
+        If colDesc > 0 Then reportRows(entryIndex, 7) = CStr(data(dataRowIndex, colDesc) & "")
+        reportRows(entryIndex, 8) = BuildPrintIntervalText(data, dataRowIndex, intervalCode, colExtension)
+        If colSerial > 0 Then reportRows(entryIndex, 9) = NormalizeSerialText(data(dataRowIndex, colSerial))
+    Next entryIndex
 
-    PopulatePrintSheet = sortCount
+    rowCount = sortCount
+    CollectPrintReportRows = reportRows
 End Function
 
-Private Sub WritePrintTitleBlock(ByVal ws As Worksheet, _
-                                 ByVal reportDTG As Date, _
-                                 ByVal airframeHHDisplay As String, _
-                                 ByVal forecastHours As Double, _
-                                 ByVal forecastDays As Long, _
-                                 ByVal forecastNumber As Long)
+Private Function BuildWordPrintDocument(ByVal reportRows As Variant, _
+                                        ByVal rowCount As Long, _
+                                        ByVal reportDTG As Date, _
+                                        ByVal airframeHHDisplay As String) As Boolean
+    Dim wdApp As Object
+    Dim wdDoc As Object
+    Dim wdTable As Object
+    Dim headers As Variant
+    Dim col As Long
+    Dim rowIndex As Long
+    Dim tableRows As Long
+    Dim colPercents As Variant
+    Dim failReason As String
+    Dim createdApp As Boolean
+
+    BuildWordPrintDocument = False
+    createdApp = False
+
+    On Error GoTo WordFail
+
+    Set wdApp = CreateObject("Word.Application")
+    createdApp = True
+    wdApp.Visible = False
+    wdApp.ScreenUpdating = False
+    wdApp.DisplayAlerts = 0
+
+    Set wdDoc = wdApp.Documents.Add
+    ConfigureWordPageSetup wdDoc
+    WriteWordHeaderFooter wdDoc, reportDTG, airframeHHDisplay
+    WriteWordBodyIntro wdDoc
+
+    headers = PrintColumnHeaders()
+    If rowCount > 0 Then
+        tableRows = rowCount + 1
+    Else
+        tableRows = 2
+    End If
+
+    Set wdTable = wdDoc.Tables.Add(Range:=wdDoc.Bookmarks("\endofdoc").Range, _
+                                   NumRows:=tableRows, NumColumns:=PRINT_COL_COUNT)
+
+    For col = 1 To PRINT_COL_COUNT
+        SetWordCellText wdTable.Cell(1, col), CStr(headers(col - 1))
+    Next col
+
+    If rowCount > 0 And IsArray(reportRows) Then
+        For rowIndex = 1 To rowCount
+            For col = 1 To PRINT_COL_COUNT
+                SetWordCellText wdTable.Cell(rowIndex + 1, col), CStr(reportRows(rowIndex, col) & "")
+            Next col
+        Next rowIndex
+    Else
+        SetWordCellText wdTable.Cell(2, 1), "No tasks within the current Horizon."
+        On Error Resume Next
+        wdTable.Cell(2, 1).Merge wdTable.Cell(2, PRINT_COL_COUNT)
+        On Error GoTo WordFail
+    End If
+
+    FormatWordTable wdTable
+
+    ' Preferred widths as % of page so the table fills landscape width and
+    ' rows flow onto additional pages at normal (non-shrunk) size.
+    colPercents = Array(10, 12, 8, 12, 6, 10, 24, 8, 10)
+    On Error Resume Next
+    wdTable.PreferredWidthType = WD_PREFERRED_WIDTH_PERCENT
+    wdTable.PreferredWidth = 100
+    For col = 1 To PRINT_COL_COUNT
+        wdTable.Columns(col).PreferredWidthType = WD_PREFERRED_WIDTH_PERCENT
+        wdTable.Columns(col).PreferredWidth = CDbl(colPercents(col - 1))
+    Next col
+    wdTable.AutoFitBehavior WD_AUTO_FIT_WINDOW
+    On Error GoTo WordFail
+
+    wdDoc.Fields.Update
+    wdApp.ScreenUpdating = True
+    wdApp.Visible = True
+    wdApp.Activate
+    wdDoc.Activate
+    wdApp.DisplayAlerts = -1
+
+    On Error Resume Next
+    wdDoc.PrintPreview
+    On Error GoTo 0
+
+    BuildWordPrintDocument = True
+    Exit Function
+
+WordFail:
+    failReason = Err.Description
+    On Error Resume Next
+    If Not wdDoc Is Nothing Then wdDoc.Close SaveChanges:=False
+    If createdApp And Not wdApp Is Nothing Then
+        wdApp.ScreenUpdating = True
+        wdApp.DisplayAlerts = -1
+        wdApp.Quit
+    End If
+    Set wdTable = Nothing
+    Set wdDoc = Nothing
+    Set wdApp = Nothing
+    On Error GoTo 0
+    If Len(failReason) > 0 Then
+        Err.Raise vbObjectError + 910, "BuildWordPrintDocument", failReason
+    End If
+End Function
+
+Private Sub ConfigureWordPageSetup(ByVal wdDoc As Object)
+    With wdDoc.PageSetup
+        .Orientation = WD_ORIENT_LANDSCAPE
+        .PaperSize = WD_PAPER_A4
+        .TopMargin = CentimetersToPointsSafe(1.5)
+        .BottomMargin = CentimetersToPointsSafe(1.5)
+        .LeftMargin = CentimetersToPointsSafe(1.2)
+        .RightMargin = CentimetersToPointsSafe(1.2)
+        .HeaderDistance = CentimetersToPointsSafe(0.8)
+        .FooterDistance = CentimetersToPointsSafe(0.8)
+    End With
+End Sub
+
+Private Function CentimetersToPointsSafe(ByVal cmValue As Double) As Double
+    ' 1 cm = 28.35 points
+    CentimetersToPointsSafe = cmValue * 28.35
+End Function
+
+Private Sub WriteWordHeaderFooter(ByVal wdDoc As Object, _
+                                  ByVal reportDTG As Date, _
+                                  ByVal airframeHHDisplay As String)
+    Dim hdr As Object
+    Dim ftr As Object
+    Dim rng As Object
+    Dim fldRange As Object
     Dim tailNumber As String
 
     tailNumber = GetTailNumber()
     If Len(tailNumber) = 0 Then tailNumber = "(not set)"
 
-    With ws.Range(ws.Cells(PRINT_TITLE_ROW, 1), ws.Cells(PRINT_TITLE_ROW, PRINT_COL_COUNT))
-        .Merge
-        .Value = "Simplified Item Task Schedule"
-        .Font.Size = 16
-        .Font.Bold = True
-        .Font.Color = COLOR_HEADER_BLUE
-        .HorizontalAlignment = xlCenter
-    End With
+    Set hdr = wdDoc.Sections(1).Headers(WD_HEADER_FOOTER_PRIMARY)
+    Set rng = hdr.Range
+    rng.Text = "Simplified Item Task Schedule" & vbCr & _
+               "Tail Number: " & tailNumber & _
+               "     |     Airframe Hours at time report ran (HH): " & airframeHHDisplay & _
+               "     |     Report Date/Time: " & Format$(reportDTG, FORMAT_DATETIME)
+    rng.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_CENTER
+    rng.Font.Name = "Calibri"
+    rng.Font.Size = 10
+    On Error Resume Next
+    rng.Paragraphs(1).Range.Font.Bold = True
+    rng.Paragraphs(1).Range.Font.Size = 16
+    On Error GoTo 0
 
-    With ws.Range(ws.Cells(PRINT_META_ROW, 1), ws.Cells(PRINT_META_ROW, PRINT_COL_COUNT))
-        .Merge
-        .Value = "Tail Number: " & tailNumber & _
-                 "     |     Airframe Hours at time report ran (HH): " & airframeHHDisplay & _
-                 "     |     Report Date/Time: " & Format$(reportDTG, FORMAT_DATETIME)
-        .Font.Size = 10
-        .HorizontalAlignment = xlCenter
-    End With
-
-    With ws.Range(ws.Cells(PRINT_HORIZON_ROW, 1), ws.Cells(PRINT_HORIZON_ROW, PRINT_COL_COUNT))
-        .Merge
-        .Value = "Current Horizon: " & FormatPrintHorizonHours(forecastHours) & " / " & _
-                 CStr(forecastDays) & "d / " & CStr(forecastNumber) & _
-                 "     (0 = show all of that type)"
-        .Font.Size = 9
-        .Font.Color = RGB(89, 89, 89)
-        .HorizontalAlignment = xlCenter
-    End With
+    Set ftr = wdDoc.Sections(1).Footers(WD_HEADER_FOOTER_PRIMARY)
+    Set rng = ftr.Range
+    rng.Text = ""
+    rng.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_RIGHT
+    rng.Font.Name = "Calibri"
+    rng.Font.Size = 9
+    rng.InsertAfter "Page "
+    Set fldRange = ftr.Range
+    fldRange.Collapse WD_COLLAPSE_END
+    wdDoc.Fields.Add Range:=fldRange, Type:=WD_FIELD_PAGE
+    Set fldRange = ftr.Range
+    fldRange.Collapse WD_COLLAPSE_END
+    fldRange.InsertAfter " of "
+    Set fldRange = ftr.Range
+    fldRange.Collapse WD_COLLAPSE_END
+    wdDoc.Fields.Add Range:=fldRange, Type:=WD_FIELD_NUM_PAGES
 End Sub
 
-Private Sub ConfigurePrintPageSetup(ByVal ws As Worksheet, _
-                                    ByVal reportDTG As Date, _
-                                    ByVal airframeHHDisplay As String)
-    Dim lastRow As Long
+Private Sub WriteWordBodyIntro(ByVal wdDoc As Object)
+    Dim rng As Object
+    Dim hoursValue As Double
+    Dim daysValue As Long
+    Dim numberValue As Long
 
-    lastRow = ws.UsedRange.Rows.Count
-    If lastRow < PRINT_HEADER_ROW Then lastRow = PRINT_HEADER_ROW
+    hoursValue = GetForecastHoursSetting()
+    daysValue = GetForecastDaysSetting()
+    numberValue = GetForecastNumberSetting()
+
+    Set rng = wdDoc.Content
+    rng.InsertAfter "Current Horizon: " & FormatPrintHorizonHours(hoursValue) & " / " & _
+                    CStr(daysValue) & "d / " & CStr(numberValue) & _
+                    "     (0 = show all of that type)" & vbCr & vbCr
 
     On Error Resume Next
-    With ws.PageSetup
-        .Orientation = xlLandscape
-        .PaperSize = xlPaperA4
-        .Zoom = False
-        .FitToPagesWide = 1
-        .FitToPagesTall = 0
-        .LeftMargin = Application.InchesToPoints(0.4)
-        .RightMargin = Application.InchesToPoints(0.4)
-        .TopMargin = Application.InchesToPoints(0.5)
-        .BottomMargin = Application.InchesToPoints(0.5)
-        .HeaderMargin = Application.InchesToPoints(0.2)
-        .FooterMargin = Application.InchesToPoints(0.25)
-        .PrintTitleRows = "$" & CStr(PRINT_TITLE_ROW) & ":$" & CStr(PRINT_HEADER_ROW)
-        .CenterHorizontally = True
-        ' Title / Tail / HH / Report DTG live in the repeating title rows.
-        ' Page number is required on every page.
-        .LeftHeader = ""
-        .CenterHeader = ""
-        .RightHeader = ""
-        .LeftFooter = "Tail: " & GetTailNumber() & "  |  HH: " & airframeHHDisplay
-        .CenterFooter = "Simplified Item Task Schedule  |  " & Format$(reportDTG, FORMAT_DATETIME)
-        .RightFooter = "Page &P of &N"
-        .PrintArea = ws.Range(ws.Cells(1, 1), ws.Cells(lastRow, PRINT_COL_COUNT)).Address
+    With wdDoc.Paragraphs(1).Range
+        .Font.Name = "Calibri"
+        .Font.Size = 9
+        .Font.Italic = True
+        .Font.Color = RGB(89, 89, 89)
+        .ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_LEFT
+    End With
+    On Error GoTo 0
+End Sub
+
+Private Sub SetWordCellText(ByVal cell As Object, ByVal textValue As String)
+    Dim rng As Object
+
+    Set rng = cell.Range
+    ' Exclude the end-of-cell marker so text does not pick up Chr(7).
+    On Error Resume Next
+    rng.MoveEnd Unit:=1, Count:=-1  ' wdCharacter = 1
+    On Error GoTo 0
+    rng.Text = textValue
+End Sub
+
+Private Sub FormatWordTable(ByVal wdTable As Object)
+    Dim hdrRow As Object
+    Dim cell As Object
+    Dim col As Long
+    Dim rowIndex As Long
+
+    On Error Resume Next
+    wdTable.Rows(1).HeadingFormat = True
+    On Error GoTo 0
+
+    Set hdrRow = wdTable.Rows(1)
+    For Each cell In hdrRow.Cells
+        cell.Range.Font.Bold = True
+        cell.Range.Font.Size = 9
+        cell.Range.Font.Name = "Calibri"
+        cell.Range.Font.Color = RGB(255, 255, 255)
+        cell.Shading.BackgroundPatternColor = COLOR_HEADER_BLUE
+        cell.Range.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_CENTER
+        cell.VerticalAlignment = WD_ALIGN_CELL_CENTER
+        ' Strip trailing cell marker noise by trimming paragraph mark formatting only.
+    Next cell
+
+    For rowIndex = 2 To wdTable.Rows.Count
+        For col = 1 To PRINT_COL_COUNT
+            On Error Resume Next
+            Set cell = wdTable.Cell(rowIndex, col)
+            If Not cell Is Nothing Then
+                cell.Range.Font.Name = "Calibri"
+                cell.Range.Font.Size = 8
+                Select Case col
+                    Case 4, 7
+                        cell.Range.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_LEFT
+                    Case Else
+                        cell.Range.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_CENTER
+                End Select
+                cell.VerticalAlignment = WD_ALIGN_CELL_CENTER
+            End If
+            On Error GoTo 0
+        Next col
+    Next rowIndex
+
+    On Error Resume Next
+    With wdTable.Borders
+        .Enable = True
+        .OutsideLineStyle = WD_LINE_STYLE_SINGLE
+        .InsideLineStyle = WD_LINE_STYLE_SINGLE
     End With
     On Error GoTo 0
 End Sub
@@ -362,60 +517,6 @@ Private Function PrintColumnHeaders() As Variant
         "Serial Number" _
     )
 End Function
-
-Private Sub WritePrintDataRow(ByVal ws As Worksheet, _
-                              ByVal outputRow As Long, _
-                              ByRef data As Variant, _
-                              ByVal dataRowIndex As Long, _
-                              ByVal intervalCode As String, _
-                              ByVal colCurHours As Long, _
-                              ByVal colCurNumber As Long, _
-                              ByVal colLRHours As Long, _
-                              ByVal colLRNumber As Long, _
-                              ByVal colDaysDue As Long, _
-                              ByVal colProjected As Long, _
-                              ByVal colInterval As Long, _
-                              ByVal colTaskCode As Long, _
-                              ByVal colSequence As Long, _
-                              ByVal colActual As Long, _
-                              ByVal colDesc As Long, _
-                              ByVal colExtension As Long, _
-                              ByVal colSerial As Long)
-    Dim whenDueText As String
-    Dim lifeRemainingText As String
-    Dim actualText As String
-    Dim extensionText As String
-
-    whenDueText = BuildPrintWhenDueText(data, dataRowIndex, intervalCode, _
-        colCurHours, colCurNumber, colLRHours, colLRNumber, colDaysDue, colProjected)
-    lifeRemainingText = BuildPrintLifeRemainingText(data, dataRowIndex, intervalCode, _
-        colLRHours, colLRNumber, colDaysDue)
-    actualText = BuildPrintIntervalText(data, dataRowIndex, intervalCode, colActual)
-    extensionText = BuildPrintIntervalText(data, dataRowIndex, intervalCode, colExtension)
-
-    ws.Cells(outputRow, 1).Value = whenDueText
-    ws.Cells(outputRow, 2).Value = lifeRemainingText
-    ws.Cells(outputRow, 3).Value = intervalCode
-    If colTaskCode > 0 Then ws.Cells(outputRow, 4).Value = Trim$(CStr(data(dataRowIndex, colTaskCode)))
-    If colSequence > 0 Then ws.Cells(outputRow, 5).Value = data(dataRowIndex, colSequence)
-    ws.Cells(outputRow, 6).Value = actualText
-    If colDesc > 0 Then ws.Cells(outputRow, 7).Value = data(dataRowIndex, colDesc)
-    ws.Cells(outputRow, 8).Value = extensionText
-    If colSerial > 0 Then
-        ws.Cells(outputRow, 9).Value = NormalizeSerialText(data(dataRowIndex, colSerial))
-        ws.Cells(outputRow, 9).NumberFormat = FORMAT_TEXT
-    End If
-
-    ws.Cells(outputRow, 1).HorizontalAlignment = xlCenter
-    ws.Cells(outputRow, 2).HorizontalAlignment = xlCenter
-    ws.Cells(outputRow, 3).HorizontalAlignment = xlCenter
-    ws.Cells(outputRow, 4).HorizontalAlignment = xlLeft
-    ws.Cells(outputRow, 5).HorizontalAlignment = xlCenter
-    ws.Cells(outputRow, 6).HorizontalAlignment = xlCenter
-    ws.Cells(outputRow, 7).HorizontalAlignment = xlLeft
-    ws.Cells(outputRow, 8).HorizontalAlignment = xlCenter
-    ws.Cells(outputRow, 9).HorizontalAlignment = xlCenter
-End Sub
 
 Private Function BuildPrintWhenDueText(ByRef data As Variant, _
                                        ByVal rowIndex As Long, _
@@ -439,7 +540,6 @@ Private Function BuildPrintWhenDueText(ByRef data As Variant, _
                 BuildPrintWhenDueText = FormatElapsedHoursFromDayFraction( _
                     CDbl(currentValue) + CDbl(lifeValue))
             ElseIf IsNumeric(lifeValue) And (IsEmpty(currentValue) Or Len(Trim$(CStr(currentValue))) = 0) Then
-                ' No current usage — still show absolute due if life alone is usable.
                 BuildPrintWhenDueText = FormatElapsedHoursFromDayFraction(CDbl(lifeValue))
             End If
             Exit Function
@@ -552,7 +652,6 @@ Private Function FormatAirframeHHForPrint() As String
         UsageValueAsDayFraction(currentHH, FORMAT_TYPE_HOURS), FORMAT_TYPE_HOURS)
 End Function
 
-' Match HH by interval code only (task code varies across imports).
 Private Function LookupAirframeHHUsageForPrint() As Variant
     Dim ws As Worksheet
     Dim tbl As ListObject
@@ -588,7 +687,7 @@ Private Function FormatPrintNumber(ByVal value As Double) As String
 End Function
 
 Private Function PrintLooksLikeAbsoluteDueDate(ByVal value As Variant) As Boolean
-    Const MIN_DATE_SERIAL As Double = 20000#  ' ~24/10/1954
+    Const MIN_DATE_SERIAL As Double = 20000#
 
     If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
     If VarType(value) = vbDate Then
@@ -777,19 +876,6 @@ Private Function PrintEntryLess(ByRef leftEntry As PrintSortEntry, _
     End If
 End Function
 
-Private Sub ApplyPrintColumnWidths(ByVal ws As Worksheet)
-    ws.Columns(1).ColumnWidth = 12   ' When Due
-    ws.Columns(2).ColumnWidth = 14   ' When Due from Report Run DTG
-    ws.Columns(3).ColumnWidth = 10   ' Interval Type Code
-    ws.Columns(4).ColumnWidth = 14   ' Task Code
-    ws.Columns(5).ColumnWidth = 8    ' Sequence
-    ws.Columns(6).ColumnWidth = 12   ' Actual Interval
-    ws.Columns(7).ColumnWidth = 36   ' Task Description
-    ws.Columns(8).ColumnWidth = 10   ' Extension
-    ws.Columns(9).ColumnWidth = 14   ' Serial Number
-End Sub
-
-' Excel returns a 1D array for a single-row DataBodyRange — normalize to 2D.
 Private Function NormalizePrintDataArray(ByVal raw As Variant, _
                                          ByVal rowCount As Long, _
                                          ByVal colCount As Long) As Variant
