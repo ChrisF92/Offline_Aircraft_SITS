@@ -1326,6 +1326,9 @@ Private Function SITSIntervalGroupOrder(ByVal intervalCode As String) As Long
         Case Else
             If IsNumberBasedSITSInterval(intervalCode) Then
                 SITSIntervalGroupOrder = 4
+            ElseIf IsForecastNumberInterval(intervalCode) Then
+                ' Allowlisted counters that are not classified as number-based (e.g. OH).
+                SITSIntervalGroupOrder = 4
             Else
                 SITSIntervalGroupOrder = 6
             End If
@@ -1531,20 +1534,29 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
             End If
 
         Case Else
-            If IsNumberBasedSITSInterval(intervalCode) Then
-                numberHorizon = GetNumberIntervalForecastHorizon(intervalCode)
-                If numberHorizon < 0 Then Exit Function
-
+            numberHorizon = GetNumberIntervalForecastHorizon(intervalCode)
+            If numberHorizon >= 0 Then
                 If colLRNumber = 0 Then colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
                 lifeNumber = -1#
                 If colLRNumber > 0 And IsNumeric(row.Range.Cells(1, colLRNumber).Value) Then
                     lifeNumber = CDbl(row.Range.Cells(1, colLRNumber).Value)
                 End If
-                If lifeNumber < 0# Then
-                    TaskPassesForecastFilter = True
-                Else
+                If lifeNumber >= 0# Then
                     TaskPassesForecastFilter = (lifeNumber <= CDbl(numberHorizon))
+                ElseIf IsHourUsageInterval(intervalCode) Then
+                    ' e.g. OH — allowlisted with a numeric horizon but stored as hours.
+                    If colLRHours = 0 Then colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+                    If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
+                        lifeHoursFraction = CDbl(row.Range.Cells(1, colLRHours).Value)
+                        TaskPassesForecastFilter = (lifeHoursFraction <= (CDbl(numberHorizon) / 24#))
+                    Else
+                        TaskPassesForecastFilter = True
+                    End If
+                Else
+                    TaskPassesForecastFilter = True
                 End If
+            ElseIf IsNumberBasedSITSInterval(intervalCode) Then
+                TaskPassesForecastFilter = False
             Else
                 TaskPassesForecastFilter = True
             End If
@@ -1599,19 +1611,27 @@ Private Function TaskPassesForecastFilterFromData(ByRef data As Variant, _
             End If
 
         Case Else
-            If IsNumberBasedSITSInterval(intervalCode) Then
-                numberHorizon = GetNumberIntervalForecastHorizon(intervalCode)
-                If numberHorizon < 0 Then Exit Function
-
+            numberHorizon = GetNumberIntervalForecastHorizon(intervalCode)
+            If numberHorizon >= 0 Then
                 lifeNumber = -1#
                 If colLRNumber > 0 And IsNumeric(data(rowIndex, colLRNumber)) Then
                     lifeNumber = CDbl(data(rowIndex, colLRNumber))
                 End If
-                If lifeNumber < 0# Then
-                    TaskPassesForecastFilterFromData = True
-                Else
+                If lifeNumber >= 0# Then
                     TaskPassesForecastFilterFromData = (lifeNumber <= CDbl(numberHorizon))
+                ElseIf IsHourUsageInterval(intervalCode) Then
+                    If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
+                        lifeHoursFraction = CDbl(data(rowIndex, colLRHours))
+                        TaskPassesForecastFilterFromData = _
+                            (lifeHoursFraction <= (CDbl(numberHorizon) / 24#))
+                    Else
+                        TaskPassesForecastFilterFromData = True
+                    End If
+                Else
+                    TaskPassesForecastFilterFromData = True
                 End If
+            ElseIf IsNumberBasedSITSInterval(intervalCode) Then
+                TaskPassesForecastFilterFromData = False
             Else
                 TaskPassesForecastFilterFromData = True
             End If
