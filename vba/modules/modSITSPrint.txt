@@ -418,6 +418,7 @@ Private Sub ComputePrintColumnLayout(ByVal reportRows As Variant, _
                                      ByVal pageWidth As Double, _
                                      ByRef colWidths() As Double, _
                                      ByRef colMaxChars() As Long)
+    Dim widthScale As Double
     Dim headers As Variant
     Dim maxLens(1 To PRINT_COL_COUNT) As Long
     Dim col As Long
@@ -428,7 +429,6 @@ Private Sub ComputePrintColumnLayout(ByVal reportRows As Variant, _
     Dim minDescWidth As Double
     Dim charPt As Double
     Dim cappedLen As Long
-    Dim scale As Double
 
     headers = PrintColumnHeaders()
     For col = 1 To PRINT_COL_COUNT
@@ -463,9 +463,9 @@ NextWidthCol:
     If descWidth < minDescWidth Then
         ' Shrink non-desc columns proportionally so description keeps a floor.
         If usedWidth > 0# And pageWidth > minDescWidth Then
-            scale = (pageWidth - minDescWidth) / usedWidth
+            widthScale = (pageWidth - minDescWidth) / usedWidth
             For col = 1 To PRINT_COL_COUNT
-                If col <> PRINT_DESC_COL Then colWidths(col) = colWidths(col) * scale
+                If col <> PRINT_DESC_COL Then colWidths(col) = colWidths(col) * widthScale
             Next col
             descWidth = minDescWidth
         Else
