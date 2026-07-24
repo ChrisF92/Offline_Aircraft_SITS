@@ -1723,6 +1723,7 @@ Private Sub EnsureSITSViewActionButtons(ByVal ws As Worksheet, _
     EnsureSheetButton ws, "Create Work Package", "RunCreateWorkPackage", "F1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
     EnsureSheetButton ws, "Manage Work Packages", "RunManageWorkPackages", "H1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
     EnsureSheetButton ws, "Horizon", "RunHorizonSettings", "J1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
+    EnsureSheetButton ws, "Print", "RunPrintSITSReport", "L1", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
     EnsureSheetButton ws, "Extend", "RunExtendFromSelection", "D3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
     EnsureSheetButton ws, "Defer", "RunDeferFromSelection", "F3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting
     EnsureSheetButton ws, "Add Task", "RunAddSITSTask", "H3", SITS_BTN_WIDTH, SITS_BTN_HEIGHT, normaliseExisting

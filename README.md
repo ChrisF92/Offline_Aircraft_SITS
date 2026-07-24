@@ -2,6 +2,6 @@
 
 Offline Aircraft SITS — Wildcat single-aircraft Excel workbook (VBA).
 
-**Version 1.1.0** — dashboard button fix, Extend Life Remaining match + current extension display, skip Gen/ import codes, Manual Update for zero-interval tasks.
+**Version 1.2.0** — SITS printable landscape Word report (Print button on SITS sheet).
 
 See `vba/BUILD_INSTRUCTIONS.txt` for build, upgrade, and operator workflow.
