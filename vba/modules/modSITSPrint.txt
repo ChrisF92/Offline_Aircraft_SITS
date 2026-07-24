@@ -5,7 +5,9 @@ Option Explicit
 ' ========================================================================
 ' Builds a landscape Word document snapshot of tasks in the current Horizon.
 ' Black-and-white, single-line truncated rows. Non-description columns size to
-' content; Task Description takes the remaining page width. Late-bound Word.
+' content; Task Description takes the remaining page width.
+' Performance: build TSV in VBA, ConvertToTable once, format by range/column
+' (no per-cell Word COM loops). Late-bound Word.Application.
 '
 ' Entry point: RunPrintSITSReport (SITS sheet Print button only).
 ' ========================================================================
@@ -645,12 +647,8 @@ End Sub
 Private Sub AlignWordTableColumn(ByVal wdTable As Object, _
                                  ByVal colIndex As Long, _
                                  ByVal alignment As Long)
-    Dim colRange As Object
-
     On Error Resume Next
-    Set colRange = wdTable.Cell(1, colIndex).Range
-    colRange.End = wdTable.Cell(wdTable.Rows.Count, colIndex).Range.End
-    colRange.ParagraphFormat.Alignment = alignment
+    wdTable.Columns(colIndex).Range.ParagraphFormat.Alignment = alignment
     On Error GoTo 0
 End Sub
 
