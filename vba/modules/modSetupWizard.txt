@@ -21,6 +21,7 @@ Public Sub RunSetupWizard()
     Dim errNum As Long
     Dim errDesc As String
     Dim protectionSuspended As Boolean
+    Dim busyStarted As Boolean
 
     On Error GoTo ErrorHandler
 
@@ -54,6 +55,7 @@ Public Sub RunSetupWizard()
               "Select the GOLDesp Long Forecast export for " & tailNumber & ".", _
               vbInformation + vbOKCancel, "Setup Wizard") <> vbOK Then Exit Sub
 
+    ' Import shows frmProgress after the file picker (keeps focus stable).
     sitsCount = ImportSITSFromFile(, False, True)
     If sitsCount < 0 Then
         MsgBox "Setup cancelled — SITS import failed or was not selected.", vbExclamation, "Setup Wizard"
@@ -106,7 +108,14 @@ Public Sub RunSetupWizard()
         Exit Sub
     End If
 
+    ' One busy session for commit + refresh so Audit/ListRows cannot leave the
+    ' user on a jumping sheet (looks like a crash without the progress form).
+    BeginBusyUI "Committing usage baseline…"
+    busyStarted = True
+
     If Not CommitUsageImport(False, failReason) Then
+        EndBusyUI
+        busyStarted = False
         ResetUsageImportSession
         If Len(failReason) = 0 Then failReason = "Usage validation or commit failed."
         MsgBox "Setup cancelled — usage validation or commit failed." & vbCrLf & vbCrLf & _
@@ -123,6 +132,7 @@ Public Sub RunSetupWizard()
     SuspendWorkbookProtection
     protectionSuspended = True
 
+    UpdateBusyUI "Marking setup complete…"
     SetConfigValue CFG_SETUP_COMPLETE, True
     SetConfigValue CFG_SETUP_DATE, Now
     SetConfigValue CFG_SETUP_BY, userName
@@ -132,13 +142,22 @@ Public Sub RunSetupWizard()
 
     ResetUsageImportSession
     LogSetupComplete tailNumber, sitsCount, usageCount
+
+    UpdateBusyUI "Refreshing usage…"
     SnapshotUsageForSITS
     RefreshUsageView
+
+    UpdateBusyUI "Refreshing SITS…"
     RefreshSITS
+
+    UpdateBusyUI "Updating Dashboard…"
     RefreshDashboardAfterSetup
 
     ResumeWorkbookProtection
     protectionSuspended = False
+
+    EndBusyUI
+    busyStarted = False
 
     MsgBox "Setup complete for " & tailNumber & "." & vbCrLf & vbCrLf & _
            "SITS tasks: " & sitsCount & vbCrLf & _
@@ -150,6 +169,7 @@ ErrorHandler:
     errNum = Err.Number
     errDesc = Err.Description
     On Error Resume Next
+    If busyStarted Then EndBusyUI
     ResetUsageImportSession
     If protectionSuspended Then ForceResumeWorkbookProtection
     On Error GoTo 0

@@ -154,7 +154,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "Aircraft Status", _
         "Shows Tail Number, Setup Complete, open work packages, tasks needing manual update, warning-period tasks (amber), and overdue tasks (pink)."
     WriteHelpRow ws, r, "Setup Wizard", _
-        "Visible on the Master and before setup completes. Declares the tail and imports SITS + usage baselines."
+        "Visible on the Master and before setup completes. Declares the tail and imports SITS + usage baselines. A Please wait progress dialog appears during import and final refresh so Excel does not look frozen."
     WriteHelpRow ws, r, "Log Sortie", _
         "Records a sortie: date, HUMS Op Number, and usage increments by counter group (Airframe / Engines / WARE)."
     WriteHelpRow ws, r, "Work Packages", _

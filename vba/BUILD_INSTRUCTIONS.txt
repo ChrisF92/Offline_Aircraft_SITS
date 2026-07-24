@@ -113,7 +113,8 @@ Progress (busy dialog):
 1. Insert > UserForm, Name = frmProgress
 2. Add controls per vba/forms/PROGRESS_FORM_LAYOUT.txt (ShowModal = False)
 3. Paste vba/forms/frmProgress.txt into the form code module
-   Used by Refresh View / Log Sortie to show status without ghosting Excel.
+   Used by Setup Wizard, Refresh View, Log Sortie, and other long ops to show
+   status without ghosting Excel, and to restore the active sheet afterwards.
 
 Aircraft setup (Setup Wizard)
 -----------------------------

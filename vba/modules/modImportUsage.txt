@@ -69,6 +69,7 @@ Public Function ImportUsageFromFile(ByVal sourceName As String, _
     Dim importedRows As Long
     Dim usageRow As UsageImportRow
     Dim mergeKey As String
+    Dim ownsBusy As Boolean
 
     ImportUsageFromFile = -1
 
@@ -132,8 +133,11 @@ Public Function ImportUsageFromFile(ByVal sourceName As String, _
     End If
 
     On Error GoTo ErrorHandler
+    ownsBusy = Not BusyUIActive()
+    If ownsBusy Then BeginBusyUI "Importing " & sourceName & " usage…"
     SetExcelState "disable"
 
+    UpdateBusyUI "Staging " & sourceName & " usage…"
     For rowIndex = firstDataRow To lastRow
         If Not UsageRowHasData(srcWs, rowIndex, colMap) Then GoTo NextRow
 
@@ -146,7 +150,6 @@ NextRow:
     Next rowIndex
 
     srcWb.Close SaveChanges:=False
-    SetExcelState "enable"
 
     If importedRows > 0 Then
         If StrComp(sourceName, "Airframe", vbTextCompare) = 0 Then
@@ -156,7 +159,11 @@ NextRow:
         End If
     End If
 
+    ' Log before EndBusyUI — Audit ListRows.Add can steal sheet focus.
     LogAction "USAGE_STAGED", "", sourceName & ": " & importedRows & " row(s) from " & filePath
+    SetExcelState "enable"
+    If ownsBusy Then EndBusyUI
+
     ImportUsageFromFile = importedRows
 
     If showDialogs Then
@@ -170,6 +177,7 @@ ErrorHandler:
     If Not srcWb Is Nothing Then srcWb.Close SaveChanges:=False
     On Error GoTo 0
     SetExcelState "enable"
+    If ownsBusy Then EndBusyUI
     LogError PROC_NAME, Err.Number, Err.Description
     If showDialogs Then
         MsgBox sourceName & " usage import error: " & Err.Number & " - " & Err.Description, _
@@ -191,6 +199,7 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
     Dim intervalCode As String
     Dim taskCode As String
     Dim valuePattern As String
+    Dim ownsBusy As Boolean
 
     CommitUsageImport = False
     failReason = ""
@@ -249,9 +258,12 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
     End If
 
     On Error GoTo ErrorHandler
+    ownsBusy = Not BusyUIActive()
+    If ownsBusy Then BeginBusyUI "Committing usage baseline…"
     SetExcelState "disable"
     SuspendWorkbookProtection
 
+    UpdateBusyUI "Writing usage baseline…"
     ClearTableData tblBaseline
     ClearTableData tblCurrent
 
@@ -260,6 +272,7 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
         If Not IsArray(rowData) Then
             ResumeWorkbookProtection
             SetExcelState "enable"
+            If ownsBusy Then EndBusyUI
             failReason = "Staged usage data is invalid. Re-import airframe and engine usage."
             Exit Function
         End If
@@ -294,10 +307,12 @@ Public Function CommitUsageImport(Optional ByVal showDialogs As Boolean = True, 
     Next mergeKey
 
     LogAction "USAGE_IMPORTED", "", "Committed " & rowCount & " merged usage row(s)"
+    UpdateBusyUI "Refreshing usage view…"
+    RefreshUsageView
     ResumeWorkbookProtection
     SetExcelState "enable"
+    If ownsBusy Then EndBusyUI
     CommitUsageImport = True
-    RefreshUsageView
 
     If showDialogs Then
         MsgBox "Committed " & rowCount & " usage baseline row(s).", vbInformation, APP_NAME
@@ -311,6 +326,7 @@ ErrorHandler:
     errDesc = Err.Description
     ForceResumeWorkbookProtection
     SetExcelState "enable"
+    If ownsBusy Then EndBusyUI
     If Len(failReason) = 0 Then
         If Len(intervalCode) > 0 Then
             failReason = "Usage commit error on " & intervalCode & "/" & taskCode & _

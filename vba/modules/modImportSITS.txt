@@ -51,6 +51,7 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
     Dim colExtension As Long
     Dim colActualInterval As Long
     Dim colSitsRowId As Long
+    Dim ownsBusy As Boolean
 
     ImportSITSFromFile = -1
 
@@ -130,10 +131,13 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
     End If
 
     On Error GoTo ErrorHandler
+    ownsBusy = Not BusyUIActive()
+    If ownsBusy Then BeginBusyUI "Importing SITS…"
     SetExcelState "disable"
     ' ListRows.Add / ClearTableData / snapshot table ops need sheets unprotected.
     SuspendWorkbookProtection
 
+    UpdateBusyUI "Clearing existing SITS data…"
     ClearTableData tbl
 
     ' Ensure structural columns exist before caching indexes for the import loop.
@@ -152,6 +156,7 @@ Public Function ImportSITSFromFile(Optional ByVal filePath As String = "", _
     colActualInterval = LookupColumnIndex(destColMap, HDR_ACTUAL_INTERVAL)
     colSitsRowId = LookupColumnIndex(destColMap, HDR_SITS_ROW_ID)
 
+    UpdateBusyUI "Importing SITS tasks…"
     For rowIndex = firstDataRow To lastRow
         If Not SITSRowHasData(srcWs, rowIndex, colMap) Then GoTo NextRow
 
@@ -210,15 +215,20 @@ NextRow:
     Next rowIndex
 
     srcWb.Close SaveChanges:=False
+    UpdateBusyUI "Applying formats…"
     ApplyWorkbookDataFormats
+    UpdateBusyUI "Snapshotting usage…"
     SnapshotUsageForSITS
+    UpdateBusyUI "Recalculating life remaining…"
     RecalculateSITS skipTableFormats:=True
+    UpdateBusyUI "Refreshing SITS view…"
     RefreshSITSView
 
     LogAction "SITS_IMPORTED", "", "Imported " & importedRows & " rows (skipped " & _
               skippedRows & " number-based, " & skippedGenRows & " Gen/) from " & filePath
     ResumeWorkbookProtection
     SetExcelState "enable"
+    If ownsBusy Then EndBusyUI
 
     ImportSITSFromFile = importedRows
 
@@ -245,6 +255,7 @@ ErrorHandler:
     If Not srcWb Is Nothing Then srcWb.Close SaveChanges:=False
     ForceResumeWorkbookProtection
     SetExcelState "enable"
+    If ownsBusy Then EndBusyUI
     On Error GoTo 0
     LogError PROC_NAME, errNum, errDesc
     If showDialogs Then
