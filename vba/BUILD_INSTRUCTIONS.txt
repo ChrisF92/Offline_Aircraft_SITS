@@ -139,7 +139,8 @@ Log Sortie:
 
 SITS view:
 1. Open the **SITS** sheet after setup or import.
-2. Click **Horizon** and set forecast hours / days / number to filter the view.
+2. Click **Horizon** and set forecast hours / days to filter HH/E1/E2 and DD.
+   Number-based types use fixed per-interval horizons in code.
 3. Use **Refresh View** / **Create Work Package** / **Manage Work Packages** /
    **Horizon** / **Extend** / **Defer** / **Add Task** / **Remove Task** /
    **Manual Update** buttons.

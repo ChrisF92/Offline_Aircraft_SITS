@@ -55,7 +55,8 @@ Public Sub RebuildSITSViewLayout()
     SetExcelState "enable"
 End Sub
 
-' Horizon button — open forecast filter (hours / days / number) dialog.
+' Horizon button — open forecast filter (hours / days) dialog.
+' Number-based horizons are fixed per interval type in code.
 Public Sub RunHorizonSettings()
     ShowHorizonForm
 End Sub
@@ -69,11 +70,9 @@ End Sub
 ' Apply Horizon values from the UserForm (or any caller). Refreshes the view.
 Public Function ApplyHorizonSettings(ByVal hoursText As String, _
                                      ByVal daysText As String, _
-                                     ByVal numberText As String, _
                                      Optional ByVal showDialogs As Boolean = True) As Boolean
     Dim hoursValue As Double
     Dim daysValue As Long
-    Dim numberValue As Long
     Dim failReason As String
     Dim ws As Worksheet
 
@@ -87,22 +86,16 @@ Public Function ApplyHorizonSettings(ByVal hoursText As String, _
         If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
         Exit Function
     End If
-    If Not ParseHorizonWholeNumber(numberText, "Number", numberValue, failReason) Then
-        If showDialogs Then MsgBox failReason, vbExclamation, APP_NAME
-        Exit Function
-    End If
 
     SetConfigValue CFG_FORECAST_HOURS, hoursValue
     SetConfigValue CFG_FORECAST_DAYS, daysValue
-    SetConfigValue CFG_FORECAST_NUMBER, numberValue
 
     ' Prevent SaveForecastSettingsFromView from writing stale B3/B4/B5 over config.
     Set ws = GetWorksheet(SHEET_SITS, showError:=False)
     If Not ws Is Nothing Then ClearSITSViewLegacyForecastCells ws
 
     LogAction "SITS_HORIZON_SET", "", _
-              "Hours=" & CStr(hoursValue) & "; Days=" & CStr(daysValue) & _
-              "; Number=" & CStr(numberValue)
+              "Hours=" & CStr(hoursValue) & "; Days=" & CStr(daysValue)
 
     RefreshSITSViewOnly
     ApplyHorizonSettings = True
@@ -120,6 +113,9 @@ Public Sub SITSSelectorCheckboxChanged()
     Dim callerName As String
     Dim linkAddr As String
     Dim valueKnown As Boolean
+    Dim nameRow As Long
+    Dim linkRow As Long
+    Dim topRow As Long
 
     On Error Resume Next
     callerName = CStr(Application.Caller)
@@ -157,6 +153,15 @@ Public Sub SITSSelectorCheckboxChanged()
     linkAddr = CStr(cb.LinkedCell)
     On Error GoTo 0
 
+    nameRow = 0
+    If StrComp(Left$(cb.Name, 9), "SITS_SEL_", vbTextCompare) = 0 Then
+        On Error Resume Next
+        nameRow = CLng(Mid$(cb.Name, 10))
+        On Error GoTo 0
+        If nameRow < SITS_VIEW_DATA_START_ROW Then nameRow = 0
+    End If
+
+    linkRow = 0
     Set linkCell = Nothing
     If Len(linkAddr) > 0 Then
         On Error Resume Next
@@ -165,34 +170,73 @@ Public Sub SITSSelectorCheckboxChanged()
         If linkCell Is Nothing Then Set linkCell = ws.Range(linkAddr)
         On Error GoTo 0
         If Not linkCell Is Nothing Then
-            If Not linkCell.Parent Is ws Then Set linkCell = Nothing
+            If Not linkCell.Parent Is ws Then
+                Set linkCell = Nothing
+            Else
+                linkRow = linkCell.Row
+            End If
         End If
     End If
 
-    If linkCell Is Nothing Then
-        ' Fall back to row inferred from the control name or Top position.
-        viewRow = 0
-        If StrComp(Left$(cb.Name, 8), "SITS_SEL_", vbTextCompare) = 0 Then
-            On Error Resume Next
-            viewRow = CLng(Mid$(cb.Name, 9))
-            On Error GoTo 0
-        End If
-        If viewRow < SITS_VIEW_DATA_START_ROW Then
-            viewRow = EstimateSITSViewRowFromCheckboxTop(ws, cb.Top)
-        End If
-        If viewRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
-        Set linkCell = ws.Cells(viewRow, SITS_SELECTOR_COL)
-    Else
-        viewRow = linkCell.Row
-    End If
+    topRow = EstimateSITSViewRowFromCheckboxTop(ws, cb.Top)
 
+    ' Prefer the row whose cell Top is closest to the control — fixes stale
+    ' LinkedCell/Name drift after add/remove refresh.
+    viewRow = ResolveSITSViewSelectorRow(ws, nameRow, linkRow, topRow, cb.Top)
     If viewRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
+    Set linkCell = ws.Cells(viewRow, SITS_SELECTOR_COL)
+
     If StrComp(Trim$(CStr(linkCell.Value)), SITS_IN_WORK_TEXT, vbTextCompare) = 0 Then Exit Sub
 
     If Not valueKnown Then selected = ConvertToBoolean(linkCell.Value)
 
+    ' Keep LinkedCell/Name aligned with the row we highlighted.
+    On Error Resume Next
+    If linkRow <> viewRow Or StrComp(cb.Name, SITSCheckboxName(viewRow), vbTextCompare) <> 0 Then
+        cb.Name = SITSCheckboxName(viewRow)
+        cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
+    End If
+    On Error GoTo 0
+
     ApplySITSViewRowSelectionHighlight ws, viewRow, selected
 End Sub
+
+' Pick the candidate row whose Top is closest to the checkbox.
+Private Function ResolveSITSViewSelectorRow(ByVal ws As Worksheet, _
+                                            ByVal nameRow As Long, _
+                                            ByVal linkRow As Long, _
+                                            ByVal topRow As Long, _
+                                            ByVal topPos As Double) As Long
+    Dim bestRow As Long
+    Dim bestDist As Double
+    Dim dist As Double
+
+    ResolveSITSViewSelectorRow = 0
+    bestRow = 0
+    bestDist = 1E+308
+
+    If nameRow >= SITS_VIEW_DATA_START_ROW Then
+        dist = Abs(topPos - ws.Cells(nameRow, SITS_SELECTOR_COL).Top)
+        bestRow = nameRow
+        bestDist = dist
+    End If
+    If linkRow >= SITS_VIEW_DATA_START_ROW Then
+        dist = Abs(topPos - ws.Cells(linkRow, SITS_SELECTOR_COL).Top)
+        If dist < bestDist Then
+            bestRow = linkRow
+            bestDist = dist
+        End If
+    End If
+    If topRow >= SITS_VIEW_DATA_START_ROW Then
+        dist = Abs(topPos - ws.Cells(topRow, SITS_SELECTOR_COL).Top)
+        If dist < bestDist Then
+            bestRow = topRow
+            bestDist = dist
+        End If
+    End If
+
+    ResolveSITSViewSelectorRow = bestRow
+End Function
 
 ' Called from ThisWorkbook.Workbook_SheetChange when Selector LinkedCells change.
 Public Sub HandleSITSSelectorSheetChange(ByVal Sh As Object, ByVal Target As Range)
@@ -228,6 +272,10 @@ Private Function EstimateSITSViewRowFromCheckboxTop(ByVal ws As Worksheet, _
     Dim rowHeightPx As Double
     Dim estimatedRow As Long
     Dim lastRow As Long
+    Dim rowIndex As Long
+    Dim bestRow As Long
+    Dim bestDist As Double
+    Dim dist As Double
 
     EstimateSITSViewRowFromCheckboxTop = 0
     If ws Is Nothing Then Exit Function
@@ -239,10 +287,24 @@ Private Function EstimateSITSViewRowFromCheckboxTop(ByVal ws As Worksheet, _
     lastRow = ws.Cells(ws.Rows.Count, SITS_SELECTOR_COL).End(xlUp).Row
     If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Function
 
-    estimatedRow = SITS_VIEW_DATA_START_ROW + CLng((topPos - firstTop) / rowHeightPx)
+    ' Floor — CLng rounds mid-cell Tops onto the row below.
+    estimatedRow = SITS_VIEW_DATA_START_ROW + Int((topPos - firstTop) / rowHeightPx)
     If estimatedRow < SITS_VIEW_DATA_START_ROW Then estimatedRow = SITS_VIEW_DATA_START_ROW
     If estimatedRow > lastRow Then estimatedRow = lastRow
-    EstimateSITSViewRowFromCheckboxTop = estimatedRow
+
+    bestRow = estimatedRow
+    bestDist = Abs(topPos - ws.Cells(estimatedRow, SITS_SELECTOR_COL).Top)
+    For rowIndex = estimatedRow - 1 To estimatedRow + 1
+        If rowIndex >= SITS_VIEW_DATA_START_ROW And rowIndex <= lastRow Then
+            dist = Abs(topPos - ws.Cells(rowIndex, SITS_SELECTOR_COL).Top)
+            If dist < bestDist Then
+                bestDist = dist
+                bestRow = rowIndex
+            End If
+        End If
+    Next rowIndex
+
+    EstimateSITSViewRowFromCheckboxTop = bestRow
 End Function
 
 Public Sub RefreshSITS(Optional ByVal skipRecalculate As Boolean = False, _
@@ -346,7 +408,6 @@ Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
     Dim daysUntilDue As Long
     Dim forecastHours As Double
     Dim forecastDays As Long
-    Dim forecastNumber As Long
     Dim warnHoursFraction As Double
     Dim warnDays As Long
     Dim colManualFlag As Long
@@ -375,7 +436,6 @@ Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
 
     forecastHours = GetForecastHoursSetting()
     forecastDays = GetForecastDaysSetting()
-    forecastNumber = GetForecastNumberSetting()
     warnHoursFraction = ParseWarnHoursSetting()
     warnDays = CLng(NzSITSNumber(GetConfigValue(CFG_WARN_DAYS, 7)))
 
@@ -409,7 +469,7 @@ Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
 
             intervalCode = UCase$(Trim$(CStr(sitsRow.Range.Cells(1, colInterval).Value)))
             includeRow = TaskPassesForecastFilter(sitsRow, tbl, intervalCode, _
-                forecastHours, forecastDays, forecastNumber, lifeHoursFraction, daysUntilDue, _
+                forecastHours, forecastDays, lifeHoursFraction, daysUntilDue, _
                 colLRHours, colLRNumber, colDaysDue)
 
             If Not includeRow Then
@@ -666,7 +726,6 @@ Public Sub RefreshSITSView()
     Dim intervalCode As String
     Dim forecastHours As Double
     Dim forecastDays As Long
-    Dim forecastNumber As Long
     Dim lifeHoursFraction As Double
     Dim daysUntilDue As Long
     Dim warnHoursFraction As Double
@@ -693,7 +752,6 @@ Public Sub RefreshSITSView()
     Set viewColumns = BuildSITSViewColumns()
     forecastHours = GetForecastHoursSetting()
     forecastDays = GetForecastDaysSetting()
-    forecastNumber = GetForecastNumberSetting()
     warnHoursFraction = ParseWarnHoursSetting()
     warnDays = CLng(NzSITSNumber(GetConfigValue(CFG_WARN_DAYS, 7)))
 
@@ -752,6 +810,15 @@ Public Sub RefreshSITSView()
         Dim dataRowIndex As Long
         Dim colOrn As Long
         Dim colDesc As Long
+        Dim hasE1InHorizon As Boolean
+        Dim hasE2InHorizon As Boolean
+        Dim bestE1Index As Long
+        Dim bestE2Index As Long
+        Dim bestE1Key As Double
+        Dim bestE2Key As Double
+        Dim bestE1Life As Double
+        Dim bestE2Life As Double
+        Dim candidateKey As Double
 
         data = NormalizeTableDataArray(tbl.DataBodyRange.Value, _
             tbl.ListRows.Count, tbl.ListColumns.Count)
@@ -762,14 +829,44 @@ Public Sub RefreshSITSView()
 
         sortCount = 0
         ReDim sortEntries(1 To dataRowCount)
+        hasE1InHorizon = False
+        hasE2InHorizon = False
+        bestE1Index = 0
+        bestE2Index = 0
+        bestE1Key = SITS_SORT_KEY_MISSING
+        bestE2Key = SITS_SORT_KEY_MISSING
+        bestE1Life = -1#
+        bestE2Life = -1#
 
         UpdateBusyUI "Filtering SITS tasks…"
         For dataRowIndex = 1 To dataRowCount
             intervalCode = UCase$(Trim$(CStr(data(dataRowIndex, colIntervalCached))))
 
             includeRow = TaskPassesForecastFilterFromData(data, dataRowIndex, intervalCode, _
-                forecastHours, forecastDays, forecastNumber, lifeHoursFraction, daysUntilDue, _
+                forecastHours, forecastDays, lifeHoursFraction, daysUntilDue, _
                 colLRHours, colLRNumber, colDaysDue)
+
+            ' Track nearest E1/E2 even when outside the hours horizon.
+            If intervalCode = TYPE_E1 Or intervalCode = TYPE_E2 Then
+                candidateKey = SITSTaskSortKeyFromData(data, dataRowIndex, intervalCode, _
+                    colLRHours, colLRNumber, colDaysDue, colTaskCode)
+                If intervalCode = TYPE_E1 Then
+                    If candidateKey < bestE1Key Then
+                        bestE1Key = candidateKey
+                        bestE1Index = dataRowIndex
+                        bestE1Life = lifeHoursFraction
+                    End If
+                    If includeRow Then hasE1InHorizon = True
+                Else
+                    If candidateKey < bestE2Key Then
+                        bestE2Key = candidateKey
+                        bestE2Index = dataRowIndex
+                        bestE2Life = lifeHoursFraction
+                    End If
+                    If includeRow Then hasE2InHorizon = True
+                End If
+            End If
+
             If Not includeRow Then GoTo NextCollectRow
 
             sortCount = sortCount + 1
@@ -783,6 +880,26 @@ Public Sub RefreshSITSView()
 
 NextCollectRow:
         Next dataRowIndex
+
+        ' If no E1/E2 fell inside the hours horizon, still show the next task of each.
+        If Not hasE1InHorizon And bestE1Index > 0 Then
+            sortCount = sortCount + 1
+            sortEntries(sortCount).ListRowIndex = bestE1Index
+            sortEntries(sortCount).IntervalCode = TYPE_E1
+            sortEntries(sortCount).GroupOrder = SITSIntervalGroupOrder(TYPE_E1)
+            sortEntries(sortCount).SortKey = bestE1Key
+            sortEntries(sortCount).LifeHoursFraction = bestE1Life
+            sortEntries(sortCount).DaysUntilDue = -1
+        End If
+        If Not hasE2InHorizon And bestE2Index > 0 Then
+            sortCount = sortCount + 1
+            sortEntries(sortCount).ListRowIndex = bestE2Index
+            sortEntries(sortCount).IntervalCode = TYPE_E2
+            sortEntries(sortCount).GroupOrder = SITSIntervalGroupOrder(TYPE_E2)
+            sortEntries(sortCount).SortKey = bestE2Key
+            sortEntries(sortCount).LifeHoursFraction = bestE2Life
+            sortEntries(sortCount).DaysUntilDue = -1
+        End If
 
         If sortCount > 0 Then
             ReDim Preserve sortEntries(1 To sortCount)
@@ -1204,9 +1321,14 @@ Private Function SITSIntervalGroupOrder(ByVal intervalCode As String) As Long
         Case TYPE_HH
             SITSIntervalGroupOrder = 3
         Case TYPE_DD
-            SITSIntervalGroupOrder = 4
-        Case Else
+            ' Number-based tasks sit between HH and DD.
             SITSIntervalGroupOrder = 5
+        Case Else
+            If IsNumberBasedSITSInterval(intervalCode) Then
+                SITSIntervalGroupOrder = 4
+            Else
+                SITSIntervalGroupOrder = 6
+            End If
     End Select
 End Function
 
@@ -1366,7 +1488,6 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
                                           ByVal intervalCode As String, _
                                           ByVal forecastHours As Double, _
                                           ByVal forecastDays As Long, _
-                                          ByVal forecastNumber As Long, _
                                           ByRef lifeHoursFraction As Double, _
                                           ByRef daysUntilDue As Long, _
                                           Optional ByVal colLRHours As Long = 0, _
@@ -1374,6 +1495,7 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
                                           Optional ByVal colDaysDue As Long = 0) As Boolean
     Dim dueValue As Variant
     Dim lifeNumber As Double
+    Dim numberHorizon As Long
 
     lifeHoursFraction = -1#
     daysUntilDue = -1
@@ -1410,17 +1532,18 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
 
         Case Else
             If IsNumberBasedSITSInterval(intervalCode) Then
+                numberHorizon = GetNumberIntervalForecastHorizon(intervalCode)
+                If numberHorizon < 0 Then Exit Function
+
                 If colLRNumber = 0 Then colLRNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
                 lifeNumber = -1#
                 If colLRNumber > 0 And IsNumeric(row.Range.Cells(1, colLRNumber).Value) Then
                     lifeNumber = CDbl(row.Range.Cells(1, colLRNumber).Value)
                 End If
-                If forecastNumber <= 0 Then
-                    TaskPassesForecastFilter = True
-                ElseIf lifeNumber < 0# Then
+                If lifeNumber < 0# Then
                     TaskPassesForecastFilter = True
                 Else
-                    TaskPassesForecastFilter = (lifeNumber <= forecastNumber)
+                    TaskPassesForecastFilter = (lifeNumber <= CDbl(numberHorizon))
                 End If
             Else
                 TaskPassesForecastFilter = True
@@ -1433,7 +1556,6 @@ Private Function TaskPassesForecastFilterFromData(ByRef data As Variant, _
                                                   ByVal intervalCode As String, _
                                                   ByVal forecastHours As Double, _
                                                   ByVal forecastDays As Long, _
-                                                  ByVal forecastNumber As Long, _
                                                   ByRef lifeHoursFraction As Double, _
                                                   ByRef daysUntilDue As Long, _
                                                   ByVal colLRHours As Long, _
@@ -1441,6 +1563,7 @@ Private Function TaskPassesForecastFilterFromData(ByRef data As Variant, _
                                                   ByVal colDaysDue As Long) As Boolean
     Dim dueValue As Variant
     Dim lifeNumber As Double
+    Dim numberHorizon As Long
 
     lifeHoursFraction = -1#
     daysUntilDue = -1
@@ -1477,16 +1600,17 @@ Private Function TaskPassesForecastFilterFromData(ByRef data As Variant, _
 
         Case Else
             If IsNumberBasedSITSInterval(intervalCode) Then
+                numberHorizon = GetNumberIntervalForecastHorizon(intervalCode)
+                If numberHorizon < 0 Then Exit Function
+
                 lifeNumber = -1#
                 If colLRNumber > 0 And IsNumeric(data(rowIndex, colLRNumber)) Then
                     lifeNumber = CDbl(data(rowIndex, colLRNumber))
                 End If
-                If forecastNumber <= 0 Then
-                    TaskPassesForecastFilterFromData = True
-                ElseIf lifeNumber < 0# Then
+                If lifeNumber < 0# Then
                     TaskPassesForecastFilterFromData = True
                 Else
-                    TaskPassesForecastFilterFromData = (lifeNumber <= forecastNumber)
+                    TaskPassesForecastFilterFromData = (lifeNumber <= CDbl(numberHorizon))
                 End If
             Else
                 TaskPassesForecastFilterFromData = True
@@ -1558,18 +1682,16 @@ End Sub
 Private Sub UpdateSITSHorizonSummary(ByVal ws As Worksheet)
     Dim hoursValue As Double
     Dim daysValue As Long
-    Dim numberValue As Long
 
     If ws Is Nothing Then Exit Sub
 
     hoursValue = GetForecastHoursSetting()
     daysValue = GetForecastDaysSetting()
-    numberValue = GetForecastNumberSetting()
 
     With ws.Range("A3")
         .Value = "Horizon: " & FormatHorizonHours(hoursValue) & " / " & _
-                 CStr(daysValue) & "d / " & CStr(numberValue) & _
-                 "   (use Horizon button — 0 = show all)"
+                 CStr(daysValue) & "d" & _
+                 "   (number types use fixed per-interval horizons — 0h/0d = show all)"
         .Font.Size = 9
         .Font.Italic = False
         .Font.Bold = False
@@ -1802,9 +1924,6 @@ Private Sub SyncSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
     Dim i As Long
     Dim actionName As String
     Dim bangPos As Long
-    Dim leftPos As Double
-    Dim widthPos As Double
-    Dim heightPos As Double
     Dim cellText As String
     Dim poolIndex As Long
 
@@ -1826,15 +1945,15 @@ Private Sub SyncSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
         If Left$(cb.Name, 8) = "SITS_SEL" Or _
            StrComp(actionName, "SITSSelectorCheckboxChanged", vbTextCompare) = 0 Then
             ' Free SITS_SEL_* names so rows can reclaim them without collisions.
+            ' Unlink first — a live LinkedCell can pull the control off-cell on move.
+            cb.LinkedCell = ""
+            cb.Value = xlOff
             cb.Name = "SITS_POOL_" & CStr(pool.Count + 1)
             pool.Add cb
         End If
     Next i
     On Error GoTo 0
 
-    leftPos = ws.Cells(firstDataRow, SITS_SELECTOR_COL).Left
-    widthPos = ws.Cells(firstDataRow, SITS_SELECTOR_COL).Width
-    heightPos = ws.Cells(firstDataRow, SITS_SELECTOR_COL).Height
     poolIndex = 1
 
     For rowIndex = firstDataRow To lastDataRow
@@ -1853,27 +1972,12 @@ Private Sub SyncSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
         If poolIndex <= pool.Count Then
             Set cb = pool(poolIndex)
             poolIndex = poolIndex + 1
-            cb.Left = leftPos
-            cb.Top = linkCell.Top
-            cb.Width = widthPos
-            cb.Height = heightPos
         Else
-            Set cb = ws.CheckBoxes.Add(leftPos, linkCell.Top, widthPos, heightPos)
+            Set cb = ws.CheckBoxes.Add(linkCell.Left, linkCell.Top, _
+                                       linkCell.Width, linkCell.Height)
         End If
 
-        linkCell.Value = False
-        linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
-        linkCell.Font.Bold = False
-        linkCell.Font.Color = vbBlack
-        linkCell.Locked = False
-
-        cb.Name = SITSCheckboxName(rowIndex)
-        cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
-        cb.OnAction = "SITSSelectorCheckboxChanged"
-        cb.Caption = ""
-        cb.Placement = xlMove
-        cb.Display3DShading = False
-        cb.Locked = False
+        BindSITSViewSelectorCheckbox ws, cb, linkCell, rowIndex
 NextSyncRow:
     Next rowIndex
 
@@ -1882,6 +1986,76 @@ NextSyncRow:
     For i = pool.Count To poolIndex Step -1
         pool(i).Delete
     Next i
+    On Error GoTo 0
+End Sub
+
+' Bind + align a selector checkbox to its cell. Re-assert Left/Top after
+' LinkedCell — Excel can nudge Form Controls when the link is assigned,
+' which left boxes sitting on the row below after add/remove refresh.
+Private Sub BindSITSViewSelectorCheckbox(ByVal ws As Worksheet, _
+                                         ByVal cb As CheckBox, _
+                                         ByVal linkCell As Range, _
+                                         ByVal viewRow As Long, _
+                                         Optional ByVal resetUnchecked As Boolean = True)
+    Dim leftPos As Double
+    Dim topPos As Double
+    Dim widthPos As Double
+    Dim heightPos As Double
+    Dim keepSelected As Boolean
+
+    leftPos = linkCell.Left + 1#
+    topPos = linkCell.Top + 1#
+    widthPos = linkCell.Width - 2#
+    heightPos = linkCell.Height - 2#
+    If widthPos < 10# Then widthPos = linkCell.Width
+    If heightPos < 10# Then heightPos = linkCell.Height
+
+    keepSelected = False
+    If Not resetUnchecked Then
+        If VarType(linkCell.Value) = vbBoolean Or IsNumeric(linkCell.Value) Then
+            keepSelected = ConvertToBoolean(linkCell.Value)
+        End If
+    End If
+
+    If resetUnchecked Or Not (VarType(linkCell.Value) = vbBoolean Or IsNumeric(linkCell.Value)) Then
+        linkCell.Value = False
+    End If
+    linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
+    linkCell.Font.Bold = False
+    linkCell.Font.Color = vbBlack
+    linkCell.Locked = False
+
+    On Error Resume Next
+    cb.LinkedCell = ""
+    cb.Value = xlOff
+    On Error GoTo 0
+
+    cb.Left = leftPos
+    cb.Top = topPos
+    cb.Width = widthPos
+    cb.Height = heightPos
+    cb.Name = SITSCheckboxName(viewRow)
+    cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
+    cb.OnAction = "SITSSelectorCheckboxChanged"
+    cb.Caption = ""
+    cb.Placement = xlMove
+    cb.Display3DShading = False
+    cb.Locked = False
+
+    ' LinkedCell assignment can shift the control — snap back to this cell.
+    cb.Left = leftPos
+    cb.Top = topPos
+    cb.Width = widthPos
+    cb.Height = heightPos
+
+    On Error Resume Next
+    If keepSelected Then
+        linkCell.Value = True
+        cb.Value = 1
+    Else
+        cb.Value = xlOff
+        If resetUnchecked Then linkCell.Value = False
+    End If
     On Error GoTo 0
 End Sub
 
@@ -1941,9 +2115,8 @@ Private Sub RemapSITSViewSelectorLinkedCells(ByVal ws As Worksheet)
     Dim headerCell As Range
     Dim linkCell As Range
     Dim cellText As String
-    Dim firstTop As Double
-    Dim rowHeightPx As Double
-    Dim estimatedRow As Long
+    Dim actionName As String
+    Dim bangPos As Long
 
     colRowIdView = 0
     For Each headerCell In ws.Range(ws.Cells(SITS_VIEW_HEADER_ROW, 1), _
@@ -1961,36 +2134,22 @@ Private Sub RemapSITSViewSelectorLinkedCells(ByVal ws As Worksheet)
     End If
     If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
 
-    firstTop = ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL).Top
-    rowHeightPx = ws.Cells(SITS_VIEW_DATA_START_ROW, SITS_SELECTOR_COL).Height
-    If rowHeightPx <= 0# Then rowHeightPx = 15#
-
-    ' xlMove keeps checkbox Top aligned with its row after deletes.
-    ' Remap LinkedCell/Name only — do not recreate hundreds of controls.
+    ' xlMove keeps checkbox Top with its row after deletes — resolve row from
+    ' current Top, then re-bind/re-align so LinkedCell and box stay on that cell.
     On Error Resume Next
     For i = ws.CheckBoxes.Count To 1 Step -1
         Set cb = ws.CheckBoxes(i)
-
-        estimatedRow = SITS_VIEW_DATA_START_ROW + CLng((cb.Top - firstTop) / rowHeightPx)
-        If estimatedRow < SITS_VIEW_DATA_START_ROW Then estimatedRow = SITS_VIEW_DATA_START_ROW
-        If estimatedRow > lastRow Then estimatedRow = lastRow
-
-        ' Nudge one row either side if Top is between rows.
-        rowIndex = estimatedRow
-        If Abs(cb.Top - ws.Cells(estimatedRow, SITS_SELECTOR_COL).Top) > (rowHeightPx / 2#) Then
-            If estimatedRow < lastRow Then
-                If Abs(cb.Top - ws.Cells(estimatedRow + 1, SITS_SELECTOR_COL).Top) < _
-                   Abs(cb.Top - ws.Cells(estimatedRow, SITS_SELECTOR_COL).Top) Then
-                    rowIndex = estimatedRow + 1
-                End If
-            End If
-            If estimatedRow > SITS_VIEW_DATA_START_ROW Then
-                If Abs(cb.Top - ws.Cells(estimatedRow - 1, SITS_SELECTOR_COL).Top) < _
-                   Abs(cb.Top - ws.Cells(rowIndex, SITS_SELECTOR_COL).Top) Then
-                    rowIndex = estimatedRow - 1
-                End If
-            End If
+        actionName = Trim$(CStr(cb.OnAction))
+        bangPos = InStrRev(actionName, "!")
+        If bangPos > 0 Then actionName = Mid$(actionName, bangPos + 1)
+        If Left$(cb.Name, 8) <> "SITS_SEL" And _
+           StrComp(actionName, "SITSSelectorCheckboxChanged", vbTextCompare) <> 0 Then
+            GoTo NextRemapCb
         End If
+
+        rowIndex = EstimateSITSViewRowFromCheckboxTop(ws, cb.Top)
+        If rowIndex < SITS_VIEW_DATA_START_ROW Then rowIndex = SITS_VIEW_DATA_START_ROW
+        If rowIndex > lastRow Then rowIndex = lastRow
 
         Set linkCell = ws.Cells(rowIndex, SITS_SELECTOR_COL)
         cellText = UCase$(Trim$(CStr(linkCell.Value)))
@@ -2001,19 +2160,10 @@ Private Sub RemapSITSViewSelectorLinkedCells(ByVal ws As Worksheet)
             linkCell.Font.Bold = True
             linkCell.Font.Color = RGB(192, 0, 0)
         Else
-            cb.Name = SITSCheckboxName(rowIndex)
-            cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
-            cb.OnAction = "SITSSelectorCheckboxChanged"
-            cb.Locked = False
-            If Not (VarType(linkCell.Value) = vbBoolean Or IsNumeric(linkCell.Value)) Then
-                linkCell.Value = False
-            End If
-            linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
-            linkCell.Font.Bold = False
-            linkCell.Font.Color = vbBlack
-            linkCell.Locked = False
+            BindSITSViewSelectorCheckbox ws, cb, linkCell, rowIndex, resetUnchecked:=False
             ApplySITSViewRowSelectionHighlight ws, rowIndex, ConvertToBoolean(linkCell.Value)
         End If
+NextRemapCb:
     Next i
     On Error GoTo 0
 End Sub
@@ -2083,20 +2233,8 @@ Private Sub SetSITSViewSelectorCheckbox(ByVal ws As Worksheet, ByVal viewRow As 
 
     DeleteSITSViewCheckboxOnRow ws, viewRow
     Set linkCell = ws.Cells(viewRow, SITS_SELECTOR_COL)
-    linkCell.Value = False
-    linkCell.NumberFormat = SITS_CHECKBOX_HIDE_FORMAT
-    linkCell.Font.Bold = False
-    linkCell.Font.Color = vbBlack
-
-    linkCell.Locked = False
     Set cb = ws.CheckBoxes.Add(linkCell.Left, linkCell.Top, linkCell.Width, linkCell.Height)
-    cb.Name = SITSCheckboxName(viewRow)
-    cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
-    cb.OnAction = "SITSSelectorCheckboxChanged"
-    cb.Caption = ""
-    cb.Placement = xlMove
-    cb.Display3DShading = False
-    cb.Locked = False
+    BindSITSViewSelectorCheckbox ws, cb, linkCell, viewRow
 End Sub
 
 Private Sub DeleteSITSViewCheckboxOnRow(ByVal ws As Worksheet, ByVal viewRow As Long)
@@ -2746,7 +2884,6 @@ Private Sub SaveForecastSettingsFromView()
     Dim ws As Worksheet
     Dim hoursValue As Variant
     Dim daysValue As Variant
-    Dim numberValue As Variant
 
     Set ws = GetWorksheet(SHEET_SITS, showError:=False)
     If ws Is Nothing Then Exit Sub
@@ -2761,11 +2898,6 @@ Private Sub SaveForecastSettingsFromView()
     daysValue = ws.Range(SITS_FORECAST_DAYS_CELL).Value
     If IsPresentNumericSetting(daysValue) Then
         SetConfigValue CFG_FORECAST_DAYS, CLng(daysValue)
-    End If
-
-    numberValue = ws.Range(SITS_FORECAST_NUMBER_CELL).Value
-    If IsPresentNumericSetting(numberValue) Then
-        SetConfigValue CFG_FORECAST_NUMBER, CLng(numberValue)
     End If
 End Sub
 
@@ -2815,12 +2947,12 @@ Private Function IsPresentNumericSetting(ByVal value As Variant) As Boolean
     IsPresentNumericSetting = IsNumeric(value)
 End Function
 
-' Seed missing forecast config to defaults (50 hours / 90 days / 500 number).
+' Seed missing forecast config to defaults (50 hours / 90 days).
 ' Does not overwrite an intentional 0 (show-all) value.
+' ForecastNumber is legacy — number horizons are fixed per interval type.
 Public Sub EnsureForecastConfigDefaults()
     Dim hoursValue As Variant
     Dim daysValue As Variant
-    Dim numberValue As Variant
 
     hoursValue = GetConfigValue(CFG_FORECAST_HOURS, Empty)
     If Not IsPresentNumericSetting(hoursValue) Then
@@ -2830,11 +2962,6 @@ Public Sub EnsureForecastConfigDefaults()
     daysValue = GetConfigValue(CFG_FORECAST_DAYS, Empty)
     If Not IsPresentNumericSetting(daysValue) Then
         SetConfigValue CFG_FORECAST_DAYS, 90
-    End If
-
-    numberValue = GetConfigValue(CFG_FORECAST_NUMBER, Empty)
-    If Not IsPresentNumericSetting(numberValue) Then
-        SetConfigValue CFG_FORECAST_NUMBER, 500
     End If
 End Sub
 

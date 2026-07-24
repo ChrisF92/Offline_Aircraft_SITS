@@ -1061,6 +1061,48 @@ Public Function IsNumberBasedSITSInterval(ByVal intervalCode As String) As Boole
     IsNumberBasedSITSInterval = True
 End Function
 
+' Per-interval forecast horizon for number-based types (same units as Life Remaining).
+' Returns -1 when the interval is not imported/displayed.
+Public Function GetNumberIntervalForecastHorizon(ByVal intervalCode As String) As Long
+    Select Case UCase$(Trim$(intervalCode))
+        Case "1E": GetNumberIntervalForecastHorizon = 120
+        Case "1G": GetNumberIntervalForecastHorizon = 480
+        Case "1S": GetNumberIntervalForecastHorizon = 125
+        Case "1T": GetNumberIntervalForecastHorizon = 125
+        Case "2E": GetNumberIntervalForecastHorizon = 120
+        Case "2G": GetNumberIntervalForecastHorizon = 480
+        Case "2S": GetNumberIntervalForecastHorizon = 125
+        Case "2T": GetNumberIntervalForecastHorizon = 125
+        Case "3T": GetNumberIntervalForecastHorizon = 40
+        Case "4T": GetNumberIntervalForecastHorizon = 40
+        Case "AU": GetNumberIntervalForecastHorizon = 9999
+        Case "HE": GetNumberIntervalForecastHorizon = 100
+        Case "IL": GetNumberIntervalForecastHorizon = 1000
+        Case "IR": GetNumberIntervalForecastHorizon = 1000
+        Case "IW": GetNumberIntervalForecastHorizon = 10
+        Case "LF": GetNumberIntervalForecastHorizon = 50
+        Case "LP": GetNumberIntervalForecastHorizon = 50
+        Case "LR": GetNumberIntervalForecastHorizon = 9999
+        Case "OH": GetNumberIntervalForecastHorizon = 3
+        Case "OP": GetNumberIntervalForecastHorizon = 1
+        Case "OS": GetNumberIntervalForecastHorizon = 4
+        Case "OT": GetNumberIntervalForecastHorizon = 1
+        Case "PI": GetNumberIntervalForecastHorizon = 50
+        Case "RF": GetNumberIntervalForecastHorizon = 50
+        Case "RL": GetNumberIntervalForecastHorizon = 50
+        Case "RR": GetNumberIntervalForecastHorizon = 9999
+        Case "RS": GetNumberIntervalForecastHorizon = 5
+        Case "SM": GetNumberIntervalForecastHorizon = 450
+        Case "SN": GetNumberIntervalForecastHorizon = 450
+        Case Else
+            GetNumberIntervalForecastHorizon = -1
+    End Select
+End Function
+
+Public Function IsForecastNumberInterval(ByVal intervalCode As String) As Boolean
+    IsForecastNumberInterval = (GetNumberIntervalForecastHorizon(intervalCode) >= 0)
+End Function
+
 Public Function GetFormatPatternForType(ByVal formatType As String) As String
     Select Case UCase$(Trim$(formatType))
         Case UCase$(FORMAT_TYPE_HOURS)
