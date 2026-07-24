@@ -9,7 +9,7 @@ Option Explicit
 
 ' --- Workbook identity ---
 Public Const APP_NAME As String = "Offline Aircraft SITS"
-Public Const APP_VERSION As String = "1.1.0"
+Public Const APP_VERSION As String = "1.2.0"
 Public Const AIRCRAFT_TYPE As String = "Wildcat"
 
 ' Sheet/workbook protect password — stops accidental UI edits, not a security boundary.
