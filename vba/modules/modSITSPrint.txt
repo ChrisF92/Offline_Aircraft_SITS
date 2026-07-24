@@ -503,7 +503,6 @@ Private Function BuildPrintTsv(ByVal reportRows As Variant, _
     Dim col As Long
     Dim rowIndex As Long
     Dim lineCount As Long
-    Dim headerMaxChars As Long
 
     headers = PrintColumnHeaders()
     If rowCount > 0 Then
@@ -513,11 +512,9 @@ Private Function BuildPrintTsv(ByVal reportRows As Variant, _
     End If
     ReDim parts(1 To lineCount)
 
+    ' Full header captions — wrapping is enabled on the header row in Word.
     For col = 1 To PRINT_COL_COUNT
-        ' Slightly fewer chars for 9pt header text in the same column width.
-        headerMaxChars = CLng(Int(CDbl(colMaxChars(col)) * PRINT_BODY_FONT_PT / PRINT_HEADER_FONT_PT))
-        If headerMaxChars < 1 Then headerMaxChars = 1
-        rowParts(col) = SanitizeTsvField(TruncatePrintText(CStr(headers(col - 1)), headerMaxChars))
+        rowParts(col) = SanitizeTsvField(CStr(headers(col - 1)))
     Next col
     parts(1) = Join(rowParts, vbTab)
 
