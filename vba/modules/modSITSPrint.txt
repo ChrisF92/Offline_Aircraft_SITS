@@ -617,6 +617,7 @@ Private Sub FormatWordTableFast(ByVal wdTable As Object, _
         .Font.Size = PRINT_HEADER_FONT_PT
         .Font.Color = WD_COLOR_BLACK
         .ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_CENTER
+        .ParagraphFormat.WordWrap = True
     End With
     wdTable.Rows(1).HeadingFormat = True
     wdTable.Rows(1).Shading.BackgroundPatternColor = WD_COLOR_WHITE
