@@ -4,8 +4,8 @@ Option Explicit
 ' SITS PRINT MODULE — Offline Aircraft SITS v2
 ' ========================================================================
 ' Builds a landscape Word document snapshot of tasks in the current Horizon.
-' The table fills page width and flows naturally across multiple pages
-' (header row repeats). Late-bound Word.Application — no VBA reference.
+' Black-and-white, single-line truncated rows. Non-description columns size to
+' content; Task Description takes the remaining page width. Late-bound Word.
 '
 ' Entry point: RunPrintSITSReport (SITS sheet Print button only).
 ' ========================================================================
@@ -22,23 +22,16 @@ Private Const WD_ALIGN_PARAGRAPH_LEFT As Long = 0
 Private Const WD_ALIGN_PARAGRAPH_RIGHT As Long = 2
 Private Const WD_ALIGN_CELL_CENTER As Long = 1
 Private Const WD_COLLAPSE_END As Long = 0
-Private Const WD_COLLAPSE_START As Long = 1
 Private Const WD_FIELD_PAGE As Long = 33
 Private Const WD_FIELD_NUM_PAGES As Long = 26
-Private Const WD_AUTO_FIT_WINDOW As Long = 2
-Private Const WD_PREFERRED_WIDTH_PERCENT As Long = 2
+Private Const WD_AUTO_FIT_CONTENT As Long = 1
+Private Const WD_PREFERRED_WIDTH_POINTS As Long = 3
 Private Const WD_LINE_STYLE_SINGLE As Long = 1
-Private Const WD_COLOR_AUTOMATIC As Long = -16777216
-Private Const WD_BORDER_TOP As Long = -1
-Private Const WD_BORDER_LEFT As Long = -2
-Private Const WD_BORDER_BOTTOM As Long = -3
-Private Const WD_BORDER_RIGHT As Long = -4
-Private Const WD_BORDER_HORIZONTAL As Long = -5
-Private Const WD_BORDER_VERTICAL As Long = -6
-Private Const WD_SEEK_MAIN_DOCUMENT As Long = 0
-Private Const WD_SEEK_CURRENT_PAGE_HEADER As Long = 9
-Private Const WD_SEEK_CURRENT_PAGE_FOOTER As Long = 10
-Private Const WD_FORMAT_DOCUMENT_DEFAULT As Long = 16
+Private Const WD_COLOR_BLACK As Long = 0
+Private Const WD_COLOR_WHITE As Long = 16777215
+Private Const PRINT_DESC_COL As Long = 7
+Private Const PRINT_BODY_FONT_PT As Double = 8
+Private Const PRINT_HEADER_FONT_PT As Double = 9
 
 Private Type PrintSortEntry
     DataRowIndex As Long
@@ -261,7 +254,6 @@ Private Function BuildWordPrintDocument(ByVal reportRows As Variant, _
     Dim col As Long
     Dim rowIndex As Long
     Dim tableRows As Long
-    Dim colPercents As Variant
     Dim failReason As String
     Dim createdApp As Boolean
 
@@ -291,10 +283,6 @@ Private Function BuildWordPrintDocument(ByVal reportRows As Variant, _
     Set wdTable = wdDoc.Tables.Add(Range:=wdDoc.Bookmarks("\endofdoc").Range, _
                                    NumRows:=tableRows, NumColumns:=PRINT_COL_COUNT)
 
-    For col = 1 To PRINT_COL_COUNT
-        SetWordCellText wdTable.Cell(1, col), CStr(headers(col - 1))
-    Next col
-
     If rowCount > 0 And IsArray(reportRows) Then
         For rowIndex = 1 To rowCount
             For col = 1 To PRINT_COL_COUNT
@@ -308,20 +296,21 @@ Private Function BuildWordPrintDocument(ByVal reportRows As Variant, _
         On Error GoTo WordFail
     End If
 
-    FormatWordTable wdTable
-
-    ' Preferred widths as % of page so the table fills landscape width and
-    ' rows flow onto additional pages at normal (non-shrunk) size.
-    colPercents = Array(10, 12, 8, 12, 6, 10, 24, 8, 10)
-    On Error Resume Next
-    wdTable.PreferredWidthType = WD_PREFERRED_WIDTH_PERCENT
-    wdTable.PreferredWidth = 100
+    ' Short sizing captions so AutoFit measures data width, not long header wording.
+    headers = PrintColumnHeadersForSizing()
     For col = 1 To PRINT_COL_COUNT
-        wdTable.Columns(col).PreferredWidthType = WD_PREFERRED_WIDTH_PERCENT
-        wdTable.Columns(col).PreferredWidth = CDbl(colPercents(col - 1))
+        SetWordCellText wdTable.Cell(1, col), CStr(headers(col - 1))
     Next col
-    wdTable.AutoFitBehavior WD_AUTO_FIT_WINDOW
-    On Error GoTo WordFail
+
+    FormatWordTable wdTable
+    ApplyWordColumnWidths wdDoc, wdTable
+
+    ' Restore full header captions, then truncate every cell to its fitted width.
+    headers = PrintColumnHeaders()
+    For col = 1 To PRINT_COL_COUNT
+        SetWordCellText wdTable.Cell(1, col), CStr(headers(col - 1))
+    Next col
+    TruncateWordTableToSingleLines wdTable
 
     wdDoc.Fields.Update
     wdApp.ScreenUpdating = True
@@ -394,9 +383,11 @@ Private Sub WriteWordHeaderFooter(ByVal wdDoc As Object, _
     rng.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_CENTER
     rng.Font.Name = "Calibri"
     rng.Font.Size = 10
+    rng.Font.Color = WD_COLOR_BLACK
     On Error Resume Next
     rng.Paragraphs(1).Range.Font.Bold = True
     rng.Paragraphs(1).Range.Font.Size = 16
+    rng.Paragraphs(1).Range.Font.Color = WD_COLOR_BLACK
     On Error GoTo 0
 
     Set ftr = wdDoc.Sections(1).Footers(WD_HEADER_FOOTER_PRIMARY)
@@ -405,6 +396,7 @@ Private Sub WriteWordHeaderFooter(ByVal wdDoc As Object, _
     rng.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_RIGHT
     rng.Font.Name = "Calibri"
     rng.Font.Size = 9
+    rng.Font.Color = WD_COLOR_BLACK
     rng.InsertAfter "Page "
     Set fldRange = ftr.Range
     fldRange.Collapse WD_COLLAPSE_END
@@ -437,7 +429,7 @@ Private Sub WriteWordBodyIntro(ByVal wdDoc As Object)
         .Font.Name = "Calibri"
         .Font.Size = 9
         .Font.Italic = True
-        .Font.Color = RGB(89, 89, 89)
+        .Font.Color = WD_COLOR_BLACK
         .ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_LEFT
     End With
     On Error GoTo 0
@@ -451,8 +443,61 @@ Private Sub SetWordCellText(ByVal cell As Object, ByVal textValue As String)
     On Error Resume Next
     rng.MoveEnd Unit:=1, Count:=-1  ' wdCharacter = 1
     On Error GoTo 0
-    rng.Text = textValue
+    rng.Text = Replace$(Replace$(CStr(textValue & ""), vbCr, " "), vbLf, " ")
 End Sub
+
+Private Function GetWordCellText(ByVal cell As Object) As String
+    Dim rng As Object
+    Dim textValue As String
+
+    Set rng = cell.Range
+    On Error Resume Next
+    rng.MoveEnd Unit:=1, Count:=-1
+    On Error GoTo 0
+    textValue = rng.Text
+    ' Strip cell/paragraph markers Word may still leave behind.
+    textValue = Replace$(textValue, Chr$(7), "")
+    textValue = Replace$(textValue, vbCr, "")
+    textValue = Replace$(textValue, vbLf, "")
+    GetWordCellText = Trim$(textValue)
+End Function
+
+Private Function TruncatePrintText(ByVal textValue As String, ByVal maxChars As Long) As String
+    Dim cleaned As String
+
+    cleaned = Replace$(Replace$(Trim$(CStr(textValue & "")), vbCr, " "), vbLf, " ")
+    Do While InStr(cleaned, "  ") > 0
+        cleaned = Replace$(cleaned, "  ", " ")
+    Loop
+
+    If maxChars < 1 Then
+        TruncatePrintText = ""
+        Exit Function
+    End If
+    If Len(cleaned) <= maxChars Then
+        TruncatePrintText = cleaned
+        Exit Function
+    End If
+    If maxChars = 1 Then
+        TruncatePrintText = "…"
+        Exit Function
+    End If
+    TruncatePrintText = Left$(cleaned, maxChars - 1) & "…"
+End Function
+
+Private Function MaxCharsForColumnWidth(ByVal widthPoints As Double, _
+                                        ByVal fontSizePt As Double) As Long
+    Dim avgCharWidth As Double
+    Dim maxChars As Long
+
+    ' Calibri average glyph width is roughly half the point size.
+    avgCharWidth = fontSizePt * 0.5
+    If avgCharWidth < 1# Then avgCharWidth = 1#
+    ' Leave a little padding inside the cell.
+    maxChars = CLng(Int((widthPoints - 6#) / avgCharWidth))
+    If maxChars < 1 Then maxChars = 1
+    MaxCharsForColumnWidth = maxChars
+End Function
 
 Private Sub FormatWordTable(ByVal wdTable As Object)
     Dim hdrRow As Object
@@ -466,32 +511,23 @@ Private Sub FormatWordTable(ByVal wdTable As Object)
 
     Set hdrRow = wdTable.Rows(1)
     For Each cell In hdrRow.Cells
-        cell.Range.Font.Bold = True
-        cell.Range.Font.Size = 9
-        cell.Range.Font.Name = "Calibri"
-        cell.Range.Font.Color = RGB(255, 255, 255)
-        cell.Shading.BackgroundPatternColor = COLOR_HEADER_BLUE
-        cell.Range.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_CENTER
-        cell.VerticalAlignment = WD_ALIGN_CELL_CENTER
-        ' Strip trailing cell marker noise by trimming paragraph mark formatting only.
+        ApplyWordCellChrome cell, PRINT_HEADER_FONT_PT, True, WD_ALIGN_PARAGRAPH_CENTER
     Next cell
 
     For rowIndex = 2 To wdTable.Rows.Count
         For col = 1 To PRINT_COL_COUNT
             On Error Resume Next
             Set cell = wdTable.Cell(rowIndex, col)
-            If Not cell Is Nothing Then
-                cell.Range.Font.Name = "Calibri"
-                cell.Range.Font.Size = 8
-                Select Case col
-                    Case 4, 7
-                        cell.Range.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_LEFT
-                    Case Else
-                        cell.Range.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_CENTER
-                End Select
-                cell.VerticalAlignment = WD_ALIGN_CELL_CENTER
-            End If
             On Error GoTo 0
+            If Not cell Is Nothing Then
+                Select Case col
+                    Case 4, PRINT_DESC_COL
+                        ApplyWordCellChrome cell, PRINT_BODY_FONT_PT, False, WD_ALIGN_PARAGRAPH_LEFT
+                    Case Else
+                        ApplyWordCellChrome cell, PRINT_BODY_FONT_PT, False, WD_ALIGN_PARAGRAPH_CENTER
+                End Select
+            End If
+            Set cell = Nothing
         Next col
     Next rowIndex
 
@@ -500,8 +536,128 @@ Private Sub FormatWordTable(ByVal wdTable As Object)
         .Enable = True
         .OutsideLineStyle = WD_LINE_STYLE_SINGLE
         .InsideLineStyle = WD_LINE_STYLE_SINGLE
+        .OutsideColor = WD_COLOR_BLACK
+        .InsideColor = WD_COLOR_BLACK
     End With
     On Error GoTo 0
+End Sub
+
+' Black-and-white cell styling; single-line paragraph spacing (no wrap intent).
+Private Sub ApplyWordCellChrome(ByVal cell As Object, _
+                                ByVal fontSizePt As Double, _
+                                ByVal boldText As Boolean, _
+                                ByVal alignment As Long)
+    On Error Resume Next
+    cell.Shading.BackgroundPatternColor = WD_COLOR_WHITE
+    With cell.Range
+        .Font.Name = "Calibri"
+        .Font.Size = fontSizePt
+        .Font.Bold = boldText
+        .Font.Color = WD_COLOR_BLACK
+        .ParagraphFormat.Alignment = alignment
+        .ParagraphFormat.SpaceBefore = 0
+        .ParagraphFormat.SpaceAfter = 0
+        .ParagraphFormat.LineSpacingRule = 0  ' wdLineSpaceSingle
+        .ParagraphFormat.WordWrap = False
+    End With
+    cell.VerticalAlignment = WD_ALIGN_CELL_CENTER
+    cell.TopPadding = 1
+    cell.BottomPadding = 1
+    cell.LeftPadding = 2
+    cell.RightPadding = 2
+    On Error GoTo 0
+End Sub
+
+' Shrink non-description columns to content; give leftover page width to Task Description.
+Private Sub ApplyWordColumnWidths(ByVal wdDoc As Object, ByVal wdTable As Object)
+    Dim pageWidth As Double
+    Dim usedWidth As Double
+    Dim descWidth As Double
+    Dim minDescWidth As Double
+    Dim col As Long
+    Dim colWidth As Double
+
+    pageWidth = CDbl(wdDoc.PageSetup.PageWidth) - _
+                CDbl(wdDoc.PageSetup.LeftMargin) - _
+                CDbl(wdDoc.PageSetup.RightMargin)
+    minDescWidth = CentimetersToPointsSafe(4#)
+
+    On Error Resume Next
+    wdTable.AllowAutoFit = True
+    wdTable.AutoFitBehavior WD_AUTO_FIT_CONTENT
+
+    usedWidth = 0#
+    For col = 1 To PRINT_COL_COUNT
+        If col <> PRINT_DESC_COL Then
+            colWidth = CDbl(wdTable.Columns(col).Width)
+            usedWidth = usedWidth + colWidth
+        End If
+    Next col
+
+    descWidth = pageWidth - usedWidth
+    If descWidth < minDescWidth Then descWidth = minDescWidth
+
+    ' Lock widths so Word does not re-equalise columns.
+    wdTable.AllowAutoFit = False
+    wdTable.PreferredWidthType = WD_PREFERRED_WIDTH_POINTS
+    wdTable.PreferredWidth = pageWidth
+
+    For col = 1 To PRINT_COL_COUNT
+        wdTable.Columns(col).PreferredWidthType = WD_PREFERRED_WIDTH_POINTS
+        If col = PRINT_DESC_COL Then
+            wdTable.Columns(col).PreferredWidth = descWidth
+            wdTable.Columns(col).Width = descWidth
+        Else
+            colWidth = CDbl(wdTable.Columns(col).Width)
+            wdTable.Columns(col).PreferredWidth = colWidth
+            wdTable.Columns(col).Width = colWidth
+        End If
+    Next col
+    On Error GoTo 0
+End Sub
+
+' Truncate cell text to the fitted column width so each row stays on one line.
+Private Sub TruncateWordTableToSingleLines(ByVal wdTable As Object)
+    Dim rowIndex As Long
+    Dim col As Long
+    Dim cell As Object
+    Dim maxChars As Long
+    Dim fontSizePt As Double
+    Dim originalText As String
+
+    For rowIndex = 1 To wdTable.Rows.Count
+        If rowIndex = 1 Then
+            fontSizePt = PRINT_HEADER_FONT_PT
+        Else
+            fontSizePt = PRINT_BODY_FONT_PT
+        End If
+
+        For col = 1 To PRINT_COL_COUNT
+            On Error Resume Next
+            Set cell = wdTable.Cell(rowIndex, col)
+            On Error GoTo 0
+            If cell Is Nothing Then GoTo NextCol
+
+            maxChars = MaxCharsForColumnWidth(CDbl(wdTable.Columns(col).Width), fontSizePt)
+            originalText = GetWordCellText(cell)
+            SetWordCellText cell, TruncatePrintText(originalText, maxChars)
+
+            ' Re-assert single-line chrome after rewrite.
+            If rowIndex = 1 Then
+                ApplyWordCellChrome cell, fontSizePt, True, WD_ALIGN_PARAGRAPH_CENTER
+            Else
+                Select Case col
+                    Case 4, PRINT_DESC_COL
+                        ApplyWordCellChrome cell, fontSizePt, False, WD_ALIGN_PARAGRAPH_LEFT
+                    Case Else
+                        ApplyWordCellChrome cell, fontSizePt, False, WD_ALIGN_PARAGRAPH_CENTER
+                End Select
+            End If
+
+NextCol:
+            Set cell = Nothing
+        Next col
+    Next rowIndex
 End Sub
 
 Private Function PrintColumnHeaders() As Variant
@@ -515,6 +671,21 @@ Private Function PrintColumnHeaders() As Variant
         "Task Description", _
         "Extension", _
         "Serial Number" _
+    )
+End Function
+
+' Short labels used only while AutoFit sizes columns to content.
+Private Function PrintColumnHeadersForSizing() As Variant
+    PrintColumnHeadersForSizing = Array( _
+        "Due", _
+        "Rem", _
+        "ITC", _
+        "Code", _
+        "Seq", _
+        "Int", _
+        "Desc", _
+        "Ext", _
+        "Serial" _
     )
 End Function
 
