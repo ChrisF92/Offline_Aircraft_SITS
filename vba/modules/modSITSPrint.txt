@@ -1,0 +1,1060 @@
+Option Explicit
+
+' ========================================================================
+' SITS PRINT MODULE — Offline Aircraft SITS v2
+' ========================================================================
+' Builds a landscape Word document snapshot of tasks in the current Horizon.
+' Black-and-white, single-line truncated rows. Non-description columns size to
+' content; Task Description takes the remaining page width.
+' Performance: build TSV in VBA, ConvertToTable once, format by range/column
+' (no per-cell Word COM loops). Late-bound Word.Application.
+'
+' Entry point: RunPrintSITSReport (SITS sheet Print button only).
+' ========================================================================
+
+Private Const PRINT_COL_COUNT As Long = 9
+Private Const PRINT_SORT_KEY_MISSING As Double = 9.9E+307
+
+' Late-bound Word constants
+Private Const WD_ORIENT_LANDSCAPE As Long = 1
+Private Const WD_PAPER_A4 As Long = 7
+Private Const WD_HEADER_FOOTER_PRIMARY As Long = 1
+Private Const WD_ALIGN_PARAGRAPH_CENTER As Long = 1
+Private Const WD_ALIGN_PARAGRAPH_LEFT As Long = 0
+Private Const WD_ALIGN_PARAGRAPH_RIGHT As Long = 2
+Private Const WD_ALIGN_CELL_CENTER As Long = 1
+Private Const WD_COLLAPSE_END As Long = 0
+Private Const WD_FIELD_PAGE As Long = 33
+Private Const WD_FIELD_NUM_PAGES As Long = 26
+Private Const WD_PREFERRED_WIDTH_POINTS As Long = 3
+Private Const WD_LINE_STYLE_SINGLE As Long = 1
+Private Const WD_SEPARATE_BY_TABS As Long = 1
+Private Const WD_AUTO_FIT_FIXED As Long = 0
+Private Const WD_COLOR_BLACK As Long = 0
+Private Const WD_COLOR_WHITE As Long = 16777215
+Private Const PRINT_DESC_COL As Long = 7
+Private Const PRINT_BODY_FONT_PT As Double = 8
+Private Const PRINT_HEADER_FONT_PT As Double = 9
+Private Const PRINT_CHAR_WIDTH_FACTOR As Double = 0.5
+Private Const PRINT_CELL_PAD_PT As Double = 8
+
+Private Type PrintSortEntry
+    DataRowIndex As Long
+    IntervalCode As String
+    GroupOrder As Long
+    SortKey As Double
+End Type
+
+' SITS sheet Print button.
+Public Sub RunPrintSITSReport()
+    Dim reportDTG As Date
+    Dim airframeHHDisplay As String
+    Dim rowCount As Long
+    Dim reportRows As Variant
+    Dim ownsBusy As Boolean
+    Dim errNum As Long
+    Dim errDesc As String
+    Dim wordOk As Boolean
+
+    On Error GoTo CleanFail
+
+    If Not ValidateWorkbookStructure(showDialogs:=True) Then Exit Sub
+    If Not IsSetupComplete() Then
+        MsgBox "Complete Setup Wizard before printing a SITS report.", _
+               vbExclamation, APP_NAME
+        Exit Sub
+    End If
+
+    ownsBusy = Not BusyUIActive()
+    If ownsBusy Then BeginBusyUI "Preparing SITS print report…"
+
+    EnsureForecastConfigDefaults
+    UpdateBusyUI "Recalculating life remaining…"
+    RecalculateSITS skipTableFormats:=True
+
+    reportDTG = Now
+    airframeHHDisplay = FormatAirframeHHForPrint()
+
+    UpdateBusyUI "Collecting Horizon tasks…"
+    reportRows = CollectPrintReportRows(rowCount)
+
+    UpdateBusyUI "Building Word document…"
+    wordOk = BuildWordPrintDocument(reportRows, rowCount, reportDTG, airframeHHDisplay)
+
+    If ownsBusy Then
+        EndBusyUI
+        ownsBusy = False
+    End If
+
+    If Not wordOk Then
+        MsgBox "Unable to build the Word SITS report." & vbCrLf & vbCrLf & _
+               "Microsoft Word is required. Check that Word opens normally, then try again.", _
+               vbCritical, APP_NAME
+        Exit Sub
+    End If
+
+    LogAction "SITS_PRINT_REPORT", "", _
+              "Tasks=" & CStr(rowCount) & "; HorizonHours=" & CStr(GetForecastHoursSetting()) & _
+              "; HorizonDays=" & CStr(GetForecastDaysSetting()) & _
+              "; HorizonNumber=" & CStr(GetForecastNumberSetting()) & _
+              "; AirframeHH=" & airframeHHDisplay & "; Format=Word"
+    Exit Sub
+
+CleanFail:
+    errNum = Err.Number
+    errDesc = Err.Description
+    On Error Resume Next
+    If ownsBusy Then EndBusyUI
+    On Error GoTo 0
+    If errNum <> 0 Then
+        MsgBox "Unable to build the SITS print report." & vbCrLf & vbCrLf & _
+               "Error " & CStr(errNum) & ": " & errDesc, _
+               vbCritical, APP_NAME
+    End If
+End Sub
+
+' Returns 1-based 2D array (rows x PRINT_COL_COUNT). rowCount = data rows (0 if none).
+Private Function CollectPrintReportRows(ByRef rowCount As Long) As Variant
+    Dim wsData As Worksheet
+    Dim tbl As ListObject
+    Dim colMap As Object
+    Dim data As Variant
+    Dim dataRowCount As Long
+    Dim dataRowIndex As Long
+    Dim intervalCode As String
+    Dim forecastHours As Double
+    Dim forecastDays As Long
+    Dim forecastNumber As Long
+    Dim lifeHoursFraction As Double
+    Dim daysUntilDue As Long
+    Dim includeRow As Boolean
+    Dim sortEntries() As PrintSortEntry
+    Dim sortCount As Long
+    Dim entryIndex As Long
+    Dim reportRows As Variant
+    Dim colInterval As Long
+    Dim colLRHours As Long
+    Dim colLRNumber As Long
+    Dim colDaysDue As Long
+    Dim colTaskCode As Long
+    Dim colSequence As Long
+    Dim colDesc As Long
+    Dim colSerial As Long
+    Dim colActual As Long
+    Dim colExtension As Long
+    Dim colCurHours As Long
+    Dim colCurNumber As Long
+    Dim colProjected As Long
+
+    rowCount = 0
+    CollectPrintReportRows = Empty
+
+    Set wsData = GetWorksheet(SHEET_DATA_SITS, showError:=False)
+    If wsData Is Nothing Then Exit Function
+    Set tbl = GetTable(wsData, TBL_SITS, showError:=False)
+    If tbl Is Nothing Then Exit Function
+
+    Set colMap = BuildTableColumnIndexMap(tbl)
+    colInterval = LookupColumnIndex(colMap, HDR_INTERVAL_TYPE_CODE)
+    colLRHours = LookupColumnIndex(colMap, HDR_HOURS_LIFE_REMAINING)
+    colLRNumber = LookupColumnIndex(colMap, HDR_NUMBER_LIFE_REMAINING)
+    colDaysDue = LookupColumnIndex(colMap, HDR_DAYS_WHEN_DUE)
+    colTaskCode = LookupColumnIndex(colMap, HDR_TASK_CODE)
+    colSequence = LookupColumnIndex(colMap, HDR_TASK_SEQUENCE)
+    colDesc = LookupColumnIndex(colMap, HDR_TASK_DESCRIPTION)
+    colSerial = LookupColumnIndex(colMap, HDR_SERIAL)
+    colActual = LookupColumnIndex(colMap, HDR_ACTUAL_INTERVAL)
+    colExtension = LookupColumnIndex(colMap, HDR_EXTENSION)
+    colCurHours = LookupColumnIndex(colMap, HDR_CURRENT_USAGE_HOURS)
+    colCurNumber = LookupColumnIndex(colMap, HDR_CURRENT_USAGE_NUMBER)
+    colProjected = LookupColumnIndex(colMap, HDR_PROJECTED_DUE_DATE)
+    If colInterval = 0 Then Exit Function
+
+    forecastHours = GetForecastHoursSetting()
+    forecastDays = GetForecastDaysSetting()
+    forecastNumber = GetForecastNumberSetting()
+
+    sortCount = 0
+    If tbl.DataBodyRange Is Nothing Then Exit Function
+
+    data = NormalizePrintDataArray(tbl.DataBodyRange.Value, _
+        tbl.ListRows.Count, tbl.ListColumns.Count)
+    If Not IsArray(data) Then Exit Function
+
+    dataRowCount = UBound(data, 1)
+    ReDim sortEntries(1 To dataRowCount)
+
+    For dataRowIndex = 1 To dataRowCount
+        intervalCode = UCase$(Trim$(CStr(data(dataRowIndex, colInterval))))
+        includeRow = PrintTaskPassesHorizon(data, dataRowIndex, intervalCode, _
+            forecastHours, forecastDays, forecastNumber, _
+            lifeHoursFraction, daysUntilDue, _
+            colLRHours, colLRNumber, colDaysDue)
+
+        If includeRow Then
+            sortCount = sortCount + 1
+            sortEntries(sortCount).DataRowIndex = dataRowIndex
+            sortEntries(sortCount).IntervalCode = intervalCode
+            sortEntries(sortCount).GroupOrder = PrintIntervalGroupOrder(intervalCode)
+            sortEntries(sortCount).SortKey = PrintTaskSortKey(data, dataRowIndex, _
+                intervalCode, colLRHours, colLRNumber, colDaysDue, colTaskCode)
+        End If
+    Next dataRowIndex
+
+    If sortCount = 0 Then Exit Function
+
+    ReDim Preserve sortEntries(1 To sortCount)
+    SortPrintEntries sortEntries
+
+    ReDim reportRows(1 To sortCount, 1 To PRINT_COL_COUNT)
+    For entryIndex = 1 To sortCount
+        dataRowIndex = sortEntries(entryIndex).DataRowIndex
+        intervalCode = sortEntries(entryIndex).IntervalCode
+        reportRows(entryIndex, 1) = BuildPrintWhenDueText(data, dataRowIndex, intervalCode, _
+            colCurHours, colCurNumber, colLRHours, colLRNumber, colDaysDue, colProjected)
+        reportRows(entryIndex, 2) = BuildPrintLifeRemainingText(data, dataRowIndex, intervalCode, _
+            colLRHours, colLRNumber, colDaysDue)
+        reportRows(entryIndex, 3) = intervalCode
+        If colTaskCode > 0 Then reportRows(entryIndex, 4) = Trim$(CStr(data(dataRowIndex, colTaskCode)))
+        If colSequence > 0 Then reportRows(entryIndex, 5) = Trim$(CStr(data(dataRowIndex, colSequence)))
+        reportRows(entryIndex, 6) = BuildPrintIntervalText(data, dataRowIndex, intervalCode, colActual)
+        If colDesc > 0 Then reportRows(entryIndex, 7) = CStr(data(dataRowIndex, colDesc) & "")
+        reportRows(entryIndex, 8) = BuildPrintIntervalText(data, dataRowIndex, intervalCode, colExtension)
+        If colSerial > 0 Then reportRows(entryIndex, 9) = NormalizeSerialText(data(dataRowIndex, colSerial))
+    Next entryIndex
+
+    rowCount = sortCount
+    CollectPrintReportRows = reportRows
+End Function
+
+Private Function BuildWordPrintDocument(ByVal reportRows As Variant, _
+                                        ByVal rowCount As Long, _
+                                        ByVal reportDTG As Date, _
+                                        ByVal airframeHHDisplay As String) As Boolean
+    Dim wdApp As Object
+    Dim wdDoc As Object
+    Dim wdTable As Object
+    Dim rng As Object
+    Dim failReason As String
+    Dim createdApp As Boolean
+    Dim savedPagination As Boolean
+    Dim pageWidth As Double
+    Dim colWidths(1 To PRINT_COL_COUNT) As Double
+    Dim colMaxChars(1 To PRINT_COL_COUNT) As Long
+    Dim tsv As String
+
+    BuildWordPrintDocument = False
+    createdApp = False
+
+    On Error GoTo WordFail
+
+    ' Prefer an already-running Word instance — avoids a second cold start.
+    On Error Resume Next
+    Set wdApp = GetObject(, "Word.Application")
+    On Error GoTo WordFail
+    If wdApp Is Nothing Then
+        Set wdApp = CreateObject("Word.Application")
+        createdApp = True
+    End If
+
+    wdApp.Visible = False
+    wdApp.ScreenUpdating = False
+    wdApp.DisplayAlerts = 0
+    On Error Resume Next
+    savedPagination = CBool(wdApp.Options.Pagination)
+    wdApp.Options.Pagination = False
+    On Error GoTo WordFail
+
+    Set wdDoc = wdApp.Documents.Add
+    ConfigureWordPageSetup wdDoc
+    WriteWordHeaderFooter wdDoc, reportDTG, airframeHHDisplay
+    WriteWordBodyIntro wdDoc
+
+    pageWidth = CDbl(wdDoc.PageSetup.PageWidth) - _
+                CDbl(wdDoc.PageSetup.LeftMargin) - _
+                CDbl(wdDoc.PageSetup.RightMargin)
+
+    ' Size / truncate entirely in VBA — avoid per-cell Word COM and AutoFit.
+    ComputePrintColumnLayout reportRows, rowCount, pageWidth, colWidths, colMaxChars
+    tsv = BuildPrintTsv(reportRows, rowCount, colMaxChars)
+
+    Set rng = wdDoc.Bookmarks("\endofdoc").Range
+    rng.Text = tsv
+    Set wdTable = rng.ConvertToTable(Separator:=WD_SEPARATE_BY_TABS, _
+                                     NumColumns:=PRINT_COL_COUNT)
+    FormatWordTableFast wdTable, pageWidth, colWidths
+
+    On Error Resume Next
+    wdDoc.Fields.Update
+    wdApp.Options.Pagination = savedPagination
+    On Error GoTo WordFail
+
+    wdApp.ScreenUpdating = True
+    wdApp.Visible = True
+    wdApp.Activate
+    wdDoc.Activate
+    wdApp.DisplayAlerts = -1
+
+    On Error Resume Next
+    wdDoc.PrintPreview
+    On Error GoTo 0
+
+    BuildWordPrintDocument = True
+    Exit Function
+
+WordFail:
+    failReason = Err.Description
+    On Error Resume Next
+    If Not wdDoc Is Nothing Then wdDoc.Close SaveChanges:=False
+    If Not wdApp Is Nothing Then
+        wdApp.Options.Pagination = savedPagination
+        wdApp.ScreenUpdating = True
+        wdApp.DisplayAlerts = -1
+        ' Only quit Word if this run started it.
+        If createdApp Then wdApp.Quit
+    End If
+    Set wdTable = Nothing
+    Set wdDoc = Nothing
+    Set wdApp = Nothing
+    On Error GoTo 0
+    If Len(failReason) > 0 Then
+        Err.Raise vbObjectError + 910, "BuildWordPrintDocument", failReason
+    End If
+End Function
+
+Private Sub ConfigureWordPageSetup(ByVal wdDoc As Object)
+    With wdDoc.PageSetup
+        .Orientation = WD_ORIENT_LANDSCAPE
+        .PaperSize = WD_PAPER_A4
+        .TopMargin = CentimetersToPointsSafe(1.5)
+        .BottomMargin = CentimetersToPointsSafe(1.5)
+        .LeftMargin = CentimetersToPointsSafe(1.2)
+        .RightMargin = CentimetersToPointsSafe(1.2)
+        .HeaderDistance = CentimetersToPointsSafe(0.8)
+        .FooterDistance = CentimetersToPointsSafe(0.8)
+    End With
+End Sub
+
+Private Function CentimetersToPointsSafe(ByVal cmValue As Double) As Double
+    CentimetersToPointsSafe = cmValue * 28.35
+End Function
+
+Private Sub WriteWordHeaderFooter(ByVal wdDoc As Object, _
+                                  ByVal reportDTG As Date, _
+                                  ByVal airframeHHDisplay As String)
+    Dim hdr As Object
+    Dim ftr As Object
+    Dim rng As Object
+    Dim fldRange As Object
+    Dim tailNumber As String
+
+    tailNumber = GetTailNumber()
+    If Len(tailNumber) = 0 Then tailNumber = "(not set)"
+
+    Set hdr = wdDoc.Sections(1).Headers(WD_HEADER_FOOTER_PRIMARY)
+    Set rng = hdr.Range
+    rng.Text = "Simplified Item Task Schedule" & vbCr & _
+               "Tail Number: " & tailNumber & _
+               "     |     Airframe Hours at time report ran (HH): " & airframeHHDisplay & _
+               "     |     Report Date/Time: " & Format$(reportDTG, FORMAT_DATETIME)
+    rng.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_CENTER
+    rng.Font.Name = "Calibri"
+    rng.Font.Size = 10
+    rng.Font.Color = WD_COLOR_BLACK
+    On Error Resume Next
+    rng.Paragraphs(1).Range.Font.Bold = True
+    rng.Paragraphs(1).Range.Font.Size = 16
+    rng.Paragraphs(1).Range.Font.Color = WD_COLOR_BLACK
+    On Error GoTo 0
+
+    Set ftr = wdDoc.Sections(1).Footers(WD_HEADER_FOOTER_PRIMARY)
+    Set rng = ftr.Range
+    rng.Text = ""
+    rng.ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_RIGHT
+    rng.Font.Name = "Calibri"
+    rng.Font.Size = 9
+    rng.Font.Color = WD_COLOR_BLACK
+    rng.InsertAfter "Page "
+    Set fldRange = ftr.Range
+    fldRange.Collapse WD_COLLAPSE_END
+    wdDoc.Fields.Add Range:=fldRange, Type:=WD_FIELD_PAGE
+    Set fldRange = ftr.Range
+    fldRange.Collapse WD_COLLAPSE_END
+    fldRange.InsertAfter " of "
+    Set fldRange = ftr.Range
+    fldRange.Collapse WD_COLLAPSE_END
+    wdDoc.Fields.Add Range:=fldRange, Type:=WD_FIELD_NUM_PAGES
+End Sub
+
+Private Sub WriteWordBodyIntro(ByVal wdDoc As Object)
+    Dim hoursValue As Double
+    Dim daysValue As Long
+    Dim numberValue As Long
+
+    hoursValue = GetForecastHoursSetting()
+    daysValue = GetForecastDaysSetting()
+    numberValue = GetForecastNumberSetting()
+
+    wdDoc.Content.InsertAfter "Current Horizon: " & FormatPrintHorizonHours(hoursValue) & " / " & _
+                              CStr(daysValue) & "d / " & CStr(numberValue) & _
+                              "     (0 = show all of that type)" & vbCr & vbCr
+
+    On Error Resume Next
+    With wdDoc.Paragraphs(1).Range
+        .Font.Name = "Calibri"
+        .Font.Size = 9
+        .Font.Italic = True
+        .Font.Color = WD_COLOR_BLACK
+        .ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_LEFT
+    End With
+    On Error GoTo 0
+End Sub
+
+' Content-based widths in VBA (points). Non-desc columns shrink to content;
+' Task Description receives remaining page width. Also returns per-column
+' max character budgets used to truncate before Word sees the text.
+Private Sub ComputePrintColumnLayout(ByVal reportRows As Variant, _
+                                     ByVal rowCount As Long, _
+                                     ByVal pageWidth As Double, _
+                                     ByRef colWidths() As Double, _
+                                     ByRef colMaxChars() As Long)
+    Dim widthScale As Double
+    Dim headers As Variant
+    Dim maxLens(1 To PRINT_COL_COUNT) As Long
+    Dim col As Long
+    Dim rowIndex As Long
+    Dim textLen As Long
+    Dim usedWidth As Double
+    Dim descWidth As Double
+    Dim minDescWidth As Double
+    Dim charPt As Double
+    Dim cappedLen As Long
+
+    headers = PrintColumnHeaders()
+    For col = 1 To PRINT_COL_COUNT
+        maxLens(col) = Len(CleanPrintText(CStr(headers(col - 1))))
+    Next col
+
+    If rowCount > 0 And IsArray(reportRows) Then
+        For rowIndex = 1 To rowCount
+            For col = 1 To PRINT_COL_COUNT
+                textLen = Len(CleanPrintText(CStr(reportRows(rowIndex, col) & "")))
+                If textLen > maxLens(col) Then maxLens(col) = textLen
+            Next col
+        Next rowIndex
+    End If
+
+    charPt = PRINT_BODY_FONT_PT * PRINT_CHAR_WIDTH_FACTOR
+    If charPt < 1# Then charPt = 1#
+    minDescWidth = CentimetersToPointsSafe(4#)
+    usedWidth = 0#
+
+    For col = 1 To PRINT_COL_COUNT
+        If col = PRINT_DESC_COL Then GoTo NextWidthCol
+        cappedLen = maxLens(col)
+        If cappedLen > PrintColumnCharCap(col) Then cappedLen = PrintColumnCharCap(col)
+        If cappedLen < 1 Then cappedLen = 1
+        colWidths(col) = (CDbl(cappedLen) * charPt) + PRINT_CELL_PAD_PT
+        usedWidth = usedWidth + colWidths(col)
+NextWidthCol:
+    Next col
+
+    descWidth = pageWidth - usedWidth
+    If descWidth < minDescWidth Then
+        ' Shrink non-desc columns proportionally so description keeps a floor.
+        If usedWidth > 0# And pageWidth > minDescWidth Then
+            widthScale = (pageWidth - minDescWidth) / usedWidth
+            For col = 1 To PRINT_COL_COUNT
+                If col <> PRINT_DESC_COL Then colWidths(col) = colWidths(col) * widthScale
+            Next col
+            descWidth = minDescWidth
+        Else
+            descWidth = pageWidth * 0.35
+        End If
+    End If
+    colWidths(PRINT_DESC_COL) = descWidth
+
+    For col = 1 To PRINT_COL_COUNT
+        colMaxChars(col) = MaxCharsForColumnWidth(colWidths(col), PRINT_BODY_FONT_PT)
+    Next col
+End Sub
+
+Private Function PrintColumnCharCap(ByVal colIndex As Long) As Long
+    Select Case colIndex
+        Case 1: PrintColumnCharCap = 12    ' When Due
+        Case 2: PrintColumnCharCap = 14    ' Life remaining
+        Case 3: PrintColumnCharCap = 4     ' Interval type
+        Case 4: PrintColumnCharCap = 24    ' Task code
+        Case 5: PrintColumnCharCap = 8     ' Sequence
+        Case 6: PrintColumnCharCap = 12    ' Actual interval
+        Case 7: PrintColumnCharCap = 200   ' Description (actual width decides)
+        Case 8: PrintColumnCharCap = 12    ' Extension
+        Case 9: PrintColumnCharCap = 18    ' Serial
+        Case Else: PrintColumnCharCap = 20
+    End Select
+End Function
+
+Private Function BuildPrintTsv(ByVal reportRows As Variant, _
+                               ByVal rowCount As Long, _
+                               ByRef colMaxChars() As Long) As String
+    Dim headers As Variant
+    Dim parts() As String
+    Dim rowParts(1 To PRINT_COL_COUNT) As String
+    Dim col As Long
+    Dim rowIndex As Long
+    Dim lineCount As Long
+
+    headers = PrintColumnHeaders()
+    If rowCount > 0 Then
+        lineCount = rowCount + 1
+    Else
+        lineCount = 2
+    End If
+    ReDim parts(1 To lineCount)
+
+    ' Full header captions — wrapping is enabled on the header row in Word.
+    For col = 1 To PRINT_COL_COUNT
+        rowParts(col) = SanitizeTsvField(CStr(headers(col - 1)))
+    Next col
+    parts(1) = Join(rowParts, vbTab)
+
+    If rowCount > 0 And IsArray(reportRows) Then
+        For rowIndex = 1 To rowCount
+            For col = 1 To PRINT_COL_COUNT
+                rowParts(col) = SanitizeTsvField(TruncatePrintText( _
+                    CStr(reportRows(rowIndex, col) & ""), colMaxChars(col)))
+            Next col
+            parts(rowIndex + 1) = Join(rowParts, vbTab)
+        Next rowIndex
+    Else
+        rowParts(1) = SanitizeTsvField("No tasks within the current Horizon.")
+        For col = 2 To PRINT_COL_COUNT
+            rowParts(col) = ""
+        Next col
+        parts(2) = Join(rowParts, vbTab)
+    End If
+
+    BuildPrintTsv = Join(parts, vbCr)
+End Function
+
+Private Function SanitizeTsvField(ByVal textValue As String) As String
+    Dim cleaned As String
+    cleaned = Replace$(Replace$(Replace$(textValue, vbTab, " "), vbCr, " "), vbLf, " ")
+    SanitizeTsvField = cleaned
+End Function
+
+Private Function CleanPrintText(ByVal textValue As String) As String
+    Dim cleaned As String
+    cleaned = Replace$(Replace$(Replace$(Trim$(textValue), vbTab, " "), vbCr, " "), vbLf, " ")
+    Do While InStr(cleaned, "  ") > 0
+        cleaned = Replace$(cleaned, "  ", " ")
+    Loop
+    CleanPrintText = cleaned
+End Function
+
+Private Function TruncatePrintText(ByVal textValue As String, ByVal maxChars As Long) As String
+    Dim cleaned As String
+
+    cleaned = CleanPrintText(CStr(textValue & ""))
+    If maxChars < 1 Then
+        TruncatePrintText = ""
+        Exit Function
+    End If
+    If Len(cleaned) <= maxChars Then
+        TruncatePrintText = cleaned
+        Exit Function
+    End If
+    If maxChars = 1 Then
+        TruncatePrintText = "…"
+        Exit Function
+    End If
+    TruncatePrintText = Left$(cleaned, maxChars - 1) & "…"
+End Function
+
+Private Function MaxCharsForColumnWidth(ByVal widthPoints As Double, _
+                                        ByVal fontSizePt As Double) As Long
+    Dim avgCharWidth As Double
+    Dim maxChars As Long
+
+    avgCharWidth = fontSizePt * PRINT_CHAR_WIDTH_FACTOR
+    If avgCharWidth < 1# Then avgCharWidth = 1#
+    maxChars = CLng(Int((widthPoints - 6#) / avgCharWidth))
+    If maxChars < 1 Then maxChars = 1
+    MaxCharsForColumnWidth = maxChars
+End Function
+
+' One-shot table formatting — range/column operations only (no per-cell loops).
+Private Sub FormatWordTableFast(ByVal wdTable As Object, _
+                                ByVal pageWidth As Double, _
+                                ByRef colWidths() As Double)
+    Dim col As Long
+
+    On Error Resume Next
+    wdTable.AllowAutoFit = False
+    wdTable.AutoFitBehavior WD_AUTO_FIT_FIXED
+    wdTable.PreferredWidthType = WD_PREFERRED_WIDTH_POINTS
+    wdTable.PreferredWidth = pageWidth
+
+    For col = 1 To PRINT_COL_COUNT
+        wdTable.Columns(col).PreferredWidthType = WD_PREFERRED_WIDTH_POINTS
+        wdTable.Columns(col).PreferredWidth = colWidths(col)
+        wdTable.Columns(col).Width = colWidths(col)
+    Next col
+
+    With wdTable.Range
+        .Font.Name = "Calibri"
+        .Font.Size = PRINT_BODY_FONT_PT
+        .Font.Color = WD_COLOR_BLACK
+        .Font.Bold = False
+        .ParagraphFormat.SpaceBefore = 0
+        .ParagraphFormat.SpaceAfter = 0
+        .ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_CENTER
+        .ParagraphFormat.WordWrap = False
+    End With
+
+    With wdTable.Rows(1).Range
+        .Font.Bold = True
+        .Font.Size = PRINT_HEADER_FONT_PT
+        .Font.Color = WD_COLOR_BLACK
+        .ParagraphFormat.Alignment = WD_ALIGN_PARAGRAPH_CENTER
+        .ParagraphFormat.WordWrap = True
+    End With
+    wdTable.Rows(1).HeadingFormat = True
+    wdTable.Rows(1).Shading.BackgroundPatternColor = WD_COLOR_WHITE
+
+    AlignWordTableColumn wdTable, 4, WD_ALIGN_PARAGRAPH_LEFT
+    AlignWordTableColumn wdTable, PRINT_DESC_COL, WD_ALIGN_PARAGRAPH_LEFT
+
+    wdTable.TopPadding = 1
+    wdTable.BottomPadding = 1
+    wdTable.LeftPadding = 2
+    wdTable.RightPadding = 2
+
+    With wdTable.Borders
+        .Enable = True
+        .OutsideLineStyle = WD_LINE_STYLE_SINGLE
+        .InsideLineStyle = WD_LINE_STYLE_SINGLE
+        .OutsideColor = WD_COLOR_BLACK
+        .InsideColor = WD_COLOR_BLACK
+    End With
+
+    wdTable.Range.Cells.VerticalAlignment = WD_ALIGN_CELL_CENTER
+    On Error GoTo 0
+End Sub
+
+Private Sub AlignWordTableColumn(ByVal wdTable As Object, _
+                                 ByVal colIndex As Long, _
+                                 ByVal alignment As Long)
+    On Error Resume Next
+    wdTable.Columns(colIndex).Range.ParagraphFormat.Alignment = alignment
+    On Error GoTo 0
+End Sub
+
+Private Function PrintColumnHeaders() As Variant
+    PrintColumnHeaders = Array( _
+        "When Due", _
+        "When Due from Report Run DTG", _
+        "Interval Type Code", _
+        "Task Code", _
+        "Sequence", _
+        "Actual Interval", _
+        "Task Description", _
+        "Extension", _
+        "Serial Number" _
+    )
+End Function
+
+Private Function BuildPrintWhenDueText(ByRef data As Variant, _
+                                       ByVal rowIndex As Long, _
+                                       ByVal intervalCode As String, _
+                                       ByVal colCurHours As Long, _
+                                       ByVal colCurNumber As Long, _
+                                       ByVal colLRHours As Long, _
+                                       ByVal colLRNumber As Long, _
+                                       ByVal colDaysDue As Long, _
+                                       ByVal colProjected As Long) As String
+    Dim currentValue As Variant
+    Dim lifeValue As Variant
+    Dim dueDate As Date
+    Dim daysRemaining As Double
+
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            If colCurHours > 0 Then currentValue = data(rowIndex, colCurHours)
+            If colLRHours > 0 Then lifeValue = data(rowIndex, colLRHours)
+            If IsNumeric(currentValue) And IsNumeric(lifeValue) Then
+                BuildPrintWhenDueText = FormatElapsedHoursFromDayFraction( _
+                    CDbl(currentValue) + CDbl(lifeValue))
+            ElseIf IsNumeric(lifeValue) And (IsEmpty(currentValue) Or Len(Trim$(CStr(currentValue))) = 0) Then
+                BuildPrintWhenDueText = FormatElapsedHoursFromDayFraction(CDbl(lifeValue))
+            End If
+            Exit Function
+
+        Case TYPE_DD
+            If colProjected > 0 Then
+                If PrintLooksLikeAbsoluteDueDate(data(rowIndex, colProjected)) Then
+                    BuildPrintWhenDueText = Format$(CDate(data(rowIndex, colProjected)), FORMAT_DATE)
+                    Exit Function
+                End If
+            End If
+            If colDaysDue > 0 Then
+                If PrintLooksLikeAbsoluteDueDate(data(rowIndex, colDaysDue)) Then
+                    BuildPrintWhenDueText = Format$(CDate(data(rowIndex, colDaysDue)), FORMAT_DATE)
+                    Exit Function
+                ElseIf IsNumeric(data(rowIndex, colDaysDue)) Then
+                    daysRemaining = CDbl(data(rowIndex, colDaysDue))
+                    dueDate = DateAdd("d", CLng(daysRemaining), Date)
+                    BuildPrintWhenDueText = Format$(dueDate, FORMAT_DATE)
+                    Exit Function
+                End If
+            End If
+
+        Case Else
+            If colCurNumber > 0 Then currentValue = data(rowIndex, colCurNumber)
+            If colLRNumber > 0 Then lifeValue = data(rowIndex, colLRNumber)
+            If IsNumeric(currentValue) And IsNumeric(lifeValue) And _
+               StrComp(CStr(currentValue), "---", vbTextCompare) <> 0 Then
+                BuildPrintWhenDueText = FormatPrintNumber(CDbl(currentValue) + CDbl(lifeValue))
+            ElseIf IsNumeric(lifeValue) Then
+                BuildPrintWhenDueText = FormatPrintNumber(CDbl(lifeValue))
+            End If
+    End Select
+End Function
+
+Private Function BuildPrintLifeRemainingText(ByRef data As Variant, _
+                                             ByVal rowIndex As Long, _
+                                             ByVal intervalCode As String, _
+                                             ByVal colLRHours As Long, _
+                                             ByVal colLRNumber As Long, _
+                                             ByVal colDaysDue As Long) As String
+    Dim value As Variant
+
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            If colLRHours = 0 Then Exit Function
+            value = data(rowIndex, colLRHours)
+            If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+            If IsNumeric(value) Then
+                BuildPrintLifeRemainingText = FormatElapsedHoursFromDayFraction(CDbl(value))
+            End If
+
+        Case TYPE_DD
+            If colDaysDue = 0 Then Exit Function
+            value = data(rowIndex, colDaysDue)
+            If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+            If PrintLooksLikeAbsoluteDueDate(value) Then
+                BuildPrintLifeRemainingText = FormatPrintNumber(CDbl(DateDiff("d", Date, CDate(value))))
+            ElseIf IsNumeric(value) Then
+                BuildPrintLifeRemainingText = FormatPrintNumber(CDbl(value))
+            End If
+
+        Case Else
+            If colLRNumber = 0 Then Exit Function
+            value = data(rowIndex, colLRNumber)
+            If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+            If IsNumeric(value) Then
+                BuildPrintLifeRemainingText = FormatPrintNumber(CDbl(value))
+            End If
+    End Select
+End Function
+
+Private Function BuildPrintIntervalText(ByRef data As Variant, _
+                                        ByVal rowIndex As Long, _
+                                        ByVal intervalCode As String, _
+                                        ByVal colIndex As Long) As String
+    Dim value As Variant
+
+    If colIndex = 0 Then Exit Function
+    value = data(rowIndex, colIndex)
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            If IsNumeric(value) Then
+                BuildPrintIntervalText = FormatElapsedHoursFromDayFraction( _
+                    CoerceUsageStorageValue(value, FORMAT_TYPE_HOURS))
+            Else
+                BuildPrintIntervalText = Trim$(CStr(value))
+            End If
+        Case Else
+            If IsNumeric(value) Then
+                BuildPrintIntervalText = FormatPrintNumber(CDbl(value))
+            Else
+                BuildPrintIntervalText = Trim$(CStr(value))
+            End If
+    End Select
+End Function
+
+Private Function FormatAirframeHHForPrint() As String
+    Dim currentHH As Variant
+
+    currentHH = LookupAirframeHHUsageForPrint()
+    If IsEmpty(currentHH) Or Len(Trim$(CStr(currentHH))) = 0 Then
+        FormatAirframeHHForPrint = "(not found)"
+        Exit Function
+    End If
+
+    FormatAirframeHHForPrint = FormatUsageValueForDisplay( _
+        UsageValueAsDayFraction(currentHH, FORMAT_TYPE_HOURS), FORMAT_TYPE_HOURS)
+End Function
+
+Private Function LookupAirframeHHUsageForPrint() As Variant
+    Dim ws As Worksheet
+    Dim tbl As ListObject
+    Dim row As ListRow
+
+    Set ws = GetWorksheet(SHEET_DATA_USAGE_CURRENT, showError:=False)
+    If ws Is Nothing Then Exit Function
+    Set tbl = GetTable(ws, TBL_USAGE_CURRENT, showError:=False)
+    If tbl Is Nothing Or tbl.DataBodyRange Is Nothing Then Exit Function
+
+    For Each row In tbl.ListRows
+        If StrComp(CStr(row.Range.Cells(1, 1).Value), TYPE_HH, vbTextCompare) = 0 Then
+            LookupAirframeHHUsageForPrint = row.Range.Cells(1, 3).Value
+            Exit Function
+        End If
+    Next row
+End Function
+
+Private Function FormatPrintHorizonHours(ByVal hoursValue As Double) As String
+    If hoursValue = Fix(hoursValue) Then
+        FormatPrintHorizonHours = CStr(CLng(hoursValue)) & "h"
+    Else
+        FormatPrintHorizonHours = Format$(hoursValue, "0.##") & "h"
+    End If
+End Function
+
+Private Function FormatPrintNumber(ByVal value As Double) As String
+    If value = Fix(value) Then
+        FormatPrintNumber = Format$(value, FORMAT_INTEGER)
+    Else
+        FormatPrintNumber = Format$(value, FORMAT_DECIMAL)
+    End If
+End Function
+
+Private Function PrintLooksLikeAbsoluteDueDate(ByVal value As Variant) As Boolean
+    Const MIN_DATE_SERIAL As Double = 20000#
+
+    If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+    If VarType(value) = vbDate Then
+        PrintLooksLikeAbsoluteDueDate = True
+    ElseIf IsNumeric(value) Then
+        PrintLooksLikeAbsoluteDueDate = (CDbl(value) >= MIN_DATE_SERIAL)
+    End If
+End Function
+
+Private Function PrintTaskPassesHorizon(ByRef data As Variant, _
+                                        ByVal rowIndex As Long, _
+                                        ByVal intervalCode As String, _
+                                        ByVal forecastHours As Double, _
+                                        ByVal forecastDays As Long, _
+                                        ByVal forecastNumber As Long, _
+                                        ByRef lifeHoursFraction As Double, _
+                                        ByRef daysUntilDue As Long, _
+                                        ByVal colLRHours As Long, _
+                                        ByVal colLRNumber As Long, _
+                                        ByVal colDaysDue As Long) As Boolean
+    Dim dueValue As Variant
+    Dim lifeNumber As Double
+
+    lifeHoursFraction = -1#
+    daysUntilDue = -1
+
+    Select Case intervalCode
+        Case TYPE_HH, TYPE_E1, TYPE_E2
+            If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
+                lifeHoursFraction = CDbl(data(rowIndex, colLRHours))
+            End If
+            If forecastHours <= 0# Then
+                PrintTaskPassesHorizon = True
+            ElseIf lifeHoursFraction < 0# Then
+                PrintTaskPassesHorizon = True
+            Else
+                PrintTaskPassesHorizon = (lifeHoursFraction <= (forecastHours / 24#))
+            End If
+
+        Case TYPE_DD
+            If colDaysDue > 0 Then
+                dueValue = data(rowIndex, colDaysDue)
+                If PrintLooksLikeAbsoluteDueDate(dueValue) Then
+                    daysUntilDue = CLng(DateDiff("d", Date, CDate(dueValue)))
+                ElseIf IsNumeric(dueValue) Then
+                    daysUntilDue = CLng(CDbl(dueValue))
+                End If
+            End If
+            If forecastDays <= 0 Then
+                PrintTaskPassesHorizon = True
+            ElseIf daysUntilDue < 0 Then
+                PrintTaskPassesHorizon = True
+            Else
+                PrintTaskPassesHorizon = (daysUntilDue <= forecastDays)
+            End If
+
+        Case Else
+            If IsNumberBasedSITSInterval(intervalCode) Then
+                lifeNumber = -1#
+                If colLRNumber > 0 And IsNumeric(data(rowIndex, colLRNumber)) Then
+                    lifeNumber = CDbl(data(rowIndex, colLRNumber))
+                End If
+                If forecastNumber <= 0 Then
+                    PrintTaskPassesHorizon = True
+                ElseIf lifeNumber < 0# Then
+                    PrintTaskPassesHorizon = True
+                Else
+                    PrintTaskPassesHorizon = (lifeNumber <= forecastNumber)
+                End If
+            Else
+                PrintTaskPassesHorizon = True
+            End If
+    End Select
+End Function
+
+Private Function PrintIntervalGroupOrder(ByVal intervalCode As String) As Long
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_E1
+            PrintIntervalGroupOrder = 1
+        Case TYPE_E2
+            PrintIntervalGroupOrder = 2
+        Case TYPE_HH
+            PrintIntervalGroupOrder = 3
+        Case TYPE_DD
+            PrintIntervalGroupOrder = 4
+        Case Else
+            PrintIntervalGroupOrder = 5
+    End Select
+End Function
+
+Private Function PrintTaskSortKey(ByRef data As Variant, _
+                                  ByVal rowIndex As Long, _
+                                  ByVal intervalCode As String, _
+                                  ByVal colLRHours As Long, _
+                                  ByVal colLRNumber As Long, _
+                                  ByVal colDaysDue As Long, _
+                                  ByVal colTaskCode As Long) As Double
+    Dim dueValue As Variant
+
+    Select Case UCase$(Trim$(intervalCode))
+        Case TYPE_E1, TYPE_E2, TYPE_HH
+            If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
+                PrintTaskSortKey = CDbl(data(rowIndex, colLRHours))
+                Exit Function
+            End If
+
+        Case TYPE_DD
+            If colDaysDue > 0 Then
+                dueValue = data(rowIndex, colDaysDue)
+                If PrintLooksLikeAbsoluteDueDate(dueValue) Then
+                    PrintTaskSortKey = CDbl(CDate(dueValue))
+                    Exit Function
+                ElseIf IsNumeric(dueValue) Then
+                    PrintTaskSortKey = CDbl(dueValue)
+                    Exit Function
+                End If
+            End If
+
+        Case Else
+            If colLRNumber > 0 And IsNumeric(data(rowIndex, colLRNumber)) Then
+                PrintTaskSortKey = CDbl(data(rowIndex, colLRNumber))
+                Exit Function
+            End If
+            If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
+                PrintTaskSortKey = CDbl(data(rowIndex, colLRHours))
+                Exit Function
+            End If
+            If colTaskCode > 0 Then
+                PrintTaskSortKey = 1E+15 + Len(CStr(data(rowIndex, colTaskCode)))
+                Exit Function
+            End If
+    End Select
+
+    PrintTaskSortKey = PRINT_SORT_KEY_MISSING
+End Function
+
+Private Sub SortPrintEntries(ByRef entries() As PrintSortEntry)
+    If UBound(entries) <= LBound(entries) Then Exit Sub
+    QuickSortPrintEntries entries, LBound(entries), UBound(entries)
+End Sub
+
+Private Sub QuickSortPrintEntries(ByRef entries() As PrintSortEntry, _
+                                  ByVal lowIndex As Long, _
+                                  ByVal highIndex As Long)
+    Dim i As Long
+    Dim j As Long
+    Dim pivot As PrintSortEntry
+    Dim temp As PrintSortEntry
+
+    i = lowIndex
+    j = highIndex
+    pivot = entries((lowIndex + highIndex) \ 2)
+
+    Do While i <= j
+        Do While PrintEntryLess(entries(i), pivot)
+            i = i + 1
+        Loop
+        Do While PrintEntryLess(pivot, entries(j))
+            j = j - 1
+        Loop
+        If i <= j Then
+            temp = entries(i)
+            entries(i) = entries(j)
+            entries(j) = temp
+            i = i + 1
+            j = j - 1
+        End If
+    Loop
+
+    If lowIndex < j Then QuickSortPrintEntries entries, lowIndex, j
+    If i < highIndex Then QuickSortPrintEntries entries, i, highIndex
+End Sub
+
+Private Function PrintEntryLess(ByRef leftEntry As PrintSortEntry, _
+                                ByRef rightEntry As PrintSortEntry) As Boolean
+    If leftEntry.GroupOrder < rightEntry.GroupOrder Then
+        PrintEntryLess = True
+    ElseIf leftEntry.GroupOrder > rightEntry.GroupOrder Then
+        PrintEntryLess = False
+    ElseIf leftEntry.SortKey < rightEntry.SortKey Then
+        PrintEntryLess = True
+    ElseIf leftEntry.SortKey > rightEntry.SortKey Then
+        PrintEntryLess = False
+    Else
+        PrintEntryLess = (leftEntry.DataRowIndex < rightEntry.DataRowIndex)
+    End If
+End Function
+
+Private Function NormalizePrintDataArray(ByVal raw As Variant, _
+                                         ByVal rowCount As Long, _
+                                         ByVal colCount As Long) As Variant
+    Dim data As Variant
+    Dim c As Long
+
+    If rowCount < 1 Or colCount < 1 Then Exit Function
+
+    If Not IsArray(raw) Then
+        ReDim data(1 To 1, 1 To 1)
+        data(1, 1) = raw
+        NormalizePrintDataArray = data
+        Exit Function
+    End If
+
+    If rowCount = 1 Then
+        c = 0
+        On Error Resume Next
+        c = UBound(raw, 2)
+        If Err.Number <> 0 Then c = 0
+        On Error GoTo 0
+        If c >= 1 Then
+            NormalizePrintDataArray = raw
+            Exit Function
+        End If
+
+        ReDim data(1 To 1, 1 To colCount)
+        For c = 1 To colCount
+            data(1, c) = raw(c)
+        Next c
+        NormalizePrintDataArray = data
+        Exit Function
+    End If
+
+    NormalizePrintDataArray = raw
+End Function
