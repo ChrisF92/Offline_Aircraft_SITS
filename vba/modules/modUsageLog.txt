@@ -14,6 +14,7 @@ Private Const USAGE_FIRST_SORTIE_ROW As Long = 8
 
 Public Sub ShowLogSortieForm()
     If Not ValidateSetupReady() Then Exit Sub
+    If Not CanLogSortieGivenOpenWork(True) Then Exit Sub
     frmLogSortie.Show
 End Sub
 
@@ -21,6 +22,58 @@ End Sub
 Public Sub RunLogSortie()
     ShowLogSortieForm
 End Sub
+
+' Block Log Sortie when open work packages or manual-update tasks remain.
+' Returns True when logging is allowed.
+Private Function CanLogSortieGivenOpenWork(Optional ByVal showDialogs As Boolean = True) As Boolean
+    Dim openWP As Long
+    Dim manualTasks As Long
+    Dim msg As String
+
+    CanLogSortieGivenOpenWork = False
+
+    openWP = CountOpenWorkPackages()
+    manualTasks = CountManualUpdateTasks()
+
+    If openWP = 0 And manualTasks = 0 Then
+        CanLogSortieGivenOpenWork = True
+        Exit Function
+    End If
+
+    If Not showDialogs Then Exit Function
+
+    msg = "Cannot log sortie until the following are cleared:" & vbCrLf
+    If openWP > 0 Then
+        msg = msg & vbCrLf & "• " & openWP & " open work package(s) — close them via Work Packages."
+    End If
+    If manualTasks > 0 Then
+        msg = msg & vbCrLf & "• " & manualTasks & " task(s) needing manual update — complete Manual Update on the SITS sheet."
+    End If
+
+    MsgBox msg, vbExclamation, APP_NAME
+End Function
+
+' Soft confirm when overdue (pink) tasks already exist.
+' Returns True when the user confirms (or when there are no overdue tasks).
+Private Function ConfirmLogSortieDespiteOverdue(Optional ByVal showDialogs As Boolean = True) As Boolean
+    Dim overdueCount As Long
+
+    ConfirmLogSortieDespiteOverdue = False
+
+    overdueCount = CountOverdueTasks()
+    If overdueCount = 0 Then
+        ConfirmLogSortieDespiteOverdue = True
+        Exit Function
+    End If
+
+    If Not showDialogs Then Exit Function
+
+    If MsgBox(overdueCount & " task(s) are already overdue (pink on the SITS view)." & vbCrLf & vbCrLf & _
+              "Log sortie anyway?", _
+              vbQuestion + vbYesNo, APP_NAME) = vbYes Then
+        ConfirmLogSortieDespiteOverdue = True
+    End If
+End Function
 
 ' Resolve the baseline/current counter used on the Log Sortie form for one
 ' interval code. Prefers an Airframe-sourced row when duplicates exist (e.g. OS).
@@ -522,6 +575,9 @@ Public Function CommitSortie(ByVal sortieDate As Date, _
             Exit Function
         End If
     End If
+
+    If Not CanLogSortieGivenOpenWork(showDialogs) Then Exit Function
+    If Not ConfirmLogSortieDespiteOverdue(showDialogs) Then Exit Function
 
     On Error GoTo ErrorHandler
     BeginBusyUI "Logging sortie…"

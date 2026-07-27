@@ -156,7 +156,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "Setup Wizard", _
         "Visible on the Master and before setup completes. Declares the tail and imports SITS + usage baselines. A Please wait progress dialog appears during import and final refresh so Excel does not look frozen."
     WriteHelpRow ws, r, "Log Sortie", _
-        "Records a sortie: date, HUMS Op Number, and usage increments by counter group (Airframe / Engines / WARE)."
+        "Records a sortie: date, HUMS Op Number, and usage increments by counter group (Airframe / Engines / WARE). Blocked while any work package is open or any task needs manual update; confirms if tasks are already overdue."
     WriteHelpRow ws, r, "Work Packages", _
         "Opens Manage Work Packages (same as the SITS button). Create packages from the SITS sheet selectors."
     WriteHelpRow ws, r, "View Audit Log", _
@@ -169,6 +169,10 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpSection ws, r, "Log Sortie"
     WriteHelpRow ws, r, "Required fields", _
         "Sortie date and HUMS Op Number. Enter Usage only for counters that changed; leave blank for no change."
+    WriteHelpRow ws, r, "Blocked when", _
+        "Any open work package exists, or any SITS task is flagged Needs Manual Update. Close work packages and complete Manual Update first."
+    WriteHelpRow ws, r, "Overdue confirm", _
+        "If any tasks are already overdue (pink on SITS), you are asked to confirm before logging the sortie."
     WriteHelpRow ws, r, "Hours counters", _
         "DA, MX, XJ, HH, E1, E2, OH — enter as h:mm (e.g. 1:30)."
     WriteHelpRow ws, r, "OEI seconds", _
