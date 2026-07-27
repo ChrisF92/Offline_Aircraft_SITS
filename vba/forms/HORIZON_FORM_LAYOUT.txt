@@ -3,28 +3,29 @@ Horizon UserForm — Control Layout (frmHorizon)
 
 Create a UserForm in the VBA IDE named exactly: frmHorizon
 Set the form Caption to: Horizon
-Suggested form size: Width ~420, Height ~240
+Suggested form size: Width ~420, Height ~200
 
 Then add these controls (Name property must match exactly):
 
 Control Name      Type           Caption / Notes
 ----------------  -------------  ------------------------------------------
-lblIntro          Label          Forecast filter for the SITS view (0 = show all of that type):
+lblIntro          Label          Forecast filter for HH/E1/E2 hours and DD days (0 = show all):
 lblHours          Label          Hours (HH / E1 / E2):
 txtHours          TextBox        Forecast hours threshold
 lblDays           Label          Days (DD):
 txtDays           TextBox        Forecast days threshold
-lblNumber         Label          Number (other):
-txtNumber         TextBox        Forecast number threshold
 cmdApply          CommandButton  Apply   (Default = True)
 cmdCancel         CommandButton  Cancel
+
+Optional legacy controls (safe to omit; hidden by code if present):
+lblNumber         Label          Number (other):   — unused; horizons are fixed in code
+txtNumber         TextBox        Forecast number   — unused
 
 Suggested positions (approximate):
   Row 1: lblIntro [12,12] width 380
   Row 2: lblHours [12,48]  txtHours [200,46] width 100
   Row 3: lblDays [12,78]   txtDays [200,76] width 100
-  Row 4: lblNumber [12,108] txtNumber [200,106] width 100
-  Row 5: cmdApply [12,160]  cmdCancel [120,160]
+  Row 4: cmdApply [12,120]  cmdCancel [120,120]
 
 After creating controls, open the form's code window and paste the contents of:
   vba/forms/frmHorizon.txt
@@ -35,6 +36,10 @@ SITS sheet macro:
 Notes:
   - Hours filter HH/E1/E2 life remaining
   - Days filter DD calendar tasks
-  - Number filter other counter-based interval types
-  - Set any value to 0 to show all tasks of that type
+  - Number-based interval types use fixed per-type horizons in
+    GetNumberIntervalForecastHorizon (modUtility); types not listed are
+    skipped on SITS import
+  - Set Hours or Days to 0 to show all tasks of that type
+  - If no E1/E2 task falls inside the hours horizon, the next E1 and E2
+    task are still shown
   - Apply saves to config and refreshes the SITS view

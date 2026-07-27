@@ -240,7 +240,7 @@ NextRow:
         End If
         If skippedRows > 0 Then
             msg = msg & vbCrLf & skippedRows & " number-based row(s) were skipped " & _
-                  "(actual interval and life remaining were not both zero)."
+                  "(interval type not in the forecast allowlist)."
         End If
         MsgBox msg, vbInformation, APP_NAME
     End If
@@ -486,11 +486,10 @@ Private Function ShouldSkipNumberBasedSITSImportRow(ByVal intervalCode As String
                                                     ByVal actualIntervalText As String, _
                                                     ByVal lifeRemainingValue As Variant, _
                                                     ByVal lifeRemainingText As String) As Boolean
+    ' Number-based types not in the hardcoded forecast allowlist are ignored on import.
+    ' (actualInterval / lifeRemaining args retained for call-site compatibility.)
     If Not IsNumberBasedSITSInterval(intervalCode) Then Exit Function
-
-    ShouldSkipNumberBasedSITSImportRow = Not ( _
-        IsImportedScalarZero(actualIntervalValue, actualIntervalText) And _
-        IsImportedScalarZero(lifeRemainingValue, lifeRemainingText))
+    ShouldSkipNumberBasedSITSImportRow = Not IsForecastNumberInterval(intervalCode)
 End Function
 
 ' GOLDesp generic / generated task codes (e.g. Gen/XXXX) are not imported.
