@@ -1,4 +1,4 @@
-Offline Aircraft SITS — Build Instructions (v1.1.0)
+Offline Aircraft SITS — Build Instructions (v1.2.0)
 ==================================================
 
 You maintain the .xlsm workbook locally from the .txt VBA sources in this folder.
@@ -60,6 +60,7 @@ Runtime modules:
   vba/modules/modSetupWizard.txt        modSetupWizard
   vba/modules/modUsageLog.txt           modUsageLog
   vba/modules/modSITS.txt               modSITS
+  vba/modules/modSITSPrint.txt          modSITSPrint
   vba/modules/modSITSEdit.txt           modSITSEdit
   vba/modules/modAssociatedTasks.txt    modAssociatedTasks
   vba/modules/modWorkPackage.txt        modWorkPackage
@@ -141,13 +142,25 @@ SITS view:
 1. Open the **SITS** sheet after setup or import.
 2. Click **Horizon** and set forecast hours / days / number to filter the view.
 3. Use **Refresh View** / **Create Work Package** / **Manage Work Packages** /
-   **Horizon** / **Extend** / **Defer** / **Add Task** / **Remove Task** /
+   **Horizon** / **Print** / **Extend** / **Defer** / **Add Task** / **Remove Task** /
    **Manual Update** buttons.
 4. Use the **AutoFilter** dropdowns on the header row (row 7).
 5. Life remaining highlighting:
    - Amber when due soon (within warn thresholds: default 10:00 hours / 7 days)
    - Pink/red when overdue
    - Light blue for zero-interval tasks needing manual update, or selected rows
+
+Print SITS report (SITS sheet only):
+1. Set the Horizon filter to the window you want (e.g. 50h / 90d).
+2. Click **Print** — recalculates life remaining, then opens a landscape
+   Word document titled **Simplified Item Task Schedule**.
+3. Header fields: Tail Number, Airframe Hours (HH), Report Date/Time.
+   Footer: Page N of M. The table fills page width and flows across as
+   many pages as needed (table header repeats). Columns: When Due, When
+   Due from Report Run DTG (life remaining), Interval Type Code, Task
+   Code, Sequence, Actual Interval, Task Description, Extension, Serial
+   Number.
+4. Print / Print to PDF / Save As from Word. Microsoft Word is required.
 
 Work packages:
 1. Tick Selector checkboxes on SITS → Create Work Package (ORN ####TAILDDMMYY).
@@ -165,7 +178,7 @@ Dashboard
   Open work packages / manual-update / warning / overdue counts
   Pre-setup / master: **Setup Wizard** + **View Help** under User Actions
   After setup: Log Sortie, Work Packages, View Audit Log, View Help
-  Extend / Defer / Manual Update are on the **SITS sheet only**
+  Extend / Defer / Manual Update / Print are on the **SITS sheet only**
   Import SITS and Refresh Usage live under Developer Tools
   Help sheet explains each part of the system (Rebuild Help Sheet)
 
@@ -294,6 +307,15 @@ Upgrade — v1.1.0 (from v1.0.0)
    on SITS; fixes View Help placement after Setup Wizard).
 5. Optional: **Rebuild Help Sheet**.
 
+Upgrade — v1.2.0 (from v1.1.0)
+------------------------------
+1. Paste/replace: CONFIG (version), modSITS (Print button), Setup_CreateHelpSheet.
+2. Insert > Module, Name = `modSITSPrint`, paste `vba/modules/modSITSPrint.txt`.
+3. Compile VBAProject.
+4. On the SITS sheet: **Refresh View** or **Rebuild SITS Layout** (adds the
+   **Print** button at the default L1 anchor without moving existing buttons).
+5. Optional: Dev Tools → **Rebuild Help Sheet**.
+
 Pre-release notes (former 2.3.x)
 --------------------------------
 Historical Phase 0 / Setup_RunAll / Setup_CreateSheets / Setup_CreateTables steps
@@ -301,7 +323,7 @@ are obsolete. For older workbooks still on those builds:
 
 1. Bring VBA up to late pre-release behaviour first if needed (protection, Help sheet,
    Extend/Defer, Usage matrix, Dev Tools), using a known-good Master as the base.
-2. Then apply the v1.0.0 steps above, then v1.1.0.
+2. Then apply the v1.0.0 steps above, then v1.1.0, then v1.2.0.
 3. Named ranges: **Rebuild Dashboard** now refreshes them automatically
    (or run Setup_CreateNamedRanges).
 4. Help sheet: Dev Tools → Rebuild Help Sheet.
@@ -385,4 +407,4 @@ Compile error: Sub or Function not defined (Setup_RunAll / ReuseSheetAs / AddSet
      Use Reset to Master for data wipe. Ensure Missing Buttons removes the Phase 0
      Dashboard button.
 
-Build marker: v1.1.0-manual-update-extend-import
+Build marker: v1.2.0-sits-printable-report
