@@ -4,6 +4,8 @@ Option Explicit
 ' USAGE LOG MODULE — Offline Aircraft SITS v2 (Phase 2)
 ' ========================================================================
 ' Sortie logging: append tblUsageLog rows and update tblUsageCurrent.
+' Log Sortie is blocked while open work packages or manual-update tasks
+' remain, and confirms when overdue tasks already exist.
 ' ========================================================================
 
 Private Const USAGE_TITLE_ROW As Long = 1
