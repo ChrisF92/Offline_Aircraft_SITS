@@ -5,8 +5,9 @@ Option Explicit
 ' ========================================================================
 ' Manual Add Task / Remove Task from the SITS view.
 ' Add: sequential InputBox prompts for import-required fields, validate,
-'      confirm summary, insert into tblSITS, recalc + refresh (forecast
-'      filter decides visibility).
+'      confirm summary, insert into tblSITS with usage-delta-compensated
+'      baseline (so entered Life Remaining is not reduced by prior sorties),
+'      then recalc + refresh (forecast filter decides visibility).
 ' Remove: reuse Selector checkboxes; confirm irreversible delete of the
 '         whole selection (listed); delete from tblSITS (+ orphan WP links).
 ' Manual Update: zero-interval tasks only — step-by-step InputBox for due
@@ -54,6 +55,7 @@ Public Function AddSITSTaskManually() As Boolean
     Set tbl = GetSITSEditTable(True)
     If tbl Is Nothing Then Exit Function
     If Not ValidateSITSColumns(tbl) Then Exit Function
+    EnsureSITSBaselineColumns tbl
 
     tailNumber = GetTailNumber()
 
@@ -993,8 +995,11 @@ Private Sub WriteManualSITSTaskRow(ByVal tbl As ListObject, _
         ApplyManualTimeOrNumberCell .Cells(1, GetTableColumnIndex(tbl, HDR_ACTUAL_INTERVAL)), _
             draft.ActualIntervalText, intervalCode
 
-        ApplyManualLifeRemainingValues tbl, newRow, intervalCode, draft.LifeRemainingText
-        CaptureTaskBaselineFromImport tbl, newRow, intervalCode
+        ' Same baseline compensation as Manual Update / WP close: RecalculateSITS
+        ' subtracts (current - import snapshot) usage, so baseline must be
+        ' entered LR + that delta. Otherwise pre-existing sorties immediately
+        ' reduce a newly added task's life remaining.
+        ApplyManualUpdateLifeRemaining newRow, tbl, intervalCode, draft.LifeRemainingText
 
         .Cells(1, GetTableColumnIndex(tbl, HDR_SITS_ROW_ID)).Value = rowId
     End With
@@ -1019,56 +1024,6 @@ Private Sub ApplyManualTimeOrNumberCell(ByVal target As Range, _
         target.Value = textValue
     End If
     target.NumberFormat = FORMAT_DECIMAL
-End Sub
-
-Private Sub ApplyManualLifeRemainingValues(ByVal tbl As ListObject, _
-                                           ByVal newRow As ListRow, _
-                                           ByVal intervalCode As String, _
-                                           ByVal textValue As String)
-    Dim colHours As Long
-    Dim colNumber As Long
-    Dim colDays As Long
-    Dim parsedTime As Variant
-    Dim parsedDate As Variant
-
-    colHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
-    colNumber = GetTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING)
-    colDays = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
-
-    If UsesHourFormatForManualEntry(intervalCode) Then
-        parsedTime = ParseTimeUsageValue(textValue, textValue)
-        If Not IsEmpty(parsedTime) Then
-            WriteFormattedUsageValue newRow.Range.Cells(1, colHours), parsedTime, FORMAT_TYPE_HOURS
-            Exit Sub
-        End If
-        If IsNumeric(textValue) Then
-            WriteFormattedUsageValue newRow.Range.Cells(1, colHours), CDbl(textValue), FORMAT_TYPE_HOURS
-            Exit Sub
-        End If
-    End If
-
-    If intervalCode = TYPE_DD Then
-        parsedDate = ParseDMYDateValue(textValue, textValue)
-        If IsDate(parsedDate) Then
-            newRow.Range.Cells(1, colDays).Value = CDate(parsedDate)
-            newRow.Range.Cells(1, colDays).NumberFormat = FORMAT_DATE
-            Exit Sub
-        End If
-        If IsNumeric(textValue) Then
-            newRow.Range.Cells(1, colNumber).Value = CDbl(textValue)
-            newRow.Range.Cells(1, colNumber).NumberFormat = FORMAT_DECIMAL
-            newRow.Range.Cells(1, colDays).Value = CDbl(textValue)
-            newRow.Range.Cells(1, colDays).NumberFormat = FORMAT_DECIMAL
-            Exit Sub
-        End If
-    End If
-
-    If IsNumeric(textValue) Then
-        newRow.Range.Cells(1, colNumber).Value = CDbl(textValue)
-    Else
-        newRow.Range.Cells(1, colNumber).Value = textValue
-    End If
-    newRow.Range.Cells(1, colNumber).NumberFormat = FORMAT_DECIMAL
 End Sub
 
 Private Function GenerateNextSITSRowId(ByVal tbl As ListObject) As String
