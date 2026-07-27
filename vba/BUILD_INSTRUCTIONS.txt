@@ -1,4 +1,4 @@
-Offline Aircraft SITS — Build Instructions (v1.2.0)
+Offline Aircraft SITS — Build Instructions (v1.2.1)
 ==================================================
 
 You maintain the .xlsm workbook locally from the .txt VBA sources in this folder.
@@ -317,6 +317,14 @@ Upgrade — v1.2.0 (from v1.1.0)
    **Print** button at the default L1 anchor without moving existing buttons).
 5. Optional: Dev Tools → **Rebuild Help Sheet**.
 
+Upgrade — v1.2.1 (from v1.2.0)
+------------------------------
+1. Paste/replace: CONFIG (version), modSITSEdit, Setup_CreateHelpSheet.
+2. Compile VBAProject.
+3. Optional: Dev Tools → **Rebuild Help Sheet**.
+4. Smoke-test: Log a sortie, Add Task with Life Remaining = full interval —
+   remaining life must stay at the value entered (not reduced by that sortie).
+
 Pre-release notes (former 2.3.x)
 --------------------------------
 Historical Phase 0 / Setup_RunAll / Setup_CreateSheets / Setup_CreateTables steps
@@ -324,7 +332,7 @@ are obsolete. For older workbooks still on those builds:
 
 1. Bring VBA up to late pre-release behaviour first if needed (protection, Help sheet,
    Extend/Defer, Usage matrix, Dev Tools), using a known-good Master as the base.
-2. Then apply the v1.0.0 steps above, then v1.1.0, then v1.2.0.
+2. Then apply the v1.0.0 steps above, then v1.1.0, then v1.2.0, then v1.2.1.
 3. Named ranges: **Rebuild Dashboard** now refreshes them automatically
    (or run Setup_CreateNamedRanges).
 4. Help sheet: Dev Tools → Rebuild Help Sheet.
@@ -408,4 +416,4 @@ Compile error: Sub or Function not defined (Setup_RunAll / ReuseSheetAs / AddSet
      Use Reset to Master for data wipe. Ensure Missing Buttons removes the Phase 0
      Dashboard button.
 
-Build marker: v1.2.0-sits-printable-report
+Build marker: v1.2.1-new-task-life-remaining

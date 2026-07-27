@@ -194,7 +194,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "Colour meanings", _
         "Amber = due soon (warning). Pink/red = overdue. Light blue = needs manual update (zero-interval after WP close) or selector ticked."
     WriteHelpRow ws, r, "Add Task / Remove Task", _
-        "Manually insert a SITS row (guided prompts) or delete selected rows. Deletes are irreversible; orphaned WP task links are cleaned up."
+        "Manually insert a SITS row (guided prompts) or delete selected rows. Entered Life Remaining is the remaining life at add time (not reduced by sorties already logged). Deletes are irreversible; orphaned WP task links are cleaned up."
     WriteHelpRow ws, r, "Manual Update", _
         "Zero Actual Interval tasks only (typically flagged light blue after WP close). Step-by-step prompts for due date (DD) or hours/number until due. Clears the manual-update flag."
 
