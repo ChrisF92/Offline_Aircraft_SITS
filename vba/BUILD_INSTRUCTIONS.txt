@@ -1,4 +1,4 @@
-Offline Aircraft SITS — Build Instructions (v1.2.1)
+Offline Aircraft SITS — Build Instructions (v1.2.2)
 ==================================================
 
 You maintain the .xlsm workbook locally from the .txt VBA sources in this folder.
@@ -129,6 +129,8 @@ Day-to-day actions
 ------------------
 Log Sortie:
 1. Click **Log Sortie** on the Dashboard (or macro RunLogSortie).
+   Blocked while any work package is open or any task needs Manual Update;
+   confirms if tasks are already overdue.
 2. Enter sortie date and required HUMS Op Number.
 3. In each group (Airframe / Engines / WARE), enter Usage for counters that
    changed on the sortie. Current Total and New Total are read-only.
@@ -252,19 +254,14 @@ SITS Long Forecast:
   Interval Type Code, Life Remaining, Task Code, Task Sequence,
   Task Description, Serial, Actual Interval, Extension, End Item Serial
   Task codes beginning with Gen/ are skipped.
-  Number-based interval types (excluding DD) are skipped on import unless both
-  Actual Interval and Life Remaining are zero.
+  Number-based interval types not in the forecast allowlist
+  (`GetNumberIntervalForecastHorizon` in modUtility) are skipped.
 
 Usage exports (airframe + engine):
   Interval Type, Task Code, Life Used, Top Serial
 
 Engine usage must include SM and SN interval codes after merge
 (typically WC/STARTS/ECU on P4N155/P4N175).
-
-Sample files (when present in repo root):
-  20260706-Long Forecast_ZZ382.xlsx   — SITS export sample (tail ZZ382)
-  ZZ383 Item Usage.xlsx               — Airframe usage sample
-  ZZ383 Engine Usage.xlsx             — Engine usage sample (includes SM/SN)
 
 First release — v1.0.0 (migrating from pre-release builds)
 ---------------------------------------------------------
@@ -325,6 +322,15 @@ Upgrade — v1.2.1 (from v1.2.0)
 4. Smoke-test: Log a sortie, Add Task with Life Remaining = full interval —
    remaining life must stay at the value entered (not reduced by that sortie).
 
+Upgrade — v1.2.2 (from v1.2.1)
+------------------------------
+1. Paste/replace: CONFIG (version), modUsageLog, Setup_CreateHelpSheet.
+2. Compile VBAProject.
+3. Optional: Dev Tools → **Rebuild Help Sheet**.
+4. Smoke-test: with an open work package (or a Needs Manual Update task),
+   Log Sortie must refuse; after clearing those, logging proceeds (overdue
+   tasks still get a confirm).
+
 Pre-release notes (former 2.3.x)
 --------------------------------
 Historical Phase 0 / Setup_RunAll / Setup_CreateSheets / Setup_CreateTables steps
@@ -332,7 +338,7 @@ are obsolete. For older workbooks still on those builds:
 
 1. Bring VBA up to late pre-release behaviour first if needed (protection, Help sheet,
    Extend/Defer, Usage matrix, Dev Tools), using a known-good Master as the base.
-2. Then apply the v1.0.0 steps above, then v1.1.0, then v1.2.0, then v1.2.1.
+2. Then apply the v1.0.0 steps above, then v1.1.0 → v1.2.0 → v1.2.1 → v1.2.2.
 3. Named ranges: **Rebuild Dashboard** now refreshes them automatically
    (or run Setup_CreateNamedRanges).
 4. Help sheet: Dev Tools → Rebuild Help Sheet.
@@ -416,4 +422,4 @@ Compile error: Sub or Function not defined (Setup_RunAll / ReuseSheetAs / AddSet
      Use Reset to Master for data wipe. Ensure Missing Buttons removes the Phase 0
      Dashboard button.
 
-Build marker: v1.2.1-new-task-life-remaining
+Build marker: v1.2.2-log-sortie-open-work-guards
