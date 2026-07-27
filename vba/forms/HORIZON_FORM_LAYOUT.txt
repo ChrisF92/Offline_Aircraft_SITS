@@ -9,8 +9,8 @@ Then add these controls (Name property must match exactly):
 
 Control Name      Type           Caption / Notes
 ----------------  -------------  ------------------------------------------
-lblIntro          Label          Forecast filter for HH/E1/E2 hours and DD days (0 = show all):
-lblHours          Label          Hours (HH / E1 / E2):
+lblIntro          Label          Forecast filter for hour-usage (HH/E1/E2/DA/MX/…) hours and DD days (0 = show all):
+lblHours          Label          Hours (hour-usage types):
 txtHours          TextBox        Forecast hours threshold
 lblDays           Label          Days (DD):
 txtDays           TextBox        Forecast days threshold
@@ -34,7 +34,7 @@ SITS sheet macro:
   RunHorizonSettings — Horizon button
 
 Notes:
-  - Hours filter HH/E1/E2 life remaining
+  - Hours filter all hour-usage types (HH/E1/E2 plus DA/MX/OH/XJ/HM etc.)
   - Days filter DD calendar tasks
   - Number-based interval types use fixed per-type horizons in
     GetNumberIntervalForecastHorizon (modUtility); types not listed are

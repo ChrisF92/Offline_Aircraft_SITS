@@ -153,6 +153,7 @@ Public Const TYPE_DA As String = "DA"
 Public Const TYPE_MX As String = "MX"
 Public Const TYPE_XJ As String = "XJ"
 Public Const TYPE_OH As String = "OH"
+Public Const TYPE_HM As String = "HM"
 ' WARE counters that may be absent from older usage exports
 Public Const TYPE_RF As String = "RF"
 Public Const TYPE_LR As String = "LR"

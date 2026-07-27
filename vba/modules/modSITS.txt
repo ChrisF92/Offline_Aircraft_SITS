@@ -1324,10 +1324,12 @@ Private Function SITSIntervalGroupOrder(ByVal intervalCode As String) As Long
             ' Number-based tasks sit between HH and DD.
             SITSIntervalGroupOrder = 5
         Case Else
-            If IsNumberBasedSITSInterval(intervalCode) Then
+            If IsHourUsageInterval(intervalCode) Then
+                ' DA/MX/OH/XJ/HM etc. — same hour group as HH.
+                SITSIntervalGroupOrder = 3
+            ElseIf IsNumberBasedSITSInterval(intervalCode) Then
                 SITSIntervalGroupOrder = 4
             ElseIf IsForecastNumberInterval(intervalCode) Then
-                ' Allowlisted counters that are not classified as number-based (e.g. OH).
                 SITSIntervalGroupOrder = 4
             Else
                 SITSIntervalGroupOrder = 6
@@ -1344,14 +1346,17 @@ Private Function SITSTaskSortKey(ByVal row As ListRow, _
                                  Optional ByVal colTaskCode As Long = 0) As Double
     Dim dueValue As Variant
 
-    Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_E1, TYPE_E2, TYPE_HH
-            If colLRHours = 0 Then colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
-            If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
-                SITSTaskSortKey = CDbl(row.Range.Cells(1, colLRHours).Value)
-                Exit Function
-            End If
+    If IsHourUsageInterval(intervalCode) Then
+        If colLRHours = 0 Then colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+        If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
+            SITSTaskSortKey = CDbl(row.Range.Cells(1, colLRHours).Value)
+            Exit Function
+        End If
+        SITSTaskSortKey = SITS_SORT_KEY_MISSING
+        Exit Function
+    End If
 
+    Select Case UCase$(Trim$(intervalCode))
         Case TYPE_DD
             If colDaysDue = 0 Then colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
             dueValue = row.Range.Cells(1, colDaysDue).Value
@@ -1395,13 +1400,16 @@ Private Function SITSTaskSortKeyFromData(ByRef data As Variant, _
                                          ByVal colTaskCode As Long) As Double
     Dim dueValue As Variant
 
-    Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_E1, TYPE_E2, TYPE_HH
-            If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
-                SITSTaskSortKeyFromData = CDbl(data(rowIndex, colLRHours))
-                Exit Function
-            End If
+    If IsHourUsageInterval(intervalCode) Then
+        If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
+            SITSTaskSortKeyFromData = CDbl(data(rowIndex, colLRHours))
+            Exit Function
+        End If
+        SITSTaskSortKeyFromData = SITS_SORT_KEY_MISSING
+        Exit Function
+    End If
 
+    Select Case UCase$(Trim$(intervalCode))
         Case TYPE_DD
             If colDaysDue > 0 Then
                 dueValue = data(rowIndex, colDaysDue)
@@ -1503,20 +1511,22 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
     lifeHoursFraction = -1#
     daysUntilDue = -1
 
-    Select Case intervalCode
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            If colLRHours = 0 Then colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
-            If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
-                lifeHoursFraction = CDbl(row.Range.Cells(1, colLRHours).Value)
-            End If
-            If forecastHours <= 0# Then
-                TaskPassesForecastFilter = True
-            ElseIf lifeHoursFraction < 0# Then
-                TaskPassesForecastFilter = True
-            Else
-                TaskPassesForecastFilter = (lifeHoursFraction <= (forecastHours / 24#))
-            End If
+    If IsHourUsageInterval(intervalCode) Then
+        If colLRHours = 0 Then colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+        If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
+            lifeHoursFraction = CDbl(row.Range.Cells(1, colLRHours).Value)
+        End If
+        If forecastHours <= 0# Then
+            TaskPassesForecastFilter = True
+        ElseIf lifeHoursFraction < 0# Then
+            TaskPassesForecastFilter = True
+        Else
+            TaskPassesForecastFilter = (lifeHoursFraction <= (forecastHours / 24#))
+        End If
+        Exit Function
+    End If
 
+    Select Case intervalCode
         Case TYPE_DD
             If colDaysDue = 0 Then colDaysDue = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
             dueValue = row.Range.Cells(1, colDaysDue).Value
@@ -1543,15 +1553,6 @@ Private Function TaskPassesForecastFilter(ByVal row As ListRow, _
                 End If
                 If lifeNumber >= 0# Then
                     TaskPassesForecastFilter = (lifeNumber <= CDbl(numberHorizon))
-                ElseIf IsHourUsageInterval(intervalCode) Then
-                    ' e.g. OH — allowlisted with a numeric horizon but stored as hours.
-                    If colLRHours = 0 Then colLRHours = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
-                    If colLRHours > 0 And IsNumeric(row.Range.Cells(1, colLRHours).Value) Then
-                        lifeHoursFraction = CDbl(row.Range.Cells(1, colLRHours).Value)
-                        TaskPassesForecastFilter = (lifeHoursFraction <= (CDbl(numberHorizon) / 24#))
-                    Else
-                        TaskPassesForecastFilter = True
-                    End If
                 Else
                     TaskPassesForecastFilter = True
                 End If
@@ -1580,19 +1581,21 @@ Private Function TaskPassesForecastFilterFromData(ByRef data As Variant, _
     lifeHoursFraction = -1#
     daysUntilDue = -1
 
-    Select Case intervalCode
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
-                lifeHoursFraction = CDbl(data(rowIndex, colLRHours))
-            End If
-            If forecastHours <= 0# Then
-                TaskPassesForecastFilterFromData = True
-            ElseIf lifeHoursFraction < 0# Then
-                TaskPassesForecastFilterFromData = True
-            Else
-                TaskPassesForecastFilterFromData = (lifeHoursFraction <= (forecastHours / 24#))
-            End If
+    If IsHourUsageInterval(intervalCode) Then
+        If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
+            lifeHoursFraction = CDbl(data(rowIndex, colLRHours))
+        End If
+        If forecastHours <= 0# Then
+            TaskPassesForecastFilterFromData = True
+        ElseIf lifeHoursFraction < 0# Then
+            TaskPassesForecastFilterFromData = True
+        Else
+            TaskPassesForecastFilterFromData = (lifeHoursFraction <= (forecastHours / 24#))
+        End If
+        Exit Function
+    End If
 
+    Select Case intervalCode
         Case TYPE_DD
             If colDaysDue > 0 Then
                 dueValue = data(rowIndex, colDaysDue)
@@ -1619,14 +1622,6 @@ Private Function TaskPassesForecastFilterFromData(ByRef data As Variant, _
                 End If
                 If lifeNumber >= 0# Then
                     TaskPassesForecastFilterFromData = (lifeNumber <= CDbl(numberHorizon))
-                ElseIf IsHourUsageInterval(intervalCode) Then
-                    If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
-                        lifeHoursFraction = CDbl(data(rowIndex, colLRHours))
-                        TaskPassesForecastFilterFromData = _
-                            (lifeHoursFraction <= (CDbl(numberHorizon) / 24#))
-                    Else
-                        TaskPassesForecastFilterFromData = True
-                    End If
                 Else
                     TaskPassesForecastFilterFromData = True
                 End If
@@ -1711,7 +1706,7 @@ Private Sub UpdateSITSHorizonSummary(ByVal ws As Worksheet)
     With ws.Range("A3")
         .Value = "Horizon: " & FormatHorizonHours(hoursValue) & " / " & _
                  CStr(daysValue) & "d" & _
-                 "   (number types use fixed per-interval horizons — 0h/0d = show all)"
+                 "   (hour-usage + number types; 0h/0d = show all)"
         .Font.Size = 9
         .Font.Italic = False
         .Font.Bold = False
@@ -2458,10 +2453,7 @@ Private Sub ApplySITSViewColumnLayout(ByVal ws As Worksheet, _
 End Sub
 
 Private Function SITSViewUsesHourFormat(ByVal intervalCode As String) As Boolean
-    Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            SITSViewUsesHourFormat = True
-    End Select
+    SITSViewUsesHourFormat = IsHourUsageInterval(intervalCode)
 End Function
 
 ' Pure value/format builder for bulk view writes and single-cell writers.
@@ -3112,20 +3104,19 @@ Private Function ResolveSITSViewWarningColor(ByVal intervalCode As String, _
     hasLife = TryGetWarningLifeValue(sourceRow, intervalCode, lifeValue)
     If Not hasLife Then Exit Function
 
-    Select Case intervalCode
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            If lifeValue < 0# Then
-                ResolveSITSViewWarningColor = COLOR_WARN_PINK
-            ElseIf lifeValue <= warnHoursFraction Then
-                ResolveSITSViewWarningColor = COLOR_WARN_AMBER
-            End If
-        Case TYPE_DD
-            If lifeValue < 0# Then
-                ResolveSITSViewWarningColor = COLOR_WARN_PINK
-            ElseIf lifeValue <= CDbl(warnDays) Then
-                ResolveSITSViewWarningColor = COLOR_WARN_AMBER
-            End If
-    End Select
+    If IsHourUsageInterval(intervalCode) Then
+        If lifeValue < 0# Then
+            ResolveSITSViewWarningColor = COLOR_WARN_PINK
+        ElseIf lifeValue <= warnHoursFraction Then
+            ResolveSITSViewWarningColor = COLOR_WARN_AMBER
+        End If
+    ElseIf intervalCode = TYPE_DD Then
+        If lifeValue < 0# Then
+            ResolveSITSViewWarningColor = COLOR_WARN_PINK
+        ElseIf lifeValue <= CDbl(warnDays) Then
+            ResolveSITSViewWarningColor = COLOR_WARN_AMBER
+        End If
+    End If
 End Function
 
 ' Array-path warning colour — avoids ListRow COM during full refresh.
@@ -3149,44 +3140,43 @@ Private Function ResolveSITSViewWarningColorValues(ByVal intervalCode As String,
     End If
 
     hasLife = False
-    Select Case intervalCode
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            If colLRHours > 0 Then
-                rawValue = data(rowIndex, colLRHours)
-                If Not IsEmpty(rawValue) And Len(Trim$(CStr(rawValue))) > 0 And IsNumeric(rawValue) Then
+    If IsHourUsageInterval(intervalCode) Then
+        If colLRHours > 0 Then
+            rawValue = data(rowIndex, colLRHours)
+            If Not IsEmpty(rawValue) And Len(Trim$(CStr(rawValue))) > 0 And IsNumeric(rawValue) Then
+                lifeValue = CDbl(rawValue)
+                hasLife = True
+            End If
+        End If
+        If hasLife Then
+            If lifeValue < 0# Then
+                ResolveSITSViewWarningColorValues = COLOR_WARN_PINK
+            ElseIf lifeValue <= warnHoursFraction Then
+                ResolveSITSViewWarningColorValues = COLOR_WARN_AMBER
+            End If
+        End If
+
+    ElseIf intervalCode = TYPE_DD Then
+        If colDaysDue > 0 Then
+            rawValue = data(rowIndex, colDaysDue)
+            If Not IsEmpty(rawValue) And Len(Trim$(CStr(rawValue))) > 0 Then
+                If LooksLikeAbsoluteDueDate(rawValue) Then
+                    lifeValue = CDbl(DateDiff("d", Date, CDate(rawValue)))
+                    hasLife = True
+                ElseIf IsNumeric(rawValue) Then
                     lifeValue = CDbl(rawValue)
                     hasLife = True
                 End If
             End If
-            If hasLife Then
-                If lifeValue < 0# Then
-                    ResolveSITSViewWarningColorValues = COLOR_WARN_PINK
-                ElseIf lifeValue <= warnHoursFraction Then
-                    ResolveSITSViewWarningColorValues = COLOR_WARN_AMBER
-                End If
+        End If
+        If hasLife Then
+            If lifeValue < 0# Then
+                ResolveSITSViewWarningColorValues = COLOR_WARN_PINK
+            ElseIf lifeValue <= CDbl(warnDays) Then
+                ResolveSITSViewWarningColorValues = COLOR_WARN_AMBER
             End If
-
-        Case TYPE_DD
-            If colDaysDue > 0 Then
-                rawValue = data(rowIndex, colDaysDue)
-                If Not IsEmpty(rawValue) And Len(Trim$(CStr(rawValue))) > 0 Then
-                    If LooksLikeAbsoluteDueDate(rawValue) Then
-                        lifeValue = CDbl(DateDiff("d", Date, CDate(rawValue)))
-                        hasLife = True
-                    ElseIf IsNumeric(rawValue) Then
-                        lifeValue = CDbl(rawValue)
-                        hasLife = True
-                    End If
-                End If
-            End If
-            If hasLife Then
-                If lifeValue < 0# Then
-                    ResolveSITSViewWarningColorValues = COLOR_WARN_PINK
-                ElseIf lifeValue <= CDbl(warnDays) Then
-                    ResolveSITSViewWarningColorValues = COLOR_WARN_AMBER
-                End If
-            End If
-    End Select
+        End If
+    End If
 End Function
 
 Private Function TryGetWarningLifeValue(ByVal sourceRow As ListRow, _
@@ -3199,28 +3189,29 @@ Private Function TryGetWarningLifeValue(ByVal sourceRow As ListRow, _
     Set tbl = sourceRow.Parent
     lifeValue = 0#
 
-    Select Case intervalCode
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            colIndex = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
-            If colIndex = 0 Then Exit Function
-            value = sourceRow.Range.Cells(1, colIndex).Value
-            If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Or Not IsNumeric(value) Then Exit Function
+    If IsHourUsageInterval(intervalCode) Then
+        colIndex = GetTableColumnIndex(tbl, HDR_HOURS_LIFE_REMAINING)
+        If colIndex = 0 Then Exit Function
+        value = sourceRow.Range.Cells(1, colIndex).Value
+        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Or Not IsNumeric(value) Then Exit Function
+        lifeValue = CDbl(value)
+        TryGetWarningLifeValue = True
+        Exit Function
+    End If
+
+    If intervalCode = TYPE_DD Then
+        colIndex = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
+        If colIndex = 0 Then Exit Function
+        value = sourceRow.Range.Cells(1, colIndex).Value
+        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+        If LooksLikeAbsoluteDueDate(value) Then
+            lifeValue = CDbl(DateDiff("d", Date, CDate(value)))
+            TryGetWarningLifeValue = True
+        ElseIf IsNumeric(value) Then
             lifeValue = CDbl(value)
             TryGetWarningLifeValue = True
-
-        Case TYPE_DD
-            colIndex = GetTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE)
-            If colIndex = 0 Then Exit Function
-            value = sourceRow.Range.Cells(1, colIndex).Value
-            If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
-            If LooksLikeAbsoluteDueDate(value) Then
-                lifeValue = CDbl(DateDiff("d", Date, CDate(value)))
-                TryGetWarningLifeValue = True
-            ElseIf IsNumeric(value) Then
-                lifeValue = CDbl(value)
-                TryGetWarningLifeValue = True
-            End If
-    End Select
+        End If
+    End If
 End Function
 
 ' Dashboard status counts — same amber/pink rules as SITS view highlighting.

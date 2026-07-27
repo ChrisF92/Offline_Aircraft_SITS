@@ -1062,12 +1062,11 @@ Private Sub BumpProjectedDueDateByDays(ByVal sitsRow As ListRow, _
 End Sub
 
 Private Function ExtensionFormatTypeForInterval(ByVal intervalCode As String) As String
-    Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            ExtensionFormatTypeForInterval = FORMAT_TYPE_HOURS
-        Case Else
-            ExtensionFormatTypeForInterval = FORMAT_TYPE_NUMBER
-    End Select
+    If IsHourUsageInterval(intervalCode) Then
+        ExtensionFormatTypeForInterval = FORMAT_TYPE_HOURS
+    Else
+        ExtensionFormatTypeForInterval = FORMAT_TYPE_NUMBER
+    End If
 End Function
 
 Private Function ExtensionAmountHint(ByVal intervalCode As String, _

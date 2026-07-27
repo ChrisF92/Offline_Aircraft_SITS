@@ -373,10 +373,7 @@ Private Sub ApplyImportedExtension(ByVal targetCell As Range, _
 End Sub
 
 Private Function SITSViewUsesHourFormatForImport(ByVal intervalCode As String) As Boolean
-    Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            SITSViewUsesHourFormatForImport = True
-    End Select
+    SITSViewUsesHourFormatForImport = IsHourUsageInterval(intervalCode)
 End Function
 
 Private Sub ApplyActualIntervalValue(ByVal targetCell As Range, _
@@ -392,7 +389,7 @@ Private Sub ApplyTimeOrNumberCell(ByVal targetCell As Range, _
                                   ByVal intervalCode As String)
     Dim parsedTime As Variant
 
-    If InStr(displayText, ":") > 0 Or (IsHourBasedIntervalType(intervalCode) And intervalCode <> TYPE_DD) Then
+    If InStr(displayText, ":") > 0 Or IsHourUsageInterval(intervalCode) Then
         parsedTime = ParseTimeUsageValue(rawValue, displayText)
         If Not IsEmpty(parsedTime) Then
             WriteFormattedUsageValue targetCell, parsedTime, FORMAT_TYPE_HOURS
@@ -419,7 +416,7 @@ Private Sub ApplyLifeRemainingValues(ByVal tbl As ListObject, _
     colNumber = ResolveTableColumnIndex(tbl, HDR_NUMBER_LIFE_REMAINING, colMap)
     colDays = ResolveTableColumnIndex(tbl, HDR_DAYS_WHEN_DUE, colMap)
 
-    If InStr(displayText, ":") > 0 Or (IsHourBasedIntervalType(intervalCode) And intervalCode <> TYPE_DD) Then
+    If InStr(displayText, ":") > 0 Or IsHourUsageInterval(intervalCode) Then
         parsedTime = ParseTimeUsageValue(rawValue, displayText)
         If Not IsEmpty(parsedTime) Then
             WriteFormattedUsageValue newRow.Range.Cells(1, colHours), parsedTime, FORMAT_TYPE_HOURS

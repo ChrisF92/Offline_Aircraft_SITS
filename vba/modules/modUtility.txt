@@ -1022,7 +1022,7 @@ End Function
 Public Function IsHourUsageInterval(ByVal intervalCode As String) As Boolean
     ' Hour / elapsed-time counters stored as Excel day-fraction with [h]:mm.
     Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_HH, TYPE_E1, TYPE_E2, TYPE_MX, TYPE_OH, TYPE_XJ, TYPE_DA, "HRS", "AF"
+        Case TYPE_HH, TYPE_E1, TYPE_E2, TYPE_MX, TYPE_OH, TYPE_XJ, TYPE_DA, TYPE_HM, "HRS", "AF"
             IsHourUsageInterval = True
     End Select
 End Function
@@ -1083,7 +1083,7 @@ Public Function GetNumberIntervalForecastHorizon(ByVal intervalCode As String) A
         Case "LF": GetNumberIntervalForecastHorizon = 50
         Case "LP": GetNumberIntervalForecastHorizon = 50
         Case "LR": GetNumberIntervalForecastHorizon = 9999
-        Case "OH": GetNumberIntervalForecastHorizon = 3
+        ' OH is hour-usage (IsHourUsageInterval) — filtered by the HH hours horizon.
         Case "OP": GetNumberIntervalForecastHorizon = 1
         Case "OS": GetNumberIntervalForecastHorizon = 4
         Case "OT": GetNumberIntervalForecastHorizon = 1

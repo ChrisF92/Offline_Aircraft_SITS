@@ -1259,7 +1259,7 @@ Private Sub MarkTaskCompletedMetadata(ByVal sitsRow As ListRow, _
     intervalCode = GetSITSIntervalCode(sitsRow, tbl)
     currentUsage = LookupCurrentUsageForInterval(intervalCode)
 
-    If IsHourBasedIntervalType(intervalCode) And intervalCode <> TYPE_DD Then
+    If IsHourUsageInterval(intervalCode) Then
         If colHoursComplete > 0 And Not IsEmpty(currentUsage) Then
             WriteFormattedUsageValue sitsRow.Range.Cells(1, colHoursComplete), _
                 currentUsage, FORMAT_TYPE_HOURS
@@ -1274,7 +1274,7 @@ Private Sub MarkTaskCompletedMetadata(ByVal sitsRow As ListRow, _
     End If
 
     If colExtension > 0 Then
-        If IsHourBasedIntervalType(intervalCode) And intervalCode <> TYPE_DD Then
+        If IsHourUsageInterval(intervalCode) Then
             WriteFormattedUsageValue sitsRow.Range.Cells(1, colExtension), 0#, FORMAT_TYPE_HOURS
         Else
             sitsRow.Range.Cells(1, colExtension).Value = 0

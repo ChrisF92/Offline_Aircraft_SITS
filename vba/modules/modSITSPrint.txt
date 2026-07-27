@@ -678,18 +678,19 @@ Private Function BuildPrintWhenDueText(ByRef data As Variant, _
     Dim dueDate As Date
     Dim daysRemaining As Double
 
-    Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            If colCurHours > 0 Then currentValue = data(rowIndex, colCurHours)
-            If colLRHours > 0 Then lifeValue = data(rowIndex, colLRHours)
-            If IsNumeric(currentValue) And IsNumeric(lifeValue) Then
-                BuildPrintWhenDueText = FormatElapsedHoursFromDayFraction( _
-                    CDbl(currentValue) + CDbl(lifeValue))
-            ElseIf IsNumeric(lifeValue) And (IsEmpty(currentValue) Or Len(Trim$(CStr(currentValue))) = 0) Then
-                BuildPrintWhenDueText = FormatElapsedHoursFromDayFraction(CDbl(lifeValue))
-            End If
-            Exit Function
+    If IsHourUsageInterval(intervalCode) Then
+        If colCurHours > 0 Then currentValue = data(rowIndex, colCurHours)
+        If colLRHours > 0 Then lifeValue = data(rowIndex, colLRHours)
+        If IsNumeric(currentValue) And IsNumeric(lifeValue) Then
+            BuildPrintWhenDueText = FormatElapsedHoursFromDayFraction( _
+                CDbl(currentValue) + CDbl(lifeValue))
+        ElseIf IsNumeric(lifeValue) And (IsEmpty(currentValue) Or Len(Trim$(CStr(currentValue))) = 0) Then
+            BuildPrintWhenDueText = FormatElapsedHoursFromDayFraction(CDbl(lifeValue))
+        End If
+        Exit Function
+    End If
 
+    Select Case UCase$(Trim$(intervalCode))
         Case TYPE_DD
             If colProjected > 0 Then
                 If PrintLooksLikeAbsoluteDueDate(data(rowIndex, colProjected)) Then
@@ -729,15 +730,17 @@ Private Function BuildPrintLifeRemainingText(ByRef data As Variant, _
                                              ByVal colDaysDue As Long) As String
     Dim value As Variant
 
-    Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            If colLRHours = 0 Then Exit Function
-            value = data(rowIndex, colLRHours)
-            If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
-            If IsNumeric(value) Then
-                BuildPrintLifeRemainingText = FormatElapsedHoursFromDayFraction(CDbl(value))
-            End If
+    If IsHourUsageInterval(intervalCode) Then
+        If colLRHours = 0 Then Exit Function
+        value = data(rowIndex, colLRHours)
+        If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
+        If IsNumeric(value) Then
+            BuildPrintLifeRemainingText = FormatElapsedHoursFromDayFraction(CDbl(value))
+        End If
+        Exit Function
+    End If
 
+    Select Case UCase$(Trim$(intervalCode))
         Case TYPE_DD
             If colDaysDue = 0 Then Exit Function
             value = data(rowIndex, colDaysDue)
@@ -768,21 +771,18 @@ Private Function BuildPrintIntervalText(ByRef data As Variant, _
     value = data(rowIndex, colIndex)
     If IsEmpty(value) Or Len(Trim$(CStr(value))) = 0 Then Exit Function
 
-    Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            If IsNumeric(value) Then
-                BuildPrintIntervalText = FormatElapsedHoursFromDayFraction( _
-                    CoerceUsageStorageValue(value, FORMAT_TYPE_HOURS))
-            Else
-                BuildPrintIntervalText = Trim$(CStr(value))
-            End If
-        Case Else
-            If IsNumeric(value) Then
-                BuildPrintIntervalText = FormatPrintNumber(CDbl(value))
-            Else
-                BuildPrintIntervalText = Trim$(CStr(value))
-            End If
-    End Select
+    If IsHourUsageInterval(intervalCode) Then
+        If IsNumeric(value) Then
+            BuildPrintIntervalText = FormatElapsedHoursFromDayFraction( _
+                CoerceUsageStorageValue(value, FORMAT_TYPE_HOURS))
+        Else
+            BuildPrintIntervalText = Trim$(CStr(value))
+        End If
+    ElseIf IsNumeric(value) Then
+        BuildPrintIntervalText = FormatPrintNumber(CDbl(value))
+    Else
+        BuildPrintIntervalText = Trim$(CStr(value))
+    End If
 End Function
 
 Private Function FormatAirframeHHForPrint() As String
@@ -856,23 +856,26 @@ Private Function PrintTaskPassesHorizon(ByRef data As Variant, _
                                         ByVal colDaysDue As Long) As Boolean
     Dim dueValue As Variant
     Dim lifeNumber As Double
+    Dim numberHorizon As Long
 
     lifeHoursFraction = -1#
     daysUntilDue = -1
 
-    Select Case intervalCode
-        Case TYPE_HH, TYPE_E1, TYPE_E2
-            If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
-                lifeHoursFraction = CDbl(data(rowIndex, colLRHours))
-            End If
-            If forecastHours <= 0# Then
-                PrintTaskPassesHorizon = True
-            ElseIf lifeHoursFraction < 0# Then
-                PrintTaskPassesHorizon = True
-            Else
-                PrintTaskPassesHorizon = (lifeHoursFraction <= (forecastHours / 24#))
-            End If
+    If IsHourUsageInterval(intervalCode) Then
+        If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
+            lifeHoursFraction = CDbl(data(rowIndex, colLRHours))
+        End If
+        If forecastHours <= 0# Then
+            PrintTaskPassesHorizon = True
+        ElseIf lifeHoursFraction < 0# Then
+            PrintTaskPassesHorizon = True
+        Else
+            PrintTaskPassesHorizon = (lifeHoursFraction <= (forecastHours / 24#))
+        End If
+        Exit Function
+    End If
 
+    Select Case intervalCode
         Case TYPE_DD
             If colDaysDue > 0 Then
                 dueValue = data(rowIndex, colDaysDue)
@@ -891,18 +894,20 @@ Private Function PrintTaskPassesHorizon(ByRef data As Variant, _
             End If
 
         Case Else
-            If IsNumberBasedSITSInterval(intervalCode) Then
+            ' Align with SITS view: fixed per-type horizons (forecastNumber unused).
+            numberHorizon = GetNumberIntervalForecastHorizon(intervalCode)
+            If numberHorizon >= 0 Then
                 lifeNumber = -1#
                 If colLRNumber > 0 And IsNumeric(data(rowIndex, colLRNumber)) Then
                     lifeNumber = CDbl(data(rowIndex, colLRNumber))
                 End If
-                If forecastNumber <= 0 Then
-                    PrintTaskPassesHorizon = True
-                ElseIf lifeNumber < 0# Then
-                    PrintTaskPassesHorizon = True
+                If lifeNumber >= 0# Then
+                    PrintTaskPassesHorizon = (lifeNumber <= CDbl(numberHorizon))
                 Else
-                    PrintTaskPassesHorizon = (lifeNumber <= forecastNumber)
+                    PrintTaskPassesHorizon = True
                 End If
+            ElseIf IsNumberBasedSITSInterval(intervalCode) Then
+                PrintTaskPassesHorizon = False
             Else
                 PrintTaskPassesHorizon = True
             End If
@@ -920,7 +925,11 @@ Private Function PrintIntervalGroupOrder(ByVal intervalCode As String) As Long
         Case TYPE_DD
             PrintIntervalGroupOrder = 4
         Case Else
-            PrintIntervalGroupOrder = 5
+            If IsHourUsageInterval(intervalCode) Then
+                PrintIntervalGroupOrder = 3
+            Else
+                PrintIntervalGroupOrder = 5
+            End If
     End Select
 End Function
 
@@ -933,13 +942,16 @@ Private Function PrintTaskSortKey(ByRef data As Variant, _
                                   ByVal colTaskCode As Long) As Double
     Dim dueValue As Variant
 
-    Select Case UCase$(Trim$(intervalCode))
-        Case TYPE_E1, TYPE_E2, TYPE_HH
-            If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
-                PrintTaskSortKey = CDbl(data(rowIndex, colLRHours))
-                Exit Function
-            End If
+    If IsHourUsageInterval(intervalCode) Then
+        If colLRHours > 0 And IsNumeric(data(rowIndex, colLRHours)) Then
+            PrintTaskSortKey = CDbl(data(rowIndex, colLRHours))
+            Exit Function
+        End If
+        PrintTaskSortKey = PRINT_SORT_KEY_MISSING
+        Exit Function
+    End If
 
+    Select Case UCase$(Trim$(intervalCode))
         Case TYPE_DD
             If colDaysDue > 0 Then
                 dueValue = data(rowIndex, colDaysDue)
