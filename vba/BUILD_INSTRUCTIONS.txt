@@ -223,7 +223,9 @@ Still editable by users:
 What this release includes
 --------------------------
 - Setup Wizard — per-aircraft tail + SITS / usage import
-- Log Sortie, Usage matrix, SITS forecast view + Horizon filter
+- Log Sortie (blocked while open WPs or manual-update tasks remain;
+  confirms when overdue tasks already exist), Usage matrix, SITS forecast
+  view + Horizon filter
 - Work packages (create / manage / close / remove task)
 - Extend / Defer (modExtensions, frmExtend, frmDefer)
 - Manual Update for zero-interval tasks (modSITSEdit step-by-step prompts)
@@ -231,6 +233,7 @@ What this release includes
 - Help sheet + Dashboard View Help
 - Reset to Master (Dev Tools) via modReset
 - Workbook protection with Suspend/Resume for table ops
+- Print SITS landscape Word report (modSITSPrint)
 - Audit: EXTENSION_APPLIED / DEFERRAL_APPLIED / WP_TASK_REMOVED / SITS_HORIZON_SET /
   RESET_MASTER / SITS_TASK_ADDED / SITS_TASKS_REMOVED / SITS_MANUAL_UPDATE
 
