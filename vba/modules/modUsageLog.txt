@@ -6,6 +6,8 @@ Option Explicit
 ' Sortie logging: append tblUsageLog rows and update tblUsageCurrent.
 ' Log Sortie is blocked while open work packages or manual-update tasks
 ' remain, and confirms when overdue tasks already exist.
+' Corrections reuse the same form: enter negative Usage values and set
+' HUMS Op Number to CORRECTION (Correction button on frmLogSortie).
 ' ========================================================================
 
 Private Const USAGE_TITLE_ROW As Long = 1
@@ -676,11 +678,11 @@ Public Function ParseUsageIncrement(ByVal rawIncrement As Variant, _
         Case UCase$(FORMAT_TYPE_HOURS)
             parsedTime = ParseTimeUsageValue(rawText, rawText)
             If IsEmpty(parsedTime) Then
-                failReason = "Enter flight/usage time as h:mm (e.g. 1:30), or hours as a number (e.g. 1)."
+                failReason = "Enter flight/usage time as h:mm (e.g. 1:30 or -0:30), or hours as a number (e.g. 1 or -1)."
                 Exit Function
             End If
-            If CDbl(parsedTime) <= 0 Then
-                failReason = "Increment must be greater than zero."
+            If CDbl(parsedTime) = 0 Then
+                failReason = "Increment cannot be zero."
                 Exit Function
             End If
             ParseUsageIncrement = parsedTime
@@ -688,22 +690,22 @@ Public Function ParseUsageIncrement(ByVal rawIncrement As Variant, _
         Case UCase$(FORMAT_TYPE_MINUTES)
             parsedTime = ParseMinutesSecondsValue(rawText, rawText)
             If IsEmpty(parsedTime) Then
-                failReason = "Enter duration as m:ss (e.g. 1:30)."
+                failReason = "Enter duration as m:ss (e.g. 1:30 or -1:30)."
                 Exit Function
             End If
-            If CDbl(parsedTime) <= 0 Then
-                failReason = "Increment must be greater than zero."
+            If CDbl(parsedTime) = 0 Then
+                failReason = "Increment cannot be zero."
                 Exit Function
             End If
             ParseUsageIncrement = parsedTime
 
         Case Else
             If Not IsNumeric(rawText) Then
-                failReason = "Enter a numeric increment."
+                failReason = "Enter a numeric increment (negative values allowed for corrections)."
                 Exit Function
             End If
-            If CDbl(rawText) <= 0 Then
-                failReason = "Increment must be greater than zero."
+            If CDbl(rawText) = 0 Then
+                failReason = "Increment cannot be zero."
                 Exit Function
             End If
             ParseUsageIncrement = CDbl(rawText)

@@ -13,12 +13,14 @@ Why this layout
 There are ~39 sortie counters across Airframe / Engines / WARE. Building every
 textbox by hand is brittle. The recommended approach used here:
 
-  1. Static shell controls only (date, HUMS Op Number, three frames, buttons)
+  1. Static shell controls only (date, HUMS Op Number, Correction button,
+     three frames, Submit/Cancel)
   2. Runtime-built rows inside each frame: Current Total | Usage | New Total
   3. Only the Usage column is editable (highlighted)
   4. Current Total comes from tblUsageCurrent; New Total = Current + Usage
   5. Blank Usage rows are ignored on submit
-  6. Counters not yet imported show Current = (n/a) with Usage locked
+  6. Negative Usage values are allowed for corrections
+  7. Counters not yet imported show Current = (n/a) with Usage locked
 
 Three side-by-side frames keep the form usable without a long vertical scroll
 of 39 stacked rows, while preserving the three groups you specified.
@@ -31,10 +33,11 @@ lblDate            Label           Sortie date:
 txtSortieDate      TextBox         Default set in code (dd/mm/yyyy)
 lblHumsOp          Label           HUMS Op Number:
 txtHumsOpNumber    TextBox         Required — stored as SortieRef in tblUsageLog; shown on Usage matrix
+cmdCorrection      CommandButton   Correction — sets HUMS Op Number to CORRECTION for usage adjustments
 fraAirframe        Frame           Usage Airframe   (rows added at runtime)
 fraEngines         Frame           Usage Engines    (rows added at runtime)
 fraWare            Frame           Usage WARE       (rows added at runtime)
-lblHint            Label           Hours: h:mm   Counts/seconds: number   Blank = no change
+lblHint            Label           Hours: h:mm   Counts/seconds: number   Blank = no change   Negatives = correction
 cmdSubmit          CommandButton   Log sortie       (Default = True)
 cmdCancel          CommandButton   Cancel
 
@@ -47,6 +50,7 @@ Row 1:
   txtSortieDate    Left=90  Top=10  Width=80
   lblHumsOp        Left=190 Top=12
   txtHumsOpNumber  Left=300 Top=10  Width=120
+  cmdCorrection    Left=430 Top=10  Width=80
 
 Group frames (side by side):
   fraAirframe      Left=12  Top=42  Width=260 Height=430
@@ -60,6 +64,17 @@ Bottom:
   lblHint          Left=12  Top=480 Width=520
   cmdSubmit        Left=620 Top=478
   cmdCancel        Left=720 Top=478
+
+Corrections
+-----------
+Use the same Log Sortie form to adjust prior usage:
+  1. Click Correction (or type CORRECTION in HUMS Op Number)
+  2. Enter negative Usage values for the counters to reduce
+     (e.g. hours -0:30 or -0.5; numbers -1)
+  3. Click Log sortie — updates current totals and appends a log row
+     with SortieRef = CORRECTION
+
+Zero increments are still rejected; leave Usage blank to skip a counter.
 
 Interval codes shown (CONFIG catalog — display order)
 -----------------------------------------------------

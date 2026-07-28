@@ -7,10 +7,11 @@ Option Explicit
 ' See vba/forms/LOG_SORTIE_FORM_LAYOUT.txt for control names and layout.
 '
 ' Approach for the large counter set:
-'   - Static shell: date, HUMS Op Number, three group frames, Submit/Cancel
+'   - Static shell: date, HUMS Op Number, Correction button, three group frames, Submit/Cancel
 '   - Rows are created at runtime (Current | Usage | New Total)
 '   - Only Usage is editable; New Total = Current + Usage
 '   - Blank Usage rows are skipped on submit
+'   - Negative Usage values are allowed for corrections (HUMS = CORRECTION)
 ' ========================================================================
 
 Private Const ROW_HEIGHT As Single = 18
@@ -74,6 +75,24 @@ End Sub
 Private Sub cmdCancel_Click()
     Set mRows = Nothing
     Unload Me
+End Sub
+
+' Prefill HUMS Op Number for usage corrections (negative increments).
+Private Sub cmdCorrection_Click()
+    Dim rowHelper As clsSortieUsageRow
+
+    txtHumsOpNumber.Value = "CORRECTION"
+
+    On Error Resume Next
+    For Each rowHelper In mRows
+        If rowHelper.IsAvailable Then
+            rowHelper.UsageBox.SetFocus
+            GoTo DoneFocus
+        End If
+    Next rowHelper
+    txtSortieDate.SetFocus
+DoneFocus:
+    On Error GoTo 0
 End Sub
 
 Private Sub BuildAllGroups()

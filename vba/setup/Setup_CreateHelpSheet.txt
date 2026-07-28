@@ -174,11 +174,13 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "Overdue confirm", _
         "If any tasks are already overdue (pink on SITS), you are asked to confirm before logging the sortie."
     WriteHelpRow ws, r, "Hours counters", _
-        "DA, MX, XJ, HH, E1, E2, OH — enter as h:mm (e.g. 1:30)."
+        "DA, MX, XJ, HH, E1, E2, OH — enter as h:mm (e.g. 1:30). Use a leading minus for corrections (e.g. -0:30)."
     WriteHelpRow ws, r, "OEI seconds", _
-        "1E / 1G / 2E / 2G — enter decimal seconds (e.g. 3.38)."
+        "1E / 1G / 2E / 2G — enter decimal seconds (e.g. 3.38). Negative values allowed for corrections."
     WriteHelpRow ws, r, "Number counters", _
-        "Enter a positive number. Catalog codes missing from the usage baseline show as (n/a) until imported."
+        "Enter a non-zero number (negative for corrections). Catalog codes missing from the usage baseline show as (n/a) until imported."
+    WriteHelpRow ws, r, "Corrections", _
+        "Click Correction to set HUMS Op Number to CORRECTION, then enter negative Usage values for the counters to adjust. Same submit flow as a normal sortie."
     WriteHelpRow ws, r, "What it updates", _
         "Appends tblUsageLog, updates tblUsageCurrent, refreshes the Usage sheet, and recalculates the SITS view."
 
