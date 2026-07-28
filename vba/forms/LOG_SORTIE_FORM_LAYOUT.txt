@@ -102,6 +102,8 @@ After creating controls
 3. Compile (Debug > Compile VBAProject)
 
 Dashboard macro: assign ShowLogSortieForm or RunLogSortie to a button.
+Correction: Dashboard RunCorrection (post-setup User Actions) opens the same
+form with HUMS Op Number prefilled as CORRECTION.
 
 If serial numbers or time columns display incorrectly on an existing workbook,
 run RepairWorkbookFormats from modUtility.

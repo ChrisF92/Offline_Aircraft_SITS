@@ -7,7 +7,7 @@ Option Explicit
 ' Log Sortie is blocked while open work packages or manual-update tasks
 ' remain, and confirms when overdue tasks already exist.
 ' Corrections reuse the same form: enter negative Usage values and set
-' HUMS Op Number to CORRECTION (Correction button on frmLogSortie).
+' HUMS Op Number to CORRECTION (Dashboard Correction button / form button).
 ' ========================================================================
 
 Private Const USAGE_TITLE_ROW As Long = 1
@@ -25,6 +25,19 @@ End Sub
 ' Dashboard-friendly alias.
 Public Sub RunLogSortie()
     ShowLogSortieForm
+End Sub
+
+' Dashboard Correction — same Log Sortie form with HUMS prefilled as CORRECTION.
+Public Sub RunCorrection()
+    If Not ValidateSetupReady() Then Exit Sub
+    If Not CanLogSortieGivenOpenWork(True) Then Exit Sub
+    Load frmLogSortie
+    frmLogSortie.PrepareCorrectionMode
+    frmLogSortie.Show
+End Sub
+
+Public Sub ShowCorrectionForm()
+    RunCorrection
 End Sub
 
 ' Block Log Sortie when open work packages or manual-update tasks remain.

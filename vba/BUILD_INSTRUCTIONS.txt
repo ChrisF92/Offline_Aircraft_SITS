@@ -141,7 +141,8 @@ Log Sortie:
 4. Click Log sortie.
 
 Corrections (same form):
-1. Click **Correction** to set HUMS Op Number to CORRECTION (or type it).
+1. Click **Correction** on the Dashboard (or the Correction button on Log Sortie)
+   to open the form with HUMS Op Number set to CORRECTION.
 2. Enter negative Usage for counters to reduce (e.g. -0:30, -1).
 3. Click Log sortie — appends a log row and updates current totals.
 
@@ -185,7 +186,7 @@ Dashboard
 ---------
   Open work packages / manual-update / warning / overdue counts
   Pre-setup / master: **Setup Wizard** + **View Help** under User Actions
-  After setup: Log Sortie, Work Packages, View Audit Log, View Help
+  After setup: Log Sortie, Work Packages, View Audit Log, View Help, Correction
   Extend / Defer / Manual Update / Print are on the **SITS sheet only**
   Import SITS and Refresh Usage live under Developer Tools
   Help sheet explains each part of the system (Rebuild Help Sheet)
@@ -231,8 +232,8 @@ What this release includes
 - Log Sortie (blocked while open WPs or manual-update tasks remain;
   confirms when overdue tasks already exist), Usage matrix, SITS forecast
   view + Horizon filter
-- Usage corrections via Log Sortie (Correction button sets HUMS = CORRECTION;
-  negative Usage increments reduce current totals)
+- Usage corrections via Log Sortie (Dashboard **Correction** button after setup
+  opens the form with HUMS = CORRECTION; negative Usage increments reduce totals)
 - Work packages (create / manage / close / remove task)
 - Extend / Defer (modExtensions, frmExtend, frmDefer)
 - Manual Update for zero-interval tasks (modSITSEdit step-by-step prompts)

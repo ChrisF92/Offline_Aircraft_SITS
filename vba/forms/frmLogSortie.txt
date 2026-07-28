@@ -78,7 +78,8 @@ Private Sub cmdCancel_Click()
 End Sub
 
 ' Prefill HUMS Op Number for usage corrections (negative increments).
-Private Sub cmdCorrection_Click()
+' Called by the form Correction button and Dashboard RunCorrection.
+Public Sub PrepareCorrectionMode()
     Dim rowHelper As clsSortieUsageRow
 
     txtHumsOpNumber.Value = "CORRECTION"
@@ -93,6 +94,10 @@ Private Sub cmdCorrection_Click()
     txtSortieDate.SetFocus
 DoneFocus:
     On Error GoTo 0
+End Sub
+
+Private Sub cmdCorrection_Click()
+    PrepareCorrectionMode
 End Sub
 
 Private Sub BuildAllGroups()
