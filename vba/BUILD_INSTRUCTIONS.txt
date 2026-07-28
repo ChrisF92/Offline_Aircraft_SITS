@@ -231,6 +231,8 @@ What this release includes
 - Log Sortie (blocked while open WPs or manual-update tasks remain;
   confirms when overdue tasks already exist), Usage matrix, SITS forecast
   view + Horizon filter
+- Usage corrections via Log Sortie (Correction button sets HUMS = CORRECTION;
+  negative Usage increments reduce current totals)
 - Work packages (create / manage / close / remove task)
 - Extend / Defer (modExtensions, frmExtend, frmDefer)
 - Manual Update for zero-interval tasks (modSITSEdit step-by-step prompts)
