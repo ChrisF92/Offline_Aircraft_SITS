@@ -1,4 +1,4 @@
-Offline Aircraft SITS — Build Instructions (v1.2.2)
+Offline Aircraft SITS — Build Instructions (v1.2.3)
 ==================================================
 
 You maintain the .xlsm workbook locally from the .txt VBA sources in this folder.
@@ -343,17 +343,20 @@ Upgrade — v1.2.2 (from v1.2.1)
    Log Sortie must refuse; after clearing those, logging proceeds (overdue
    tasks still get a confirm).
 
-Upgrade — usage corrections (on top of v1.2.2)
-----------------------------------------------
-1. Paste/replace: modUsageLog, modUtility, Setup_CreateDashboard,
+Upgrade — v1.2.3 (from v1.2.2)
+------------------------------
+1. Paste/replace: CONFIG (version), modUsageLog, modUtility, Setup_CreateDashboard,
    Setup_CreateHelpSheet; update frmLogSortie code (and add form control
    `cmdCorrection` if missing — see LOG_SORTIE_FORM_LAYOUT.txt).
 2. Compile VBAProject.
 3. Alt+F8 → **EnableDevTools** → **Ensure Missing Buttons** (adds Dashboard
    **Correction** after setup without moving existing buttons).
 4. Optional: Dev Tools → **Rebuild Help Sheet**.
-5. Smoke-test: after Setup Wizard, Dashboard shows Correction; it opens Log
-   Sortie with HUMS = CORRECTION; negative Usage reduces current totals.
+5. If existing correction rows show day fractions (e.g. -0.0416666), run
+   **Repair Formats** (or Refresh Usage) so negative hours display as -h:mm.
+6. Smoke-test: after Setup Wizard, Dashboard shows Correction; it opens Log
+   Sortie with HUMS = CORRECTION; negative Usage reduces current totals and
+   shows as -h:mm (or -n) on the Usage sheet.
 
 Pre-release notes (former 2.3.x)
 --------------------------------
@@ -362,7 +365,7 @@ are obsolete. For older workbooks still on those builds:
 
 1. Bring VBA up to late pre-release behaviour first if needed (protection, Help sheet,
    Extend/Defer, Usage matrix, Dev Tools), using a known-good Master as the base.
-2. Then apply the v1.0.0 steps above, then v1.1.0 → v1.2.0 → v1.2.1 → v1.2.2.
+2. Then apply the v1.0.0 steps above, then v1.1.0 → v1.2.0 → v1.2.1 → v1.2.2 → v1.2.3.
 3. Named ranges: **Rebuild Dashboard** now refreshes them automatically
    (or run Setup_CreateNamedRanges).
 4. Help sheet: Dev Tools → Rebuild Help Sheet.
@@ -446,4 +449,4 @@ Compile error: Sub or Function not defined (Setup_RunAll / ReuseSheetAs / AddSet
      Use Reset to Master for data wipe. Ensure Missing Buttons removes the Phase 0
      Dashboard button.
 
-Build marker: v1.2.2-log-sortie-open-work-guards
+Build marker: v1.2.3-usage-corrections

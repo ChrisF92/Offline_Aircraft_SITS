@@ -1238,6 +1238,29 @@ Public Function CoerceUsageStorageValue(ByVal value As Variant, _
             Else
                 CoerceUsageStorageValue = 0#
             End If
+
+        Case UCase$(FORMAT_TYPE_MINUTES)
+            textValue = Trim$(displayText)
+            If Len(textValue) > 0 And InStr(textValue, ":") > 0 Then
+                parsed = ParseMinutesSecondsValue(value, textValue)
+                If Not IsEmpty(parsed) Then
+                    CoerceUsageStorageValue = CDbl(parsed)
+                    Exit Function
+                End If
+            End If
+            If VarType(value) = vbString And InStr(CStr(value), ":") > 0 Then
+                parsed = ParseMinutesSecondsValue(value, CStr(value))
+                If Not IsEmpty(parsed) Then
+                    CoerceUsageStorageValue = CDbl(parsed)
+                    Exit Function
+                End If
+            End If
+            If IsNumeric(value) Then
+                CoerceUsageStorageValue = CDbl(value)
+            Else
+                CoerceUsageStorageValue = 0#
+            End If
+
         Case Else
             If IsNumeric(value) Then
                 CoerceUsageStorageValue = CDbl(value)
