@@ -1266,6 +1266,24 @@ Public Sub WriteUsageCell(ByVal target As Range, _
     Dim pattern As String
 
     storedValue = CoerceUsageStorageValue(value, formatType, displayText)
+
+    ' Excel [h]:mm / elapsed formats do not display negatives reliably — write text
+    ' (same approach as the SITS view). CoerceUsageStorageValue can parse these back.
+    Select Case UCase$(Trim$(formatType))
+        Case UCase$(FORMAT_TYPE_HOURS)
+            If storedValue < 0# Then
+                target.NumberFormat = FORMAT_GENERAL
+                target.Value = FormatElapsedHoursFromDayFraction(storedValue)
+                Exit Sub
+            End If
+        Case UCase$(FORMAT_TYPE_MINUTES)
+            If storedValue < 0# Then
+                target.NumberFormat = FORMAT_GENERAL
+                target.Value = FormatElapsedMinutesFromDayFraction(storedValue)
+                Exit Sub
+            End If
+    End Select
+
     pattern = UsageNumberFormatPattern(formatType, storedValue)
     target.Value = storedValue
     target.NumberFormat = pattern

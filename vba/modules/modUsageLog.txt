@@ -462,7 +462,10 @@ Private Function BuildSortieMatrixBatches() As Collection
     Dim sortieDate As Variant
     Dim sortieRef As String
     Dim intervalCode As String
+    Dim taskCode As String
+    Dim formatType As String
     Dim incrementValue As Variant
+    Dim coercedIncrement As Double
     Dim enteredAt As Variant
     Dim sortKey As String
     Dim increments As Object
@@ -494,6 +497,7 @@ Private Function BuildSortieMatrixBatches() As Collection
 
         sortieRef = Trim$(CStr(row.Range.Cells(1, 2).Value))
         intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, 3).Value)))
+        taskCode = Trim$(CStr(row.Range.Cells(1, 4).Value))
         incrementValue = row.Range.Cells(1, 5).Value
         enteredAt = row.Range.Cells(1, 7).Value
 
@@ -515,11 +519,15 @@ Private Function BuildSortieMatrixBatches() As Collection
             Set increments = batchIncrements(batchKey)
         End If
 
-        If Len(intervalCode) > 0 And IsNumeric(incrementValue) Then
+        If Len(intervalCode) > 0 And Len(Trim$(CStr(incrementValue))) > 0 Then
+            ' Numeric day-fraction / count, or hour text such as "-1:00" from corrections.
+            formatType = ResolveUsageFormatType(intervalCode, taskCode)
+            coercedIncrement = CoerceUsageStorageValue( _
+                incrementValue, formatType, CStr(row.Range.Cells(1, 5).Text))
             If increments.Exists(intervalCode) Then
-                increments(intervalCode) = CDbl(increments(intervalCode)) + CDbl(incrementValue)
+                increments(intervalCode) = CDbl(increments(intervalCode)) + coercedIncrement
             Else
-                increments(intervalCode) = CDbl(incrementValue)
+                increments(intervalCode) = coercedIncrement
             End If
         End If
 

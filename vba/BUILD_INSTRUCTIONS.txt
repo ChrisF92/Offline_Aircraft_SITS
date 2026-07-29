@@ -343,6 +343,18 @@ Upgrade — v1.2.2 (from v1.2.1)
    Log Sortie must refuse; after clearing those, logging proceeds (overdue
    tasks still get a confirm).
 
+Upgrade — usage corrections (on top of v1.2.2)
+----------------------------------------------
+1. Paste/replace: modUsageLog, modUtility, Setup_CreateDashboard,
+   Setup_CreateHelpSheet; update frmLogSortie code (and add form control
+   `cmdCorrection` if missing — see LOG_SORTIE_FORM_LAYOUT.txt).
+2. Compile VBAProject.
+3. Alt+F8 → **EnableDevTools** → **Ensure Missing Buttons** (adds Dashboard
+   **Correction** after setup without moving existing buttons).
+4. Optional: Dev Tools → **Rebuild Help Sheet**.
+5. Smoke-test: after Setup Wizard, Dashboard shows Correction; it opens Log
+   Sortie with HUMS = CORRECTION; negative Usage reduces current totals.
+
 Pre-release notes (former 2.3.x)
 --------------------------------
 Historical Phase 0 / Setup_RunAll / Setup_CreateSheets / Setup_CreateTables steps
