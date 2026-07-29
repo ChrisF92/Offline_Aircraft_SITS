@@ -9,7 +9,7 @@ Option Explicit
 ' placement and column widths survive day-to-day use.
 '
 ' Pre-setup / master: Setup Wizard + View Help under User Actions.
-' After setup: Log Sortie, Work Packages, View Audit Log, View Help.
+' After setup: Log Sortie, Work Packages, View Audit Log, View Help, Correction.
 ' Extend / Defer live on the SITS sheet only (not Dashboard).
 ' Import SITS and Refresh Usage live under Developer Tools.
 '
@@ -276,6 +276,7 @@ Private Sub SyncUserActionButtons(ByVal ws As Worksheet, ByVal forceAdd As Boole
         RemoveDashboardButtonForMacro ws, "RunLogSortie"
         RemoveDashboardButtonForMacro ws, "RunManageWorkPackages"
         RemoveDashboardButtonForMacro ws, "ViewAuditLog"
+        RemoveDashboardButtonForMacro ws, "RunCorrection"
 
         If forceAdd Then
             AddDashboardButtonAt ws, USER_BTN_START_ROW, 0, "Setup Wizard", "RunSetupWizard"
@@ -292,11 +293,13 @@ Private Sub SyncUserActionButtons(ByVal ws As Worksheet, ByVal forceAdd As Boole
             AddDashboardButtonAt ws, USER_BTN_START_ROW, 1, "Work Packages", "RunManageWorkPackages"
             AddDashboardButtonAt ws, USER_BTN_START_ROW + 1, 0, "View Audit Log", "ViewAuditLog"
             AddDashboardButtonAt ws, USER_BTN_START_ROW + 1, 1, "View Help", "ViewHelp"
+            AddDashboardButtonAt ws, USER_BTN_START_ROW + 2, 0, "Correction", "RunCorrection"
         Else
             EnsureDashboardButtonAt ws, USER_BTN_START_ROW, 0, "Log Sortie", "RunLogSortie"
             EnsureDashboardButtonAt ws, USER_BTN_START_ROW, 1, "Work Packages", "RunManageWorkPackages"
             EnsureDashboardButtonAt ws, USER_BTN_START_ROW + 1, 0, "View Audit Log", "ViewAuditLog"
             EnsureDashboardButtonAt ws, USER_BTN_START_ROW + 1, 1, "View Help", "ViewHelp"
+            EnsureDashboardButtonAt ws, USER_BTN_START_ROW + 2, 0, "Correction", "RunCorrection"
         End If
     End If
 
@@ -451,7 +454,7 @@ Private Function DashboardHasButtonForMacro(ByVal ws As Worksheet, ByVal macroNa
 End Function
 
 Private Sub PrepareUserButtonRows(ByVal ws As Worksheet)
-    ws.Rows(USER_BTN_START_ROW & ":" & (USER_BTN_START_ROW + 1)).RowHeight = BTN_ROW_HEIGHT
+    ws.Rows(USER_BTN_START_ROW & ":" & (USER_BTN_START_ROW + 2)).RowHeight = BTN_ROW_HEIGHT
 End Sub
 
 Private Sub PrepareDevButtonRows(ByVal ws As Worksheet)

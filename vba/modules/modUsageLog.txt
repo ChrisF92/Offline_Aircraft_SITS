@@ -6,6 +6,8 @@ Option Explicit
 ' Sortie logging: append tblUsageLog rows and update tblUsageCurrent.
 ' Log Sortie is blocked while open work packages or manual-update tasks
 ' remain, and confirms when overdue tasks already exist.
+' Corrections reuse the same form: enter negative Usage values and set
+' HUMS Op Number to CORRECTION (Dashboard Correction button / form button).
 ' ========================================================================
 
 Private Const USAGE_TITLE_ROW As Long = 1
@@ -23,6 +25,19 @@ End Sub
 ' Dashboard-friendly alias.
 Public Sub RunLogSortie()
     ShowLogSortieForm
+End Sub
+
+' Dashboard Correction — same Log Sortie form with HUMS prefilled as CORRECTION.
+Public Sub RunCorrection()
+    If Not ValidateSetupReady() Then Exit Sub
+    If Not CanLogSortieGivenOpenWork(True) Then Exit Sub
+    Load frmLogSortie
+    frmLogSortie.PrepareCorrectionMode
+    frmLogSortie.Show
+End Sub
+
+Public Sub ShowCorrectionForm()
+    RunCorrection
 End Sub
 
 ' Block Log Sortie when open work packages or manual-update tasks remain.
@@ -447,7 +462,10 @@ Private Function BuildSortieMatrixBatches() As Collection
     Dim sortieDate As Variant
     Dim sortieRef As String
     Dim intervalCode As String
+    Dim taskCode As String
+    Dim formatType As String
     Dim incrementValue As Variant
+    Dim coercedIncrement As Double
     Dim enteredAt As Variant
     Dim sortKey As String
     Dim increments As Object
@@ -479,6 +497,7 @@ Private Function BuildSortieMatrixBatches() As Collection
 
         sortieRef = Trim$(CStr(row.Range.Cells(1, 2).Value))
         intervalCode = UCase$(Trim$(CStr(row.Range.Cells(1, 3).Value)))
+        taskCode = Trim$(CStr(row.Range.Cells(1, 4).Value))
         incrementValue = row.Range.Cells(1, 5).Value
         enteredAt = row.Range.Cells(1, 7).Value
 
@@ -500,11 +519,15 @@ Private Function BuildSortieMatrixBatches() As Collection
             Set increments = batchIncrements(batchKey)
         End If
 
-        If Len(intervalCode) > 0 And IsNumeric(incrementValue) Then
+        If Len(intervalCode) > 0 And Len(Trim$(CStr(incrementValue))) > 0 Then
+            ' Numeric day-fraction / count, or hour text such as "-1:00" from corrections.
+            formatType = ResolveUsageFormatType(intervalCode, taskCode)
+            coercedIncrement = CoerceUsageStorageValue( _
+                incrementValue, formatType, CStr(row.Range.Cells(1, 5).Text))
             If increments.Exists(intervalCode) Then
-                increments(intervalCode) = CDbl(increments(intervalCode)) + CDbl(incrementValue)
+                increments(intervalCode) = CDbl(increments(intervalCode)) + coercedIncrement
             Else
-                increments(intervalCode) = CDbl(incrementValue)
+                increments(intervalCode) = coercedIncrement
             End If
         End If
 
@@ -676,11 +699,11 @@ Public Function ParseUsageIncrement(ByVal rawIncrement As Variant, _
         Case UCase$(FORMAT_TYPE_HOURS)
             parsedTime = ParseTimeUsageValue(rawText, rawText)
             If IsEmpty(parsedTime) Then
-                failReason = "Enter flight/usage time as h:mm (e.g. 1:30), or hours as a number (e.g. 1)."
+                failReason = "Enter flight/usage time as h:mm (e.g. 1:30 or -0:30), or hours as a number (e.g. 1 or -1)."
                 Exit Function
             End If
-            If CDbl(parsedTime) <= 0 Then
-                failReason = "Increment must be greater than zero."
+            If CDbl(parsedTime) = 0 Then
+                failReason = "Increment cannot be zero."
                 Exit Function
             End If
             ParseUsageIncrement = parsedTime
@@ -688,22 +711,22 @@ Public Function ParseUsageIncrement(ByVal rawIncrement As Variant, _
         Case UCase$(FORMAT_TYPE_MINUTES)
             parsedTime = ParseMinutesSecondsValue(rawText, rawText)
             If IsEmpty(parsedTime) Then
-                failReason = "Enter duration as m:ss (e.g. 1:30)."
+                failReason = "Enter duration as m:ss (e.g. 1:30 or -1:30)."
                 Exit Function
             End If
-            If CDbl(parsedTime) <= 0 Then
-                failReason = "Increment must be greater than zero."
+            If CDbl(parsedTime) = 0 Then
+                failReason = "Increment cannot be zero."
                 Exit Function
             End If
             ParseUsageIncrement = parsedTime
 
         Case Else
             If Not IsNumeric(rawText) Then
-                failReason = "Enter a numeric increment."
+                failReason = "Enter a numeric increment (negative values allowed for corrections)."
                 Exit Function
             End If
-            If CDbl(rawText) <= 0 Then
-                failReason = "Increment must be greater than zero."
+            If CDbl(rawText) = 0 Then
+                failReason = "Increment cannot be zero."
                 Exit Function
             End If
             ParseUsageIncrement = CDbl(rawText)

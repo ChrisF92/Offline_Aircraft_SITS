@@ -146,7 +146,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "3. Setup Wizard", _
         "On the Dashboard, run Setup Wizard. Enter the tail and import SITS Long Forecast, airframe usage, and engine usage."
     WriteHelpRow ws, r, "4. Day-to-day", _
-        "Use Dashboard and SITS buttons: Log Sortie, Work Packages, Horizon, Print, Extend, Defer, Add/Remove Task, Manual Update."
+        "Use Dashboard and SITS buttons: Log Sortie, Correction, Work Packages, Horizon, Print, Extend, Defer, Add/Remove Task, Manual Update."
     WriteHelpRow ws, r, "5. Reset data", _
         "Dev Tools → Reset to Master clears aircraft data while keeping layout. Then Save As / Setup Wizard again as needed."
 
@@ -157,6 +157,8 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
         "Visible on the Master and before setup completes. Declares the tail and imports SITS + usage baselines. A Please wait progress dialog appears during import and final refresh so Excel does not look frozen."
     WriteHelpRow ws, r, "Log Sortie", _
         "Records a sortie: date, HUMS Op Number, and usage increments by counter group (Airframe / Engines / WARE). Blocked while any work package is open or any task needs manual update; confirms if tasks are already overdue."
+    WriteHelpRow ws, r, "Correction", _
+        "Visible after Setup Wizard. Opens Log Sortie with HUMS Op Number set to CORRECTION — enter negative Usage values to adjust prior totals."
     WriteHelpRow ws, r, "Work Packages", _
         "Opens Manage Work Packages (same as the SITS button). Create packages from the SITS sheet selectors."
     WriteHelpRow ws, r, "View Audit Log", _
@@ -174,11 +176,13 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "Overdue confirm", _
         "If any tasks are already overdue (pink on SITS), you are asked to confirm before logging the sortie."
     WriteHelpRow ws, r, "Hours counters", _
-        "DA, MX, XJ, HH, E1, E2, OH — enter as h:mm (e.g. 1:30)."
+        "DA, MX, XJ, HH, E1, E2, OH — enter as h:mm (e.g. 1:30). Use a leading minus for corrections (e.g. -0:30)."
     WriteHelpRow ws, r, "OEI seconds", _
-        "1E / 1G / 2E / 2G — enter decimal seconds (e.g. 3.38)."
+        "1E / 1G / 2E / 2G — enter decimal seconds (e.g. 3.38). Negative values allowed for corrections."
     WriteHelpRow ws, r, "Number counters", _
-        "Enter a positive number. Catalog codes missing from the usage baseline show as (n/a) until imported."
+        "Enter a non-zero number (negative for corrections). Catalog codes missing from the usage baseline show as (n/a) until imported."
+    WriteHelpRow ws, r, "Corrections", _
+        "Dashboard Correction (or the Correction button on the form) sets HUMS Op Number to CORRECTION. Enter negative Usage values for the counters to adjust. Same submit flow as a normal sortie."
     WriteHelpRow ws, r, "What it updates", _
         "Appends tblUsageLog, updates tblUsageCurrent, refreshes the Usage sheet, and recalculates the SITS view."
 

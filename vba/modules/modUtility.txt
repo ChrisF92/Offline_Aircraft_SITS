@@ -949,12 +949,20 @@ Public Function ParseTimeUsageValue(ByVal rawVal As Variant, _
     Dim parts() As String
     Dim hoursPart As Double
     Dim minutesPart As Double
+    Dim isNegative As Boolean
+    Dim dayFraction As Double
 
     If IsEmpty(rawVal) Then Exit Function
 
     s = Trim$(CStr(displayText))
     If Len(s) = 0 Or s = "#####" Then s = Trim$(CStr(rawVal))
     If Len(s) = 0 Then Exit Function
+
+    If Left$(s, 1) = "-" Then
+        isNegative = True
+        s = Trim$(Mid$(s, 2))
+        If Len(s) = 0 Then Exit Function
+    End If
 
     If InStr(s, ":") > 0 Then
         parts = Split(s, ":")
@@ -963,8 +971,10 @@ Public Function ParseTimeUsageValue(ByVal rawVal As Variant, _
                 If IsNumeric(parts(0)) And IsNumeric(parts(1)) Then
                     hoursPart = CDbl(parts(0))
                     minutesPart = CDbl(parts(1))
-                    If minutesPart >= 0# And minutesPart < 60# Then
-                        ParseTimeUsageValue = (hoursPart / 24#) + (minutesPart / 1440#)
+                    If hoursPart >= 0# And minutesPart >= 0# And minutesPart < 60# Then
+                        dayFraction = (hoursPart / 24#) + (minutesPart / 1440#)
+                        If isNegative Then dayFraction = -dayFraction
+                        ParseTimeUsageValue = dayFraction
                     End If
                     Exit Function
                 End If
@@ -977,9 +987,11 @@ Public Function ParseTimeUsageValue(ByVal rawVal As Variant, _
     If Not IsNumeric(s) Then Exit Function
 
     ' Typed text without a colon means whole/fractional hours (1 or 1.5).
-    ' Numeric cell values are already Excel day-fractions.
+    ' Numeric cell values are already Excel day-fractions (may be negative).
     If VarType(rawVal) = vbString Then
-        ParseTimeUsageValue = CDbl(s) / 24#
+        dayFraction = CDbl(s) / 24#
+        If isNegative Then dayFraction = -dayFraction
+        ParseTimeUsageValue = dayFraction
     Else
         ParseTimeUsageValue = CDbl(rawVal)
     End If
@@ -1226,6 +1238,29 @@ Public Function CoerceUsageStorageValue(ByVal value As Variant, _
             Else
                 CoerceUsageStorageValue = 0#
             End If
+
+        Case UCase$(FORMAT_TYPE_MINUTES)
+            textValue = Trim$(displayText)
+            If Len(textValue) > 0 And InStr(textValue, ":") > 0 Then
+                parsed = ParseMinutesSecondsValue(value, textValue)
+                If Not IsEmpty(parsed) Then
+                    CoerceUsageStorageValue = CDbl(parsed)
+                    Exit Function
+                End If
+            End If
+            If VarType(value) = vbString And InStr(CStr(value), ":") > 0 Then
+                parsed = ParseMinutesSecondsValue(value, CStr(value))
+                If Not IsEmpty(parsed) Then
+                    CoerceUsageStorageValue = CDbl(parsed)
+                    Exit Function
+                End If
+            End If
+            If IsNumeric(value) Then
+                CoerceUsageStorageValue = CDbl(value)
+            Else
+                CoerceUsageStorageValue = 0#
+            End If
+
         Case Else
             If IsNumeric(value) Then
                 CoerceUsageStorageValue = CDbl(value)
@@ -1254,6 +1289,24 @@ Public Sub WriteUsageCell(ByVal target As Range, _
     Dim pattern As String
 
     storedValue = CoerceUsageStorageValue(value, formatType, displayText)
+
+    ' Excel [h]:mm / elapsed formats do not display negatives reliably — write text
+    ' (same approach as the SITS view). CoerceUsageStorageValue can parse these back.
+    Select Case UCase$(Trim$(formatType))
+        Case UCase$(FORMAT_TYPE_HOURS)
+            If storedValue < 0# Then
+                target.NumberFormat = FORMAT_GENERAL
+                target.Value = FormatElapsedHoursFromDayFraction(storedValue)
+                Exit Sub
+            End If
+        Case UCase$(FORMAT_TYPE_MINUTES)
+            If storedValue < 0# Then
+                target.NumberFormat = FORMAT_GENERAL
+                target.Value = FormatElapsedMinutesFromDayFraction(storedValue)
+                Exit Sub
+            End If
+    End Select
+
     pattern = UsageNumberFormatPattern(formatType, storedValue)
     target.Value = storedValue
     target.NumberFormat = pattern
@@ -1357,13 +1410,18 @@ Public Function FormatElapsedMinutesFromDayFraction(ByVal dayFraction As Double)
     Dim totalSeconds As Long
     Dim minutes As Long
     Dim seconds As Long
+    Dim negative As Boolean
 
     totalSeconds = CLng(Round(dayFraction * 86400#, 0))
-    If totalSeconds < 0 Then totalSeconds = 0
+    If totalSeconds < 0 Then
+        negative = True
+        totalSeconds = Abs(totalSeconds)
+    End If
 
     minutes = totalSeconds \ 60
     seconds = totalSeconds Mod 60
     FormatElapsedMinutesFromDayFraction = CStr(minutes) & ":" & Format$(seconds, "00")
+    If negative Then FormatElapsedMinutesFromDayFraction = "-" & FormatElapsedMinutesFromDayFraction
 End Function
 
 Public Function ParseMinutesSecondsValue(ByVal rawVal As Variant, _
@@ -1373,11 +1431,19 @@ Public Function ParseMinutesSecondsValue(ByVal rawVal As Variant, _
     Dim minutesPart As Double
     Dim secondsPart As Double
     Dim totalSeconds As Double
+    Dim isNegative As Boolean
 
     If IsEmpty(rawVal) Then Exit Function
 
     s = Trim$(displayText)
     If Len(s) = 0 Or s = "#####" Then s = Trim$(CStr(rawVal))
+    If Len(s) = 0 Then Exit Function
+
+    If Left$(s, 1) = "-" Then
+        isNegative = True
+        s = Trim$(Mid$(s, 2))
+        If Len(s) = 0 Then Exit Function
+    End If
 
     If InStr(s, ":") > 0 Then
         parts = Split(s, ":")
@@ -1385,14 +1451,21 @@ Public Function ParseMinutesSecondsValue(ByVal rawVal As Variant, _
             If IsNumeric(parts(0)) And IsNumeric(parts(1)) Then
                 minutesPart = CDbl(parts(0))
                 secondsPart = CDbl(parts(1))
+                If minutesPart < 0# Or secondsPart < 0# Or secondsPart >= 60# Then Exit Function
                 totalSeconds = (minutesPart * 60#) + secondsPart
+                If isNegative Then totalSeconds = -totalSeconds
                 ParseMinutesSecondsValue = totalSeconds / 86400#
                 Exit Function
             End If
         End If
+        Exit Function
     End If
 
-    If IsNumeric(rawVal) Then
+    If IsNumeric(s) Then
+        totalSeconds = CDbl(s)
+        If isNegative Then totalSeconds = -totalSeconds
+        ParseMinutesSecondsValue = totalSeconds / 86400#
+    ElseIf (Not isNegative) And IsNumeric(rawVal) Then
         ParseMinutesSecondsValue = CDbl(rawVal) / 86400#
     End If
 End Function
