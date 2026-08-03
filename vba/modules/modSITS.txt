@@ -12,6 +12,11 @@ Option Explicit
 ' RefreshSITSView rewrites data only, tidies shell chrome, and adds any
 ' missing action buttons at default anchors — never moves or resizes
 ' buttons the developer has already placed.
+'
+' Selector Form Controls must be positioned while the SITS window Zoom is
+' 100%. At other zoom levels Excel assigns Left/Top incorrectly, and the
+' error accumulates further down the sheet. Bind/sync temporarily force
+' Zoom=100; click handling trusts LinkedCell (not drifted Top).
 ' ========================================================================
 
 Private Const SITS_VIEW_HEADER_ROW As Long = 7
@@ -34,6 +39,12 @@ Private Type SITSViewSortEntry
     LifeHoursFraction As Double
     DaysUntilDue As Long
 End Type
+
+' Nested Zoom=100 sessions for selector bind/sync (see Begin/EndSITSSelectorZoom100).
+Private mSITSZoomDepth As Long
+Private mSITSZoomSaved As Long
+Private mSITSZoomPrevSheet As Object
+Private mSITSZoomActivated As Boolean
 
 Public Sub RunRefreshSITS()
     RefreshSITS
@@ -115,7 +126,6 @@ Public Sub SITSSelectorCheckboxChanged()
     Dim valueKnown As Boolean
     Dim nameRow As Long
     Dim linkRow As Long
-    Dim topRow As Long
 
     On Error Resume Next
     callerName = CStr(Application.Caller)
@@ -178,11 +188,15 @@ Public Sub SITSSelectorCheckboxChanged()
         End If
     End If
 
-    topRow = EstimateSITSViewRowFromCheckboxTop(ws, cb.Top)
-
-    ' Prefer the row whose cell Top is closest to the control — fixes stale
-    ' LinkedCell/Name drift after add/remove refresh.
-    viewRow = ResolveSITSViewSelectorRow(ws, nameRow, linkRow, topRow, cb.Top)
+    ' LinkedCell/Name are authoritative. Checkbox.Top drifts at Zoom<>100% and
+    ' must not retarget the wrong row (that caused double-check / wrong highlight).
+    If linkRow >= SITS_VIEW_DATA_START_ROW Then
+        viewRow = linkRow
+    ElseIf nameRow >= SITS_VIEW_DATA_START_ROW Then
+        viewRow = nameRow
+    Else
+        viewRow = EstimateSITSViewRowFromCheckboxTop(ws, cb.Top)
+    End If
     If viewRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
     Set linkCell = ws.Cells(viewRow, SITS_SELECTOR_COL)
 
@@ -190,53 +204,19 @@ Public Sub SITSSelectorCheckboxChanged()
 
     If Not valueKnown Then selected = ConvertToBoolean(linkCell.Value)
 
-    ' Keep LinkedCell/Name aligned with the row we highlighted.
+    ' Keep Name/LinkedCell on the authoritative row (do not re-position here —
+    ' assigning Left/Top at Zoom<>100% is what creates the drift).
     On Error Resume Next
-    If linkRow <> viewRow Or StrComp(cb.Name, SITSCheckboxName(viewRow), vbTextCompare) <> 0 Then
+    If StrComp(cb.Name, SITSCheckboxName(viewRow), vbTextCompare) <> 0 Then
         cb.Name = SITSCheckboxName(viewRow)
+    End If
+    If linkRow <> viewRow Then
         cb.LinkedCell = "'" & ws.Name & "'!" & linkCell.Address(False, False)
     End If
     On Error GoTo 0
 
     ApplySITSViewRowSelectionHighlight ws, viewRow, selected
 End Sub
-
-' Pick the candidate row whose Top is closest to the checkbox.
-Private Function ResolveSITSViewSelectorRow(ByVal ws As Worksheet, _
-                                            ByVal nameRow As Long, _
-                                            ByVal linkRow As Long, _
-                                            ByVal topRow As Long, _
-                                            ByVal topPos As Double) As Long
-    Dim bestRow As Long
-    Dim bestDist As Double
-    Dim dist As Double
-
-    ResolveSITSViewSelectorRow = 0
-    bestRow = 0
-    bestDist = 1E+308
-
-    If nameRow >= SITS_VIEW_DATA_START_ROW Then
-        dist = Abs(topPos - ws.Cells(nameRow, SITS_SELECTOR_COL).Top)
-        bestRow = nameRow
-        bestDist = dist
-    End If
-    If linkRow >= SITS_VIEW_DATA_START_ROW Then
-        dist = Abs(topPos - ws.Cells(linkRow, SITS_SELECTOR_COL).Top)
-        If dist < bestDist Then
-            bestRow = linkRow
-            bestDist = dist
-        End If
-    End If
-    If topRow >= SITS_VIEW_DATA_START_ROW Then
-        dist = Abs(topPos - ws.Cells(topRow, SITS_SELECTOR_COL).Top)
-        If dist < bestDist Then
-            bestRow = topRow
-            bestDist = dist
-        End If
-    End If
-
-    ResolveSITSViewSelectorRow = bestRow
-End Function
 
 ' Called from ThisWorkbook.Workbook_SheetChange when Selector LinkedCells change.
 Public Sub HandleSITSSelectorSheetChange(ByVal Sh As Object, ByVal Target As Range)
@@ -382,13 +362,20 @@ Public Sub RestoreSITSViewSelectorsForRowIds(ByVal rowIds As Object)
     If wsView Is Nothing Then Exit Sub
 
     Set viewMap = BuildSITSViewRowIdMap(wsView)
+    BeginSITSSelectorZoom100 wsView
+    On Error GoTo RestoreZoomFail
     For Each rowId In rowIds.Keys
         If viewMap.Exists(CStr(rowId)) Then
             viewRow = CLng(viewMap(CStr(rowId)))
-            SetSITSViewSelectorCheckbox wsView, viewRow
+            SetSITSViewSelectorCheckboxNoZoom wsView, viewRow
             ApplySITSViewRowSelectionHighlight wsView, viewRow, False
         End If
     Next rowId
+    EndSITSSelectorZoom100
+    Exit Sub
+
+RestoreZoomFail:
+    EndSITSSelectorZoom100
 End Sub
 
 ' Targeted post-close view update: refresh/remove only affected rows.
@@ -457,6 +444,8 @@ Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
 
     ' Closed / reforecasted tasks: update in place, or remove if outside forecast.
     If Not closedRowIds Is Nothing Then
+        BeginSITSSelectorZoom100 wsView
+        On Error GoTo CloseViewZoomFail
         For Each rowId In closedRowIds.Keys
             If Not viewMap.Exists(CStr(rowId)) Then GoTo NextClosedView
 
@@ -479,10 +468,11 @@ Public Sub ApplySITSViewAfterWorkPackageClose(ByVal closedRowIds As Object, _
                 ApplySITSViewRowWarnings wsView, viewRow, SITS_VISIBLE_COLUMN_COUNT, _
                     intervalCode, lifeHoursFraction, daysUntilDue, _
                     warnHoursFraction, warnDays, sitsRow, colManualFlag
-                SetSITSViewSelectorCheckbox wsView, viewRow
+                SetSITSViewSelectorCheckboxNoZoom wsView, viewRow
             End If
 NextClosedView:
         Next rowId
+        EndSITSSelectorZoom100
     End If
 
     ' Remove view rows bottom-up so indexes stay valid.
@@ -497,6 +487,10 @@ NextClosedView:
         ' remap existing checkboxes instead of recreating every control.
         RemapSITSViewSelectorLinkedCells wsView
     End If
+    Exit Sub
+
+CloseViewZoomFail:
+    EndSITSSelectorZoom100
 End Sub
 
 ' skipTableFormats:=True for day-to-day paths (sortie / extend / defer) where
@@ -1950,6 +1944,10 @@ Private Sub SyncSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
         Exit Sub
     End If
 
+    ' Form Control Left/Top are wrong unless the sheet window is at Zoom 100%.
+    BeginSITSSelectorZoom100 ws
+    On Error GoTo SyncZoomFail
+
     Set pool = New Collection
     On Error Resume Next
     For i = ws.CheckBoxes.Count To 1 Step -1
@@ -1968,7 +1966,7 @@ Private Sub SyncSITSViewSelectorCheckboxes(ByVal ws As Worksheet, _
             pool.Add cb
         End If
     Next i
-    On Error GoTo 0
+    On Error GoTo SyncZoomFail
 
     poolIndex = 1
 
@@ -2002,12 +2000,19 @@ NextSyncRow:
     For i = pool.Count To poolIndex Step -1
         pool(i).Delete
     Next i
-    On Error GoTo 0
+    On Error GoTo SyncZoomFail
+
+    EndSITSSelectorZoom100
+    Exit Sub
+
+SyncZoomFail:
+    EndSITSSelectorZoom100
 End Sub
 
 ' Bind + align a selector checkbox to its cell. Re-assert Left/Top after
 ' LinkedCell — Excel can nudge Form Controls when the link is assigned,
 ' which left boxes sitting on the row below after add/remove refresh.
+' Caller must run under BeginSITSSelectorZoom100 (Zoom=100 required).
 Private Sub BindSITSViewSelectorCheckbox(ByVal ws As Worksheet, _
                                          ByVal cb As CheckBox, _
                                          ByVal linkCell As Range, _
@@ -2078,6 +2083,47 @@ End Sub
 Private Function SITSCheckboxName(ByVal viewRow As Long) As String
     SITSCheckboxName = "SITS_SEL_" & CStr(viewRow)
 End Function
+
+' Excel Form Controls store Left/Top incorrectly when the sheet window Zoom
+' is not 100%. Nestable — Sync/Remap/Set wrap bind work in a Zoom=100 session
+' and restore the caller's zoom (and sheet) afterward.
+Private Sub BeginSITSSelectorZoom100(ByVal ws As Worksheet)
+    If ws Is Nothing Then Exit Sub
+
+    mSITSZoomDepth = mSITSZoomDepth + 1
+    If mSITSZoomDepth > 1 Then Exit Sub
+
+    mSITSZoomActivated = False
+    Set mSITSZoomPrevSheet = Nothing
+    mSITSZoomSaved = 100
+
+    On Error Resume Next
+    If Not ActiveSheet Is ws Then
+        Set mSITSZoomPrevSheet = ActiveSheet
+        ws.Activate
+        mSITSZoomActivated = True
+    End If
+    mSITSZoomSaved = ActiveWindow.Zoom
+    If mSITSZoomSaved <> 100 Then ActiveWindow.Zoom = 100
+    On Error GoTo 0
+End Sub
+
+Private Sub EndSITSSelectorZoom100()
+    If mSITSZoomDepth <= 0 Then Exit Sub
+    mSITSZoomDepth = mSITSZoomDepth - 1
+    If mSITSZoomDepth > 0 Then Exit Sub
+
+    On Error Resume Next
+    If mSITSZoomSaved <> 100 Then ActiveWindow.Zoom = mSITSZoomSaved
+    If mSITSZoomActivated Then
+        If Not mSITSZoomPrevSheet Is Nothing Then mSITSZoomPrevSheet.Activate
+    End If
+    On Error GoTo 0
+
+    Set mSITSZoomPrevSheet = Nothing
+    mSITSZoomActivated = False
+    mSITSZoomSaved = 100
+End Sub
 
 Private Function BuildSITSViewRowIdMap(ByVal wsView As Worksheet) As Object
     Dim map As Object
@@ -2151,8 +2197,11 @@ Private Sub RemapSITSViewSelectorLinkedCells(ByVal ws As Worksheet)
     If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
 
     ' xlMove keeps checkbox Top with its row after deletes — resolve row from
-    ' current Top, then re-bind/re-align so LinkedCell and box stay on that cell.
-    On Error Resume Next
+    ' current Top (at Zoom 100), then re-bind/re-align so LinkedCell and box
+    ' stay on that cell.
+    BeginSITSSelectorZoom100 ws
+    On Error GoTo RemapZoomFail
+
     For i = ws.CheckBoxes.Count To 1 Step -1
         Set cb = ws.CheckBoxes(i)
         actionName = Trim$(CStr(cb.OnAction))
@@ -2181,7 +2230,12 @@ Private Sub RemapSITSViewSelectorLinkedCells(ByVal ws As Worksheet)
         End If
 NextRemapCb:
     Next i
-    On Error GoTo 0
+
+    EndSITSSelectorZoom100
+    Exit Sub
+
+RemapZoomFail:
+    EndSITSSelectorZoom100
 End Sub
 
 Private Sub RebindSITSViewSelectorCheckboxes(ByVal ws As Worksheet)
@@ -2217,6 +2271,9 @@ Private Sub RebindSITSViewSelectorCheckboxes(ByVal ws As Worksheet)
 
     If lastRow < SITS_VIEW_DATA_START_ROW Then Exit Sub
 
+    BeginSITSSelectorZoom100 ws
+    On Error GoTo RebindZoomFail
+
     For rowIndex = SITS_VIEW_DATA_START_ROW To lastRow
         Set linkCell = ws.Cells(rowIndex, SITS_SELECTOR_COL)
         cellText = UCase$(Trim$(CStr(linkCell.Value)))
@@ -2226,9 +2283,15 @@ Private Sub RebindSITSViewSelectorCheckboxes(ByVal ws As Worksheet)
             linkCell.Font.Bold = True
             linkCell.Font.Color = RGB(192, 0, 0)
         Else
-            SetSITSViewSelectorCheckbox ws, rowIndex
+            SetSITSViewSelectorCheckboxNoZoom ws, rowIndex
         End If
     Next rowIndex
+
+    EndSITSSelectorZoom100
+    Exit Sub
+
+RebindZoomFail:
+    EndSITSSelectorZoom100
 End Sub
 
 Private Sub SetSITSViewSelectorInWork(ByVal ws As Worksheet, ByVal viewRow As Long)
@@ -2244,6 +2307,18 @@ Private Sub SetSITSViewSelectorInWork(ByVal ws As Worksheet, ByVal viewRow As Lo
 End Sub
 
 Private Sub SetSITSViewSelectorCheckbox(ByVal ws As Worksheet, ByVal viewRow As Long)
+    BeginSITSSelectorZoom100 ws
+    On Error GoTo SetCbZoomFail
+    SetSITSViewSelectorCheckboxNoZoom ws, viewRow
+    EndSITSSelectorZoom100
+    Exit Sub
+
+SetCbZoomFail:
+    EndSITSSelectorZoom100
+End Sub
+
+' Assumes Zoom 100 session already active (or call SetSITSViewSelectorCheckbox).
+Private Sub SetSITSViewSelectorCheckboxNoZoom(ByVal ws As Worksheet, ByVal viewRow As Long)
     Dim linkCell As Range
     Dim cb As CheckBox
 

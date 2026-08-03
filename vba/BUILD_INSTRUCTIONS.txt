@@ -405,6 +405,10 @@ available because the sheet is protected")
 SITS Selector checkboxes do nothing while sheet is protected
   -> Refresh SITS re-applies LinkedCell unlocks. Re-import modUtility + modSITS.
 
+SITS Selector checkboxes drift further down the sheet (wrong row / double-check)
+  -> Excel Form Control bug when Zoom <> 100%. Re-import modSITS, then Refresh View
+     (bind now forces Zoom 100 briefly). Safe to use any zoom afterward.
+
 Dashboard C6/C7 stay "stale" (strikethrough)
   -> Rebuild Dashboard or Alt+F8 → RepairDashboardConfigFormulas (or press F9).
 
