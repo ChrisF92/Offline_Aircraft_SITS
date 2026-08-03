@@ -7,7 +7,7 @@ Option Explicit
 ' See vba/forms/LOG_SORTIE_FORM_LAYOUT.txt for control names and layout.
 '
 ' Approach for the large counter set:
-'   - Static shell: date, HUMS Op Number, Correction button, four group frames, Submit/Cancel
+'   - Static shell: date, HUMS Op Number, Correction button, three group frames, Submit/Cancel
 '   - Rows are created at runtime (Current | Usage | New Total)
 '   - Only Usage is editable; New Total = Current + Usage
 '   - Blank Usage rows are skipped on submit
@@ -103,7 +103,6 @@ End Sub
 Private Sub BuildAllGroups()
     BuildGroupFrame fraAirframe, "Usage Airframe", SortieUsageAirframeCodes()
     BuildGroupFrame fraEngines, "Usage Engines", SortieUsageEngineCodes()
-    BuildGroupFrame fraOp, "Usage OP", SortieUsageOpCodes()
     BuildGroupFrame fraWare, "Usage WARE", SortieUsageWareCodes()
 End Sub
 
