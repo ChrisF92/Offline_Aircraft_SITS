@@ -3,7 +3,8 @@ Option Explicit
 ' ========================================================================
 ' SITS PRINT MODULE — Offline Aircraft SITS v2
 ' ========================================================================
-' Builds a landscape Word document snapshot of tasks in the current Horizon.
+' Builds a landscape Word document snapshot of tasks in the current Horizon
+' (including next due E1/E2 when none fall inside the hours horizon, same as SITS).
 ' Black-and-white, single-line truncated rows. Non-description columns size to
 ' content; Task Description takes the remaining page width.
 ' Performance: build TSV in VBA, ConvertToTable once, format by range/column
@@ -145,6 +146,13 @@ Private Function CollectPrintReportRows(ByRef rowCount As Long) As Variant
     Dim colCurHours As Long
     Dim colCurNumber As Long
     Dim colProjected As Long
+    Dim hasE1InHorizon As Boolean
+    Dim hasE2InHorizon As Boolean
+    Dim bestE1Index As Long
+    Dim bestE2Index As Long
+    Dim bestE1Key As Double
+    Dim bestE2Key As Double
+    Dim candidateKey As Double
 
     rowCount = 0
     CollectPrintReportRows = Empty
@@ -183,6 +191,12 @@ Private Function CollectPrintReportRows(ByRef rowCount As Long) As Variant
 
     dataRowCount = UBound(data, 1)
     ReDim sortEntries(1 To dataRowCount)
+    hasE1InHorizon = False
+    hasE2InHorizon = False
+    bestE1Index = 0
+    bestE2Index = 0
+    bestE1Key = PRINT_SORT_KEY_MISSING
+    bestE2Key = PRINT_SORT_KEY_MISSING
 
     For dataRowIndex = 1 To dataRowCount
         intervalCode = UCase$(Trim$(CStr(data(dataRowIndex, colInterval))))
@@ -190,6 +204,25 @@ Private Function CollectPrintReportRows(ByRef rowCount As Long) As Variant
             forecastHours, forecastDays, forecastNumber, _
             lifeHoursFraction, daysUntilDue, _
             colLRHours, colLRNumber, colDaysDue)
+
+        ' Track nearest E1/E2 even when outside the hours horizon (same as SITS view).
+        If intervalCode = TYPE_E1 Or intervalCode = TYPE_E2 Then
+            candidateKey = PrintTaskSortKey(data, dataRowIndex, intervalCode, _
+                colLRHours, colLRNumber, colDaysDue, colTaskCode)
+            If intervalCode = TYPE_E1 Then
+                If candidateKey < bestE1Key Then
+                    bestE1Key = candidateKey
+                    bestE1Index = dataRowIndex
+                End If
+                If includeRow Then hasE1InHorizon = True
+            Else
+                If candidateKey < bestE2Key Then
+                    bestE2Key = candidateKey
+                    bestE2Index = dataRowIndex
+                End If
+                If includeRow Then hasE2InHorizon = True
+            End If
+        End If
 
         If includeRow Then
             sortCount = sortCount + 1
@@ -200,6 +233,22 @@ Private Function CollectPrintReportRows(ByRef rowCount As Long) As Variant
                 intervalCode, colLRHours, colLRNumber, colDaysDue, colTaskCode)
         End If
     Next dataRowIndex
+
+    ' If no E1/E2 fell inside the hours horizon, still include the next task of each.
+    If Not hasE1InHorizon And bestE1Index > 0 Then
+        sortCount = sortCount + 1
+        sortEntries(sortCount).DataRowIndex = bestE1Index
+        sortEntries(sortCount).IntervalCode = TYPE_E1
+        sortEntries(sortCount).GroupOrder = PrintIntervalGroupOrder(TYPE_E1)
+        sortEntries(sortCount).SortKey = bestE1Key
+    End If
+    If Not hasE2InHorizon And bestE2Index > 0 Then
+        sortCount = sortCount + 1
+        sortEntries(sortCount).DataRowIndex = bestE2Index
+        sortEntries(sortCount).IntervalCode = TYPE_E2
+        sortEntries(sortCount).GroupOrder = PrintIntervalGroupOrder(TYPE_E2)
+        sortEntries(sortCount).SortKey = bestE2Key
+    End If
 
     If sortCount = 0 Then Exit Function
 
