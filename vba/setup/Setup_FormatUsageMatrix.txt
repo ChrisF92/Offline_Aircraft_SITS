@@ -15,7 +15,7 @@ Public Sub Setup_FormatUsageMatrix(Optional ByVal silent As Boolean = False)
 
     If Not silent Then
         If MsgBox("Format the Usage sheet as a sortie matrix?" & vbCrLf & vbCrLf & _
-                  "Columns = interval types (Airframe, Engines, WARE), plus HUMS Op No." & vbCrLf & _
+                  "Columns = interval types (OP first, then Airframe, Engines, WARE), plus HUMS Op No." & vbCrLf & _
                   "Rows = B/F Totals, each logged sortie, then Current Totals." & vbCrLf & vbCrLf & _
                   "Existing Usage sheet contents will be replaced.", _
                   vbQuestion + vbYesNo, "Format Usage Matrix") <> vbYes Then Exit Sub

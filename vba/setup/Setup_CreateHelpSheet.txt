@@ -156,7 +156,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
     WriteHelpRow ws, r, "Setup Wizard", _
         "Visible on the Master and before setup completes. Declares the tail and imports SITS + usage baselines. A Please wait progress dialog appears during import and final refresh so Excel does not look frozen."
     WriteHelpRow ws, r, "Log Sortie", _
-        "Records a sortie: date, HUMS Op Number, and usage increments by counter group (Airframe / Engines / WARE). Blocked while any work package is open or any task needs manual update; confirms if tasks are already overdue."
+        "Records a sortie: date, HUMS Op Number, and usage increments by counter group (OP / Airframe / Engines / WARE). Blocked while any work package is open or any task needs manual update; confirms if tasks are already overdue."
     WriteHelpRow ws, r, "Correction", _
         "Visible after Setup Wizard. Opens Log Sortie with HUMS Op Number set to CORRECTION — enter negative Usage values to adjust prior totals."
     WriteHelpRow ws, r, "Work Packages", _
@@ -232,7 +232,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
 
     WriteHelpSection ws, r, "Usage sheet"
     WriteHelpRow ws, r, "Matrix view", _
-        "Columns are interval types (Airframe, Engines, WARE) plus HUMS Op No. Rows are B/F Totals, each logged sortie, then Current Totals."
+        "Columns are interval types (OP first, then Airframe, Engines, WARE) plus HUMS Op No. Rows are B/F Totals, each logged sortie, then Current Totals."
     WriteHelpRow ws, r, "Refresh", _
         "Updated automatically after Log Sortie. Developer Tools → Refresh Usage rebuilds data without wiping freeze panes or widths (after Format Usage Matrix has been run once)."
 

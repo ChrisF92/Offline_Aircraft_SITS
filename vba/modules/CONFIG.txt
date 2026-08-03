@@ -154,6 +154,7 @@ Public Const TYPE_MX As String = "MX"
 Public Const TYPE_XJ As String = "XJ"
 Public Const TYPE_OH As String = "OH"
 Public Const TYPE_HM As String = "HM"
+Public Const TYPE_OP As String = "OP"
 ' WARE counters that may be absent from older usage exports
 Public Const TYPE_RF As String = "RF"
 Public Const TYPE_LR As String = "LR"
@@ -245,8 +246,13 @@ Public Function RequiredUsageIntervalCodes() As Variant
 End Function
 
 ' --- Sortie form groups (display order) ---
-' Airframe / Engines / WARE. Only Usage is entered; Current and New Total are derived.
+' OP (first on Usage sheet) / Airframe / Engines / WARE.
+' Only Usage is entered; Current and New Total are derived.
 ' Keep these AFTER all Public Const declarations — VBA rejects Const after procedures.
+Public Function SortieUsageOpCodes() As Variant
+    SortieUsageOpCodes = Array(TYPE_OP)
+End Function
+
 Public Function SortieUsageAirframeCodes() As Variant
     SortieUsageAirframeCodes = Array( _
         "DA", "MX", "XJ", "AU", "F3", "F4", "RL", "SL", _
@@ -268,28 +274,41 @@ Public Function SortieUsageWareCodes() As Variant
 End Function
 
 Public Function AllSortieUsageIntervalCodes() As Variant
+    Dim op As Variant
     Dim airframe As Variant
     Dim engines As Variant
     Dim ware As Variant
     Dim result() As String
     Dim i As Long
     Dim n As Long
+    Dim offset As Long
 
+    op = SortieUsageOpCodes()
     airframe = SortieUsageAirframeCodes()
     engines = SortieUsageEngineCodes()
     ware = SortieUsageWareCodes()
 
-    n = UBound(airframe) + UBound(engines) + UBound(ware) + 3
+    n = UBound(op) + UBound(airframe) + UBound(engines) + UBound(ware) + 4
     ReDim result(0 To n - 1)
 
+    offset = 0
+    For i = 0 To UBound(op)
+        result(offset + i) = CStr(op(i))
+    Next i
+    offset = offset + UBound(op) + 1
+
     For i = 0 To UBound(airframe)
-        result(i) = CStr(airframe(i))
+        result(offset + i) = CStr(airframe(i))
     Next i
+    offset = offset + UBound(airframe) + 1
+
     For i = 0 To UBound(engines)
-        result(UBound(airframe) + 1 + i) = CStr(engines(i))
+        result(offset + i) = CStr(engines(i))
     Next i
+    offset = offset + UBound(engines) + 1
+
     For i = 0 To UBound(ware)
-        result(UBound(airframe) + UBound(engines) + 2 + i) = CStr(ware(i))
+        result(offset + i) = CStr(ware(i))
     Next i
 
     AllSortieUsageIntervalCodes = result

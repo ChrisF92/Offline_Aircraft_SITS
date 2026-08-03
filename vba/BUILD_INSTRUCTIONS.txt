@@ -132,11 +132,12 @@ Log Sortie:
    Blocked while any work package is open or any task needs Manual Update;
    confirms if tasks are already overdue.
 2. Enter sortie date and required HUMS Op Number.
-3. In each group (Airframe / Engines / WARE), enter Usage for counters that
-   changed on the sortie. Current Total and New Total are read-only.
+3. In each group (OP under Engines / Airframe / Engines / WARE), enter Usage
+   for counters that changed on the sortie. Current Total and New Total are
+   read-only.
    - Hours counters (DA, MX, XJ, HH, E1, E2, OH): enter h:mm (e.g. 1:30)
    - OEI second totals (1E/1G/2E/2G): enter decimal seconds (e.g. 3.38)
-   - Number counters: enter a non-zero number
+   - Number counters (including OP): enter a non-zero number
    - Leave Usage blank for counters with no change
 4. Click Log sortie.
 
@@ -357,6 +358,18 @@ Upgrade — v1.2.3 (from v1.2.2)
 6. Smoke-test: after Setup Wizard, Dashboard shows Correction; it opens Log
    Sortie with HUMS = CORRECTION; negative Usage reduces current totals and
    shows as -h:mm (or -n) on the Usage sheet.
+
+Upgrade — OP interval on Log Sortie / Usage (from v1.2.3)
+--------------------------------------------------------
+1. Paste/replace: CONFIG, frmLogSortie code, Setup_CreateHelpSheet,
+   Setup_FormatUsageMatrix. Add Frame `fraOp` under `fraEngines`
+   (see LOG_SORTIE_FORM_LAYOUT.txt — optionally shorten fraEngines Height
+   to 340).
+2. Compile VBAProject.
+3. Optional: Dev Tools → **Rebuild Help Sheet**.
+4. Format Usage Matrix (or Refresh Usage) so OP is the first interval column.
+5. Smoke-test: Log Sortie shows Usage OP under Engines; Usage sheet column
+   order starts with OP.
 
 Pre-release notes (former 2.3.x)
 --------------------------------
