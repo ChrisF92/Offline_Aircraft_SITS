@@ -232,7 +232,7 @@ Private Sub BuildHelpSheetContent(ByVal ws As Worksheet)
 
     WriteHelpSection ws, r, "Usage sheet"
     WriteHelpRow ws, r, "Matrix view", _
-        "Columns are interval types (Airframe, Engines, WARE) plus HUMS Op No. Rows are B/F Totals, each logged sortie, then Current Totals."
+        "Columns are interval types (Airframe with OP first, Engines, WARE) plus HUMS Op No. Rows are B/F Totals, each logged sortie, then Current Totals."
     WriteHelpRow ws, r, "Refresh", _
         "Updated automatically after Log Sortie. Developer Tools → Refresh Usage rebuilds data without wiping freeze panes or widths (after Format Usage Matrix has been run once)."
 

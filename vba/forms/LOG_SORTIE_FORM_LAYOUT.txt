@@ -10,7 +10,7 @@ Paste vba/forms/clsSortieUsageRow.txt into that class module.
 
 Why this layout
 ---------------
-There are ~39 sortie counters across Airframe / Engines / WARE. Building every
+There are ~40 sortie counters across Airframe / Engines / WARE. Building every
 textbox by hand is brittle. The recommended approach used here:
 
   1. Static shell controls only (date, HUMS Op Number, Correction button,
@@ -23,7 +23,8 @@ textbox by hand is brittle. The recommended approach used here:
   7. Counters not yet imported show Current = (n/a) with Usage locked
 
 Three side-by-side frames keep the form usable without a long vertical scroll
-of 39 stacked rows, while preserving the three groups you specified.
+of 40 stacked rows, while preserving the three groups you specified.
+Airframe lists OP first (also first Usage sheet column).
 
 Static controls (Name property must match exactly)
 --------------------------------------------------
@@ -79,7 +80,7 @@ Zero increments are still rejected; leave Usage blank to skip a counter.
 Interval codes shown (CONFIG catalog — display order)
 -----------------------------------------------------
 Usage Airframe:
-  DA, MX, XJ, AU, F3, F4, RL, SL, HH, LF, RS, F1, F2, F5, OS, OT
+  OP, DA, MX, XJ, AU, F3, F4, RL, SL, HH, LF, RS, F1, F2, F5, OS, OT
 
 Usage Engines:
   E1, SM, 1S, 1T, 3T, 1G, 1E, E2, SN, 2S, 2T, 4T, 2G, 2E
